@@ -14,6 +14,8 @@ Checks:
   - '-cppcoreguidelines-pro-type-reinterpret-cast' # This project requires converting raw addresses
   - '-modernize-use-trailing-return-type'          # I don't like trailing return types
   - '-readability-use-std-min-max'                 # We do not have std:min/std:max
+  - '-llvm-header-guard'                           # #pragma once is sufficient for this project
+  - '-portability-avoid-pragma-once'               # #pragma once is supported by the kernel toolchain
 
   # --- Might change one day ---
   # ...

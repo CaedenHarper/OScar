@@ -1,5 +1,7 @@
 #include "serial.hpp"
 
+#include <stdint.h>
+
 // NOLINTBEGIN(bugprone-easily-swappable-parameters) private helpers here are low risk
 // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-constant-array-index) we
 // must do pointer arithmetic and array indexing for string handling

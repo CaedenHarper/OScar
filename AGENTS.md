@@ -63,25 +63,21 @@ Run the available C++ formatting and lint checks from the repository root:
 ```sh
 bear --output compile_commands.json -- make clean all
 clang-format --dry-run --Werror src/*.cpp src/*.hpp
-clang-tidy src/*.cpp --config-file=.clang-tidy
+clang-tidy src/*.cpp src/*.hpp --config-file=.clang-tidy
 ```
 
-When `clang-tidy` and `clang-format` are unavailable, use clangd's configured
-check mode for every C++ source file:
-
-```sh
-for source in src/*.cpp; do clangd --check="$source"; done
-```
+These checks must pass. When a check reports a diagnostic, first determine
+whether it identifies a real defect. Fix real defects in the code. When a
+diagnostic is intentional because of freestanding or architecture-specific
+kernel code, suppress it at the narrowest appropriate scope: one line, a
+logical block, or the whole file. Disable a check project-wide only when the
+rule is consistently inappropriate for OScar, and document that decision in
+`.clang-tidy`.
 
 The clangd pass must use the generated `compile_commands.json` and the
 freestanding `x86_64-unknown-none-elf` target. Review any source diagnostics;
 clangd may also report internal code-action test failures, which are editor
 feature errors rather than source lint diagnostics.
-
-If a local environment does not provide `clang-format` or `clang-tidy`, at
-minimum run `make all`, `git diff --check`, and the repository-wide clangd
-checks above. Do not treat the absence of a linter executable as evidence that
-linting passed.
 
 Keep C++ source formatted according to `.clang-format`. Assembly should retain
 the existing GNU assembler style and is not passed through clang-format.

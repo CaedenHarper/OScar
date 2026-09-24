@@ -1,6 +1,7 @@
 #include "memory.hpp"
 
 #include <limine.h>
+#include <stdint.h>
 
 // NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index) bitmap indexing is required here
 

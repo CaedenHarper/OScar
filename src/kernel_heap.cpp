@@ -3,6 +3,8 @@
 #include "memory.hpp"
 #include "virtual_memory.hpp"
 
+#include <stdint.h>
+
 // NOLINTBEGIN(performance-no-int-to-ptr, cppcoreguidelines-pro-bounds-pointer-arithmetic) Heap code must use pointer
 // arithmetic, and must convert ints to pointers
 

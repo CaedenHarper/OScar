@@ -6,7 +6,10 @@
 #include "serial.hpp"
 #include "virtual_memory.hpp"
 
-// NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic, performance-no-int-to-ptr) we must do pointer arithmetic
+#include <stdint.h>
+
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic, performance-no-int-to-ptr,
+//             clang-analyzer-core.FixedAddressDereference) we must do pointer arithmetic
 // for memory smoke tests
 
 namespace {
@@ -16,8 +19,13 @@ constexpr uint64_t kCrossPageAllocationSize = virtual_memory::kPageSize + 1;
 constexpr uintptr_t kExpectedHeapAlignment = 16;
 constexpr uintptr_t kFirstByteOffset = 0;
 constexpr uintptr_t kPageBoundaryOffset = virtual_memory::kPageSize;
+constexpr uintptr_t kFirstUserTestAddress = 0x2000000000ULL;
+constexpr uintptr_t kSecondUserTestAddress = kFirstUserTestAddress + virtual_memory::kPageSize;
+constexpr uintptr_t kKernelHeapAddress = 0xffff900000000000ULL;
 
 constexpr uint64_t kVirtualMemoryTestPattern = 0x4f53636172564d4dULL;
+constexpr uint64_t kFirstAddressSpacePattern = 0x4f53636172415331ULL;
+constexpr uint64_t kSecondAddressSpacePattern = 0x4f53636172415332ULL;
 constexpr uint8_t kFirstHeapTestPattern = 0xa5;
 constexpr uint8_t kSecondHeapTestPattern = 0x5a;
 
@@ -89,6 +97,67 @@ void test_kernel_heap() {
     serial::write("Kernel heap smoke test passed.\n");
 }
 
+void test_process_address_spaces() {
+    const uint64_t initial_free_pages = physical_memory::free_pages();
+    virtual_memory::AddressSpace first_address_space = {};
+    virtual_memory::AddressSpace second_address_space = {};
+    if(!virtual_memory::create_address_space(&first_address_space) ||
+       !virtual_memory::create_address_space(&second_address_space)) {
+        panic::halt("address-space smoke test could not create address spaces");
+    }
+
+    if(!virtual_memory::map_user_page(
+           &first_address_space, kFirstUserTestAddress, virtual_memory::kWritable | virtual_memory::kNoExecute
+       ) ||
+       !virtual_memory::map_user_page(
+           &second_address_space, kFirstUserTestAddress, virtual_memory::kWritable | virtual_memory::kNoExecute
+       ) ||
+       !virtual_memory::map_user_page(
+           &first_address_space, kSecondUserTestAddress, virtual_memory::kWritable | virtual_memory::kNoExecute
+       )) {
+        panic::halt("address-space smoke test could not create user mappings");
+    }
+
+    if(virtual_memory::map_user_page(&first_address_space, kKernelHeapAddress, virtual_memory::kWritable)) {
+        panic::halt("address-space smoke test accepted a kernel address");
+    }
+
+    if(!virtual_memory::activate(&first_address_space)) {
+        panic::halt("address-space smoke test could not activate the first address space");
+    }
+    auto* first_page = reinterpret_cast<volatile uint64_t*>(kFirstUserTestAddress);
+    auto* second_page = reinterpret_cast<volatile uint64_t*>(kSecondUserTestAddress);
+    *first_page = kFirstAddressSpacePattern;
+    *second_page = kSecondAddressSpacePattern;
+
+    if(!virtual_memory::activate(&second_address_space)) {
+        panic::halt("address-space smoke test could not activate the second address space");
+    }
+    auto* isolated_page = reinterpret_cast<volatile uint64_t*>(kFirstUserTestAddress);
+    if(*isolated_page != 0) {
+        panic::halt("address-space smoke test found shared user memory");
+    }
+    *isolated_page = kSecondAddressSpacePattern;
+
+    uintptr_t first_physical_address = 0;
+    uintptr_t second_physical_address = 0;
+    if(!virtual_memory::translate(&first_address_space, kFirstUserTestAddress, &first_physical_address) ||
+       !virtual_memory::translate(&second_address_space, kFirstUserTestAddress, &second_physical_address) ||
+       first_physical_address == second_physical_address) {
+        panic::halt("address-space smoke test found identical physical mappings");
+    }
+
+    if(!virtual_memory::activate(virtual_memory::kernel_address_space())) {
+        panic::halt("address-space smoke test could not restore the kernel address space");
+    }
+    virtual_memory::destroy_address_space(&first_address_space);
+    virtual_memory::destroy_address_space(&second_address_space);
+    if(physical_memory::free_pages() != initial_free_pages) {
+        panic::halt("address-space smoke test leaked physical pages");
+    }
+    serial::write("Process address-space smoke test passed.\n");
+}
+
 } // namespace
 
 namespace self_tests {
@@ -97,10 +166,12 @@ void run(uintptr_t hhdm_offset) {
     test_physical_memory();
     virtual_memory::initialize(hhdm_offset);
     test_virtual_memory();
+    test_process_address_spaces();
     kernel_heap::initialize();
     test_kernel_heap();
 }
 
 } // namespace self_tests
 
-// NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic, performance-no-int-to-ptr)
+// NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic, performance-no-int-to-ptr,
+//           clang-analyzer-core.FixedAddressDereference)
