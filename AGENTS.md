@@ -26,7 +26,8 @@ hosted-runtime assumptions.
 
 The current source modules include serial output (`serial.*`), fatal error
 handling (`panic.*`), exception handling (`idt.*` and `idt.S`), and physical
-page allocation (`memory.*`).
+page allocation (`memory.*`), and virtual-memory mappings
+(`virtual_memory.*`).
 
 ## Build and test
 

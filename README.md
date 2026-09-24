@@ -2,11 +2,11 @@
 
 A deliberately small freestanding C++ kernel. Limine loads the ELF kernel, and
 the kernel initializes COM1, reads the Limine-provided memory map, initializes
-a physical page allocator, installs an IDT, prints diagnostics to QEMU's serial
-console, and halts.
+a physical page allocator, manages basic virtual-memory mappings, installs an
+IDT, prints diagnostics to QEMU's serial console, and halts.
 
-This is a kernel seed, not yet an operating system. It has no virtual-memory
-manager, scheduler, user mode, filesystem, or drivers beyond basic serial I/O.
+This is a kernel seed, not yet an operating system. It has no process address
+spaces, scheduler, user mode, filesystem, or drivers beyond basic serial I/O.
 
 ## Repository layout
 
@@ -21,7 +21,8 @@ manager, scheduler, user mode, filesystem, or drivers beyond basic serial I/O.
     ├── panic.*       Fatal error handling
     ├── idt.*         Interrupt Descriptor Table setup
     ├── idt.S         x86-64 exception entry stubs
-    └── memory.*      Physical page allocator
+    ├── memory.*      Physical page allocator
+    └── virtual_memory.* Basic page-table mappings
 ```
 
 Limine and its protocol header are downloaded into `deps/` on the first build.
@@ -53,6 +54,7 @@ Memory-map entries: 20
 Physical pages: 64127 total, 64127 free
 Allocated physical pages: 0x0000000000073000, 0x0000000000074000
 Physical page allocator smoke test passed.
+Virtual memory mapping smoke test passed.
 IDT initialized.
 Kernel initialization complete; halting.
 ```

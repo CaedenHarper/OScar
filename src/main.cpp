@@ -2,6 +2,7 @@
 #include "memory.hpp"
 #include "panic.hpp"
 #include "serial.hpp"
+#include "virtual_memory.hpp"
 
 #include <limine.h>
 #include <stdint.h>
@@ -12,6 +13,12 @@ __attribute__((used, section(".limine_requests"))) volatile uint64_t g_limine_ba
 
 __attribute__((used, section(".limine_requests"))) volatile limine_memmap_request g_memory_map_request = {
     .id = LIMINE_MEMMAP_REQUEST_ID,
+    .revision = 0,
+    .response = nullptr,
+};
+
+__attribute__((used, section(".limine_requests"))) volatile limine_hhdm_request g_hhdm_request = {
+    .id = LIMINE_HHDM_REQUEST_ID,
     .revision = 0,
     .response = nullptr,
 };
@@ -34,6 +41,10 @@ extern "C" [[noreturn]] void kmain() {
 
     if(g_memory_map_request.response == nullptr) {
         panic::halt("Limine did not provide a memory map");
+    }
+
+    if(g_hhdm_request.response == nullptr) {
+        panic::halt("Limine did not provide a higher-half direct map");
     }
 
     serial::write("Memory-map entries: ");
@@ -61,6 +72,27 @@ extern "C" [[noreturn]] void kmain() {
         panic::halt("physical page allocator could not free its smoke-test pages");
     }
     serial::write("Physical page allocator smoke test passed.\n");
+
+    virtual_memory::initialize(g_hhdm_request.response->offset);
+    uintptr_t mapped_page;
+    constexpr uintptr_t kTestVirtualAddress = 0x4000000000ULL;
+    if(!physical_memory::allocate_page(&mapped_page)) {
+        panic::halt("virtual memory smoke test could not allocate a physical page");
+    }
+    if(!virtual_memory::map_page(kTestVirtualAddress, mapped_page, virtual_memory::kWritable)) {
+        panic::halt("virtual memory smoke test could not create a mapping");
+    }
+    *reinterpret_cast<volatile uint64_t*>(kTestVirtualAddress) = 0x4f53636172564d4dULL;
+    uintptr_t translated_page;
+    if(!virtual_memory::translate(kTestVirtualAddress, &translated_page) || translated_page != mapped_page) {
+        panic::halt("virtual memory smoke test translated the wrong address");
+    }
+    serial::write("Virtual memory mapping smoke test passed.\n");
+    uintptr_t unmapped_page;
+    if(!virtual_memory::unmap_page(kTestVirtualAddress, &unmapped_page) || unmapped_page != mapped_page ||
+       !physical_memory::free_page(mapped_page)) {
+        panic::halt("virtual memory smoke test could not tear down its mapping");
+    }
 
     idt::initialize();
 
