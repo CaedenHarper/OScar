@@ -1,4 +1,4 @@
-# Barebones x86-64 C++ kernel
+# OScar x86-64 C++ kernel
 
 A deliberately small starting point for a freestanding C++ kernel. Limine loads
 the ELF kernel, the kernel initializes COM1, prints to QEMU's serial console,
@@ -15,11 +15,15 @@ allocator, scheduler, user mode, filesystem, or drivers beyond basic serial I/O.
 ├── linker.ld         Places the kernel in the x86-64 higher half
 ├── limine.conf       Limine boot entry
 └── src/
-    └── main.cpp      Entry point, serial output, and memory-map request
+    ├── main.cpp      Entry point and Limine requests
+    ├── serial.*      COM1 serial output
+    ├── panic.*       Fatal error handling
+    ├── idt.*         Interrupt Descriptor Table setup
+    └── idt.S         x86-64 exception entry stubs
 ```
 
 Limine and its protocol header are downloaded into `deps/` on the first build.
-Generated files go into `build/`. Both directories are ignored by Git.
+Generated files go into `build/`.
 
 ## Recommended environment
 
@@ -69,16 +73,6 @@ gdb build/kernel.elf
 
 Useful commands include `info registers`, `x/10i $rip`, `stepi`, and `bt`.
 
-## Suggested next milestones
-
-1. Add formatted serial logging and a panic function.
-2. Install an IDT and print useful CPU exception information.
-3. Parse the memory map into a physical-page allocator.
-4. Add page-table management and a kernel heap.
-5. Configure a timer, create kernel threads, and add a scheduler.
-
-Keep each milestone independently bootable and testable before starting the next.
-
 ## Notes about freestanding C++
 
 The build disables exceptions, RTTI, stack protection, the red zone, and the
@@ -88,6 +82,5 @@ implement the necessary runtime support yourself.
 
 ## License
 
-The original code in this starter is released under the 0BSD license. Downloaded
-dependencies retain their own licenses.
-
+OScar is released under the MIT license. See [LICENSE](LICENSE) for the full
+license text. Downloaded dependencies retain their own licenses.
