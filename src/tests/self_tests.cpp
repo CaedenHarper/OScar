@@ -219,6 +219,10 @@ void test_context_switch() {
     if(state.stage != 1) {
         panic::halt("context smoke test did not enter the thread context");
     }
+    context::switch_context(&state.main_context, &state.thread_context);
+    if(state.stage != 2) {
+        panic::halt("context smoke test did not resume the thread context");
+    }
     serial::write("Kernel context switch smoke test passed.\n");
 }
 

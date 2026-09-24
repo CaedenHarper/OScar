@@ -13,6 +13,8 @@
 .global switch_context
 .type switch_context, @function
 switch_context:
+    # Save the outgoing kernel context. The saved RIP points after this switch
+    # so resuming it returns from switch_context to its original caller.
     movq %rsp, CONTEXT_RSP(%rdi)
     leaq .Lcontext_resume(%rip), %rax
     movq %rax, CONTEXT_RIP(%rdi)
@@ -25,6 +27,7 @@ switch_context:
     movq %r14, CONTEXT_R14(%rdi)
     movq %r15, CONTEXT_R15(%rdi)
 
+    # Restore the incoming context without changing its address space.
     movq CONTEXT_RBX(%rsi), %rbx
     movq CONTEXT_RBP(%rsi), %rbp
     movq CONTEXT_R12(%rsi), %r12
@@ -43,6 +46,7 @@ switch_context:
 .global context_start
 .type context_start, @function
 context_start:
+    # context::initialize places the entry function and argument in r12/r13.
     movq %r13, %rdi
     call *%r12
     ud2
