@@ -18,22 +18,22 @@ hosted-runtime assumptions.
 
 ## Repository layout
 
-- `src/`: kernel C++ modules and architecture-specific assembly.
+- `src/`: kernel C++ modules and architecture-specific assembly, organized by
+  architecture, core, drivers, interrupts, memory, and tests.
 - `linker.ld`: higher-half kernel linker script and ELF entry point.
 - `limine.conf`: Limine boot configuration.
 - `Makefile`: kernel, ISO, QEMU, and exception-test targets.
 - `deps/`: downloaded Limine dependencies; generated and ignored.
 - `build/`: compiled objects, kernel ELF, and ISO output; generated and ignored.
 
-The current source modules include kernel CPU contexts and switching
-(`context.*`), x86 port-I/O helpers (`io.*`), serial output
-(`serial.*`), fatal error
-handling (`panic.*`), exception and IRQ entry (`idt.*`, `idt.S`, and `irq.S`),
-interrupt routing (`interrupt_controller.*` and `interrupts.*`), timer
-abstraction and PIT support (`timer.*` and `pit.*`), physical page allocation
-(`memory.*`), virtual-memory mappings (`virtual_memory.*`), boot-time subsystem
-smoke tests (`self_tests.*`), and kernel dynamic allocation (`kernel_heap.*`).
-Keep those tests out of `main.cpp`.
+The source tree is organized as follows:
+
+- `src/arch/x86_64/`: kernel CPU contexts, IDT setup, and exception/IRQ entry.
+- `src/core/`: the kernel entry point and fatal error handling.
+- `src/drivers/`: x86 port I/O, serial output, and timer/PIT support.
+- `src/interrupts/`: interrupt-controller routing and CPU interrupt helpers.
+- `src/memory/`: physical pages, virtual-memory mappings, and kernel heap.
+- `src/tests/`: boot-time subsystem smoke tests; keep them out of `main.cpp`.
 
 ## Build and test
 
@@ -66,8 +66,8 @@ Run the available C++ formatting and lint checks from the repository root:
 
 ```sh
 bear --output compile_commands.json -- make clean all
-clang-format --dry-run --Werror src/*.cpp src/*.hpp
-clang-tidy src/*.cpp src/*.hpp --config-file=.clang-tidy
+clang-format --dry-run --Werror $(find src -name '*.cpp' -o -name '*.hpp')
+clang-tidy $(find src -name '*.cpp' -o -name '*.hpp') --config-file=.clang-tidy
 ```
 
 These checks must pass. When a check reports a diagnostic, first determine

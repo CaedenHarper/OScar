@@ -6,8 +6,8 @@ DEPS_DIR := deps
 ISO_ROOT := $(BUILD_DIR)/iso_root
 KERNEL := $(BUILD_DIR)/kernel.elf
 ISO := $(BUILD_DIR)/barebones-kernel.iso
-CPP_SOURCES := $(wildcard src/*.cpp)
-ASM_SOURCES := $(wildcard src/*.S)
+CPP_SOURCES := $(wildcard src/*.cpp src/*/*.cpp src/*/*/*.cpp)
+ASM_SOURCES := $(wildcard src/*.S src/*/*.S src/*/*/*.S)
 OBJECTS := $(patsubst src/%.cpp,$(BUILD_DIR)/%.o,$(CPP_SOURCES)) \
 	$(patsubst src/%.S,$(BUILD_DIR)/asm/%.o,$(ASM_SOURCES))
 
@@ -19,7 +19,8 @@ LIMINE_DIR := $(DEPS_DIR)/limine
 PROTOCOL_DIR := $(DEPS_DIR)/limine-protocol
 LIMINE_ARCHIVE := $(DEPS_DIR)/limine-binary.tar.gz
 
-CPPFLAGS := -I$(PROTOCOL_DIR)/include
+CPPFLAGS := -I$(PROTOCOL_DIR)/include \
+	-Isrc/arch/x86_64 -Isrc/core -Isrc/drivers -Isrc/interrupts -Isrc/memory -Isrc/tests
 CXXFLAGS := \
 	-target x86_64-unknown-none-elf \
 	-std=gnu++20 -O2 -g \
@@ -88,6 +89,7 @@ $(LIMINE_DIR)/limine: $(LIMINE_ARCHIVE)
 	$(MAKE) -C $(LIMINE_DIR) CC="$(HOST_CC)"
 
 $(BUILD_DIR)/%.o: src/%.cpp $(PROTOCOL_DIR)/include/limine.h | $(BUILD_DIR)
+	mkdir -p $(dir $@)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c $< -o $@
 
 

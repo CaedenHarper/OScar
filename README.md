@@ -17,22 +17,12 @@ mode, filesystem, or drivers beyond basic serial I/O.
 ├── linker.ld         Places the kernel in the x86-64 higher half
 ├── limine.conf       Limine boot entry
 └── src/
-    ├── main.cpp      Entry point and Limine requests
-    ├── context.*     Kernel CPU-context structure and switch routine
-    ├── io.*          x86 port-I/O helpers
-    ├── serial.*      COM1 serial output
-    ├── panic.*       Fatal error handling
-    ├── idt.*         Interrupt Descriptor Table setup
-    ├── idt.S         x86-64 exception entry stubs
-    ├── irq.S         Hardware IRQ entry stubs
-    ├── interrupt_controller.* PIC and IOAPIC routing
-    ├── interrupts.*  CPU interrupt enable/disable helpers
-    ├── timer.*       Timer facade and tick accounting
-    ├── pit.*         PIT timer backend
-    ├── memory.*      Physical page allocator
-    ├── virtual_memory.* Page-table mappings and process address spaces
-    ├── kernel_heap.* Kernel dynamic allocation
-    └── self_tests.*  Boot-time subsystem smoke tests
+    ├── arch/x86_64/  CPU contexts, IDT, and interrupt entry stubs
+    ├── core/         Entry point and fatal error handling
+    ├── drivers/      Port I/O, serial output, and timer backends
+    ├── interrupts/   Interrupt routing and CPU interrupt helpers
+    ├── memory/       Physical pages, virtual memory, and kernel heap
+    └── tests/        Boot-time subsystem smoke tests
 ```
 
 Limine and its protocol header are downloaded into `deps/` on the first build.
@@ -87,15 +77,15 @@ The repository keeps its editor, lint, and formatting configuration in
 
 ```sh
 bear --output compile_commands.json -- make clean all
-clang-format --dry-run --Werror src/*.cpp src/*.hpp
-clang-tidy src/*.cpp --config-file=.clang-tidy
+clang-format --dry-run --Werror $(find src -name '*.cpp' -o -name '*.hpp')
+clang-tidy $(find src -name '*.cpp') --config-file=.clang-tidy
 ```
 
 If `clang-format` or `clang-tidy` is unavailable, use clangd's configured
 check mode for every C++ source file:
 
 ```sh
-for source in src/*.cpp; do clangd --check="$source"; done
+find src -name '*.cpp' -print0 | xargs -0 -n1 clangd --check
 ```
 
 Review source diagnostics from clangd; its editor code-action tests may report
