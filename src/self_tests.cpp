@@ -1,5 +1,6 @@
 #include "self_tests.hpp"
 
+#include "kernel_heap.hpp"
 #include "memory.hpp"
 #include "panic.hpp"
 #include "serial.hpp"
@@ -51,6 +52,29 @@ void test_virtual_memory() {
     }
 }
 
+void test_kernel_heap() {
+    auto* first = static_cast<uint8_t*>(kernel_heap::allocate(37));
+    auto* second = static_cast<uint8_t*>(kernel_heap::allocate(4097));
+    if(first == nullptr || second == nullptr || first == second || (reinterpret_cast<uintptr_t>(first) % 16) != 0 ||
+       (reinterpret_cast<uintptr_t>(second) % 16) != 0) {
+        panic::halt("kernel heap smoke test could not allocate aligned blocks");
+    }
+
+    first[0] = 0xa5;
+    second[4096] = 0x5a;
+    if(first[0] != 0xa5 || second[4096] != 0x5a) {
+        panic::halt("kernel heap smoke test could not access allocated blocks");
+    }
+
+    if(!kernel_heap::free(first) || !kernel_heap::free(second)) {
+        panic::halt("kernel heap smoke test could not free allocated blocks");
+    }
+    if(kernel_heap::allocate(0) != nullptr) {
+        panic::halt("kernel heap smoke test accepted a zero-sized allocation");
+    }
+    serial::write("Kernel heap smoke test passed.\n");
+}
+
 } // namespace
 
 namespace self_tests {
@@ -59,6 +83,8 @@ void run(uintptr_t hhdm_offset) {
     test_physical_memory();
     virtual_memory::initialize(hhdm_offset);
     test_virtual_memory();
+    kernel_heap::initialize();
+    test_kernel_heap();
 }
 
 } // namespace self_tests

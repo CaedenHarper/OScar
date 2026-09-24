@@ -28,7 +28,8 @@ The current source modules include serial output (`serial.*`), fatal error
 handling (`panic.*`), exception handling (`idt.*` and `idt.S`), and physical
 page allocation (`memory.*`), and virtual-memory mappings
 (`virtual_memory.*`). Boot-time subsystem smoke tests live in
-`self_tests.*` rather than in `main.cpp`.
+`self_tests.*` rather than in `main.cpp`. Kernel dynamic allocation lives in
+`kernel_heap.*`.
 
 ## Build and test
 
