@@ -22,7 +22,8 @@ spaces, scheduler, user mode, filesystem, or drivers beyond basic serial I/O.
     ├── idt.*         Interrupt Descriptor Table setup
     ├── idt.S         x86-64 exception entry stubs
     ├── memory.*      Physical page allocator
-    └── virtual_memory.* Basic page-table mappings
+    ├── virtual_memory.* Basic page-table mappings
+    └── self_tests.*  Boot-time subsystem smoke tests
 ```
 
 Limine and its protocol header are downloaded into `deps/` on the first build.

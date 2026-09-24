@@ -27,7 +27,8 @@ hosted-runtime assumptions.
 The current source modules include serial output (`serial.*`), fatal error
 handling (`panic.*`), exception handling (`idt.*` and `idt.S`), and physical
 page allocation (`memory.*`), and virtual-memory mappings
-(`virtual_memory.*`).
+(`virtual_memory.*`). Boot-time subsystem smoke tests live in
+`self_tests.*` rather than in `main.cpp`.
 
 ## Build and test
 
