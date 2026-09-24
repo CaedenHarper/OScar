@@ -29,7 +29,8 @@ hosted-runtime assumptions.
 The source tree is organized as follows:
 
 - `src/arch/x86_64/`: kernel CPU contexts, IDT setup, and exception/IRQ entry.
-- `src/core/`: the kernel entry point, fatal error handling, and kernel threads.
+- `src/core/`: the kernel entry point, fatal error handling, kernel threads,
+  and the cooperative scheduler.
 - `src/drivers/`: x86 port I/O, serial output, and timer/PIT support.
 - `src/interrupts/`: interrupt-controller routing and CPU interrupt helpers.
 - `src/memory/`: physical pages, virtual-memory mappings, and kernel heap.

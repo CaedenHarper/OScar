@@ -2,6 +2,7 @@
 #include "interrupt_controller.hpp"
 #include "memory.hpp"
 #include "panic.hpp"
+#include "scheduler.hpp"
 #include "self_tests.hpp"
 #include "serial.hpp"
 
@@ -69,11 +70,12 @@ extern "C" [[noreturn]] void kmain() {
     interrupt_controller::initialize(g_hhdm_request.response->offset);
     self_tests::run_timer();
     self_tests::run_context();
+    self_tests::run_scheduler();
 
 #ifdef OSCAR_TEST_EXCEPTION
     serial::write("Triggering invalid-opcode exception...\n");
     asm volatile("ud2");
 #endif
 
-    panic::halt("kernel initialization complete; halting");
+    scheduler::start();
 }

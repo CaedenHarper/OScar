@@ -22,4 +22,11 @@ void run_timer();
  */
 void run_context();
 
+/**
+ * Prepare cooperative round-robin scheduler smoke-test threads. The
+ * scheduler must be initialized and interrupts must be enabled before this
+ * function is called. Scheduling begins later when scheduler::start() runs.
+ */
+void run_scheduler();
+
 } // namespace self_tests

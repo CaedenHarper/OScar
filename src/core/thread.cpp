@@ -2,23 +2,12 @@
 
 #include "context.hpp"
 #include "kernel_heap.hpp"
+#include "scheduler_internal.hpp"
+#include "thread_internal.hpp"
 
 #include <stdint.h>
 
 namespace kernel_thread {
-
-struct Thread {
-    ThreadId id;
-    context::CpuContext cpu_context;
-    void* stack;
-    uintptr_t stack_bottom;
-    uintptr_t stack_top;
-    State state;
-    context::Entry entry;
-    void* argument;
-    virtual_memory::AddressSpace* address_space;
-    context::CpuContext* return_context;
-};
 
 namespace {
 
@@ -36,6 +25,11 @@ void thread_bootstrap(void* argument) {
     auto* thread = static_cast<Thread*>(argument);
     thread->state = State::Running;
     thread->entry(thread->argument);
+
+    if(thread->scheduler_managed) {
+        scheduler::thread_exit(thread);
+    }
+
     thread->state = State::Terminated;
 
     context::switch_context(&thread->cpu_context, thread->return_context);
@@ -69,6 +63,10 @@ Thread* create(context::Entry entry, void* argument, uint64_t stack_size, virtua
     thread->argument = argument;
     thread->address_space = address_space;
     thread->return_context = nullptr;
+    thread->ready_next = nullptr;
+    thread->queued = false;
+    thread->scheduler_managed = false;
+    thread->idle = false;
 
     if(!context::initialize(&thread->cpu_context, thread->stack_top, thread_bootstrap, thread)) {
         kernel_heap::free(stack);
@@ -87,7 +85,7 @@ Thread* create(context::Entry entry, void* argument, uint64_t stack_size) {
 }
 
 bool destroy(Thread* thread) {
-    if(thread == nullptr || thread->state == State::Running) {
+    if(thread == nullptr || thread->state == State::Running || thread->queued || thread->scheduler_managed) {
         return false;
     }
 
@@ -97,7 +95,7 @@ bool destroy(Thread* thread) {
 }
 
 bool run(Thread* thread, context::CpuContext* return_context) {
-    if(thread == nullptr || return_context == nullptr || thread->state != State::Ready) {
+    if(thread == nullptr || return_context == nullptr || thread->state != State::Ready || thread->scheduler_managed) {
         return false;
     }
 

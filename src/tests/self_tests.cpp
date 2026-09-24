@@ -5,6 +5,7 @@
 #include "kernel_heap.hpp"
 #include "memory.hpp"
 #include "panic.hpp"
+#include "scheduler.hpp"
 #include "serial.hpp"
 #include "thread.hpp"
 #include "timer.hpp"
@@ -262,6 +263,73 @@ void test_kernel_thread() {
     serial::write("Kernel thread stack and lifecycle smoke test passed.\n");
 }
 
+struct SchedulerTestState {
+    kernel_thread::Thread* first;
+    kernel_thread::Thread* second;
+    volatile uint64_t count;
+    volatile uint64_t order[4];
+};
+
+struct SchedulerTestArgument {
+    SchedulerTestState* state;
+    uint64_t id;
+};
+
+void record_scheduler_turn(SchedulerTestState* state, uint64_t id) {
+    if(state->count >= 4) {
+        panic::halt("scheduler smoke test recorded too many thread turns");
+    }
+    const uint64_t index = state->count;
+    state->order[index] = id;
+    state->count = index + 1;
+}
+
+void scheduler_test_entry(void* argument) {
+    auto* test_argument = static_cast<SchedulerTestArgument*>(argument);
+    auto* state = test_argument->state;
+    const uint64_t id = test_argument->id;
+    record_scheduler_turn(state, id);
+    scheduler::yield();
+
+    if(id == 1) {
+        if(state->count != 2 || state->order[0] != 1 || state->order[1] != 2) {
+            panic::halt("scheduler smoke test violated round-robin ordering");
+        }
+        record_scheduler_turn(state, id);
+        scheduler::yield();
+    } else {
+        if(state->count != 3 || state->order[2] != 1) {
+            panic::halt("scheduler smoke test violated round-robin ordering");
+        }
+        record_scheduler_turn(state, id);
+        scheduler::yield();
+        if(kernel_thread::state(state->first) != kernel_thread::State::Terminated || state->count != 4 ||
+           state->order[2] != 1 || state->order[3] != 2) {
+            panic::halt("scheduler smoke test did not terminate threads in order");
+        }
+        serial::write("Round-robin scheduler smoke test passed.\n");
+    }
+}
+
+void prepare_scheduler_test() {
+    static SchedulerTestState state = {};
+    static SchedulerTestArgument first_argument = {&state, 1};
+    static SchedulerTestArgument second_argument = {&state, 2};
+
+    state.first = kernel_thread::create(scheduler_test_entry, &first_argument);
+    state.second = kernel_thread::create(scheduler_test_entry, &second_argument);
+    if(state.first == nullptr || state.second == nullptr) {
+        panic::halt("scheduler smoke test could not create its threads");
+    }
+
+    interrupts::disable();
+    const bool queued = scheduler::enqueue(state.first) && scheduler::enqueue(state.second);
+    interrupts::enable();
+    if(!queued) {
+        panic::halt("scheduler smoke test could not queue its threads");
+    }
+}
+
 } // namespace
 
 namespace self_tests {
@@ -273,6 +341,9 @@ void run(uintptr_t hhdm_offset) {
     test_process_address_spaces();
     kernel_heap::initialize();
     test_kernel_heap();
+    if(!scheduler::initialize()) {
+        panic::halt("scheduler smoke test could not initialize the scheduler");
+    }
 }
 
 void run_timer() {
@@ -298,6 +369,10 @@ void run_context() {
     test_context_switch();
     test_kernel_thread();
     interrupts::enable();
+}
+
+void run_scheduler() {
+    prepare_scheduler_test();
 }
 
 } // namespace self_tests
