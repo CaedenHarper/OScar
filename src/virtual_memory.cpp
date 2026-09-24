@@ -170,6 +170,17 @@ bool translate_in_root(uintptr_t root_physical, uintptr_t virtual_address, uintp
     return true;
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+bool page_is_accessible(uintptr_t root_physical, uintptr_t virtual_address, uint64_t required_flags) {
+    const uint64_t* table = find_page_table(root_physical, virtual_address);
+    if(table == nullptr) {
+        return false;
+    }
+
+    const uint64_t entry = table[page_table_index(virtual_address, 0)];
+    return (entry & kEntryPresent) != 0 && (entry & kEntryUser) != 0 && (entry & required_flags) == required_flags;
+}
+
 // NOLINTNEXTLINE(misc-no-recursion, bugprone-easily-swappable-parameters)
 void destroy_user_table(uintptr_t table_physical, unsigned level) {
     const uint64_t* const table = table_from_physical(table_physical);
@@ -321,6 +332,35 @@ bool translate(const AddressSpace* address_space, uintptr_t virtual_address, uin
     }
     return translate_in_root(address_space->root_physical, virtual_address, physical_address);
 }
+
+// NOLINTBEGIN(bugprone-easily-swappable-parameters) length and flags intentionally use the same integer type
+bool validate_user_range(
+    const AddressSpace* address_space,
+    uintptr_t virtual_address,
+    uint64_t length,
+    uint64_t required_flags
+) {
+    if(address_space == nullptr || address_space->root_physical == 0 || virtual_address >= kUserAddressLimit) {
+        return false;
+    }
+    if(length == 0) {
+        return true;
+    }
+    if(length > kUserAddressLimit - virtual_address) {
+        return false;
+    }
+
+    const uintptr_t last_address = virtual_address + length - 1;
+    const uintptr_t first_page = virtual_address & ~(kPageSize - 1);
+    const uintptr_t last_page = last_address & ~(kPageSize - 1);
+    for(uintptr_t page = first_page; page <= last_page; page += kPageSize) {
+        if(!page_is_accessible(address_space->root_physical, page, required_flags | kUser)) {
+            return false;
+        }
+    }
+    return true;
+}
+// NOLINTEND(bugprone-easily-swappable-parameters)
 
 bool activate(const AddressSpace* address_space) {
     if(address_space == nullptr || address_space->root_physical == 0) {

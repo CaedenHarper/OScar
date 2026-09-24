@@ -3,8 +3,8 @@
 A deliberately small freestanding C++ kernel. Limine loads the ELF kernel, and
 the kernel initializes COM1, reads the Limine-provided memory map, initializes
 a physical page allocator, manages kernel and process address-space mappings,
-installs an IDT, provides a kernel heap, prints diagnostics to QEMU's serial
-console, and halts.
+validates user memory ranges, installs an IDT, provides a kernel heap, prints
+diagnostics to QEMU's serial console, and halts.
 
 This is a kernel seed, not yet an operating system. It has no process address
 spaces, scheduler, user mode, filesystem, or drivers beyond basic serial I/O.

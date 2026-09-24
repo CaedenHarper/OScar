@@ -22,6 +22,7 @@ constexpr uintptr_t kPageBoundaryOffset = virtual_memory::kPageSize;
 constexpr uintptr_t kFirstUserTestAddress = 0x2000000000ULL;
 constexpr uintptr_t kSecondUserTestAddress = kFirstUserTestAddress + virtual_memory::kPageSize;
 constexpr uintptr_t kKernelHeapAddress = 0xffff900000000000ULL;
+constexpr uintptr_t kReadOnlyUserTestAddress = kSecondUserTestAddress + virtual_memory::kPageSize;
 
 constexpr uint64_t kVirtualMemoryTestPattern = 0x4f53636172564d4dULL;
 constexpr uint64_t kFirstAddressSpacePattern = 0x4f53636172415331ULL;
@@ -114,12 +115,31 @@ void test_process_address_spaces() {
        ) ||
        !virtual_memory::map_user_page(
            &first_address_space, kSecondUserTestAddress, virtual_memory::kWritable | virtual_memory::kNoExecute
-       )) {
+       ) ||
+       !virtual_memory::map_user_page(&first_address_space, kReadOnlyUserTestAddress, virtual_memory::kNoExecute)) {
         panic::halt("address-space smoke test could not create user mappings");
     }
 
     if(virtual_memory::map_user_page(&first_address_space, kKernelHeapAddress, virtual_memory::kWritable)) {
         panic::halt("address-space smoke test accepted a kernel address");
+    }
+
+    if(!virtual_memory::validate_user_range(
+           &first_address_space, kFirstUserTestAddress, virtual_memory::kPageSize * 2, virtual_memory::kWritable
+       ) ||
+       !virtual_memory::validate_user_range(
+           &first_address_space, kFirstUserTestAddress + virtual_memory::kPageSize - 1, 2, virtual_memory::kWritable
+       ) ||
+       !virtual_memory::validate_user_range(&first_address_space, kReadOnlyUserTestAddress, 1, 0) ||
+       virtual_memory::validate_user_range(
+           &first_address_space, kReadOnlyUserTestAddress, 1, virtual_memory::kWritable
+       ) ||
+       virtual_memory::validate_user_range(
+           &first_address_space, kReadOnlyUserTestAddress + virtual_memory::kPageSize, 1, 0
+       ) ||
+       virtual_memory::validate_user_range(&first_address_space, kKernelHeapAddress, 1, 0) ||
+       virtual_memory::validate_user_range(&first_address_space, 0x00007fffffffffffULL, 2, 0)) {
+        panic::halt("address-space smoke test rejected or accepted an invalid user range");
     }
 
     if(!virtual_memory::activate(&first_address_space)) {

@@ -76,6 +76,20 @@ bool unmap_user_page(AddressSpace* address_space, uintptr_t virtual_address, uin
 bool translate(const AddressSpace* address_space, uintptr_t virtual_address, uintptr_t* physical_address);
 
 /*
+ * Validate that a byte range is accessible from user space in an address
+ * space. A zero required_flags value checks readable user pages; including
+ * kWritable additionally requires every page to be writable. The range may
+ * be unaligned and may span multiple pages. Returns false on overflow,
+ * kernel-space addresses, unmapped pages, or insufficient permissions.
+ */
+bool validate_user_range(
+    const AddressSpace* address_space,
+    uintptr_t virtual_address,
+    uint64_t length,
+    uint64_t required_flags
+);
+
+/*
  * Load an address space into CR3. The address space must have been created by
  * create_address_space or be the boot address space; this operation returns
  * false for a null or invalid object.
