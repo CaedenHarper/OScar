@@ -29,7 +29,7 @@ hosted-runtime assumptions.
 The source tree is organized as follows:
 
 - `src/arch/x86_64/`: kernel CPU contexts, IDT setup, and exception/IRQ entry.
-- `src/core/`: the kernel entry point and fatal error handling.
+- `src/core/`: the kernel entry point, fatal error handling, and kernel threads.
 - `src/drivers/`: x86 port I/O, serial output, and timer/PIT support.
 - `src/interrupts/`: interrupt-controller routing and CPU interrupt helpers.
 - `src/memory/`: physical pages, virtual-memory mappings, and kernel heap.
@@ -67,8 +67,10 @@ Run the available C++ formatting and lint checks from the repository root:
 ```sh
 bear --output compile_commands.json -- make clean all
 clang-format --dry-run --Werror $(find src -name '*.cpp' -o -name '*.hpp')
-clang-tidy $(find src -name '*.cpp' -o -name '*.hpp') --config-file=.clang-tidy
+clang-tidy $(find src -name '*.cpp' -o -name '*.hpp') --config-file=.clang-tidy --warnings-as-errors="*"
 ```
+
+The repository-local `make lint` target runs the same three commands.
 
 These checks must pass. When a check reports a diagnostic, first determine
 whether it identifies a real defect. Fix real defects in the code. When a

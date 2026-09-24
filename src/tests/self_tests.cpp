@@ -6,6 +6,7 @@
 #include "memory.hpp"
 #include "panic.hpp"
 #include "serial.hpp"
+#include "thread.hpp"
 #include "timer.hpp"
 #include "virtual_memory.hpp"
 
@@ -36,6 +37,7 @@ constexpr uint32_t kTimerTestFrequency = 100;
 constexpr uint64_t kRequiredTimerTicks = 3;
 constexpr uint64_t kTimerTestLoopLimit = 100000000;
 constexpr uint64_t kContextStackSize = 4096;
+constexpr uint64_t kThreadStackSize = 8192;
 
 struct ContextTestState {
     context::CpuContext main_context;
@@ -220,6 +222,42 @@ void test_context_switch() {
     serial::write("Kernel context switch smoke test passed.\n");
 }
 
+struct ThreadTestState {
+    uint64_t marker;
+};
+
+void thread_test_entry(void* argument) {
+    auto* state = static_cast<ThreadTestState*>(argument);
+    state->marker = 0x4f53636172544852ULL;
+}
+
+void test_kernel_thread() {
+    ThreadTestState first_state = {};
+    ThreadTestState second_state = {};
+    auto* first = kernel_thread::create(thread_test_entry, &first_state, kThreadStackSize);
+    auto* second = kernel_thread::create(thread_test_entry, &second_state, kThreadStackSize);
+    const bool stacks_overlap = kernel_thread::stack_bottom(first) < kernel_thread::stack_top(second) &&
+                                kernel_thread::stack_bottom(second) < kernel_thread::stack_top(first);
+    if(first == nullptr || second == nullptr || kernel_thread::id(first) == 0 ||
+       kernel_thread::id(first) == kernel_thread::id(second) ||
+       kernel_thread::state(first) != kernel_thread::State::Ready ||
+       kernel_thread::state(second) != kernel_thread::State::Ready ||
+       kernel_thread::stack_top(first) - kernel_thread::stack_bottom(first) != kThreadStackSize ||
+       kernel_thread::stack_top(second) - kernel_thread::stack_bottom(second) != kThreadStackSize || stacks_overlap) {
+        panic::halt("kernel thread smoke test could not create independent threads");
+    }
+
+    context::CpuContext main_context = {};
+    if(!kernel_thread::run(first, &main_context) || !kernel_thread::run(second, &main_context) ||
+       first_state.marker != 0x4f53636172544852ULL || second_state.marker != 0x4f53636172544852ULL ||
+       kernel_thread::state(first) != kernel_thread::State::Terminated ||
+       kernel_thread::state(second) != kernel_thread::State::Terminated || !kernel_thread::destroy(first) ||
+       !kernel_thread::destroy(second)) {
+        panic::halt("kernel thread smoke test did not complete its bootstrap path");
+    }
+    serial::write("Kernel thread stack and lifecycle smoke test passed.\n");
+}
+
 } // namespace
 
 namespace self_tests {
@@ -254,6 +292,7 @@ void run_timer() {
 void run_context() {
     interrupts::disable();
     test_context_switch();
+    test_kernel_thread();
     interrupts::enable();
 }
 

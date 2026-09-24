@@ -4,7 +4,8 @@ A deliberately small freestanding C++ kernel. Limine loads the ELF kernel, and
 the kernel initializes COM1, reads the Limine-provided memory map, initializes
 a physical page allocator, manages kernel and process address-space mappings,
 validates user memory ranges, installs an IDT and PIT timer interrupts, provides
-a kernel heap, prints diagnostics to QEMU's serial console, and halts.
+a kernel heap, creates and runs kernel-thread stacks, prints diagnostics to
+QEMU's serial console, and halts.
 
 This is a kernel seed, not yet an operating system. It has no scheduler, user
 mode, filesystem, or drivers beyond basic serial I/O.
@@ -18,7 +19,7 @@ mode, filesystem, or drivers beyond basic serial I/O.
 ├── limine.conf       Limine boot entry
 └── src/
     ├── arch/x86_64/  CPU contexts, IDT, and interrupt entry stubs
-    ├── core/         Entry point and fatal error handling
+    ├── core/         Entry point, fatal error handling, and kernel threads
     ├── drivers/      Port I/O, serial output, and timer backends
     ├── interrupts/   Interrupt routing and CPU interrupt helpers
     ├── memory/       Physical pages, virtual memory, and kernel heap
@@ -57,6 +58,7 @@ Physical page allocator smoke test passed.
 Virtual memory mapping smoke test passed.
 Process address-space smoke test passed.
 Kernel heap smoke test passed.
+Kernel thread stack and lifecycle smoke test passed.
 IDT initialized.
 Interrupt controller: IOAPIC.
 Timer interrupt smoke test passed.
@@ -78,8 +80,17 @@ The repository keeps its editor, lint, and formatting configuration in
 ```sh
 bear --output compile_commands.json -- make clean all
 clang-format --dry-run --Werror $(find src -name '*.cpp' -o -name '*.hpp')
-clang-tidy $(find src -name '*.cpp') --config-file=.clang-tidy
+clang-tidy $(find src -name '*.cpp' -o -name '*.hpp') --config-file=.clang-tidy --warnings-as-errors="*"
 ```
+
+The repository-local equivalent is:
+
+```sh
+make lint
+```
+
+It regenerates `compile_commands.json`, formats all C++ sources, and runs
+clang-tidy with all diagnostics treated as errors.
 
 If `clang-format` or `clang-tidy` is unavailable, use clangd's configured
 check mode for every C++ source file:

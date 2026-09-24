@@ -44,7 +44,7 @@ LDFLAGS := \
 
 QEMUFLAGS ?= -M q35 -m 256M -serial stdio -display none -no-reboot -no-shutdown
 
-.PHONY: all iso run debug test-exception clean distclean help
+.PHONY: all iso run debug test-exception lint clean distclean help
 
 all: $(KERNEL)
 
@@ -61,11 +61,17 @@ debug: $(ISO)
 test-exception:
 	$(MAKE) BUILD_DIR=$(BUILD_DIR)-exception CXXFLAGS="$(CXXFLAGS) -DOSCAR_TEST_EXCEPTION" run
 
+lint:
+	bear --output compile_commands.json -- $(MAKE) clean all
+	clang-format --dry-run --Werror $$(find src -name '*.cpp' -o -name '*.hpp')
+	clang-tidy $$(find src -name '*.cpp' -o -name '*.hpp') --config-file=.clang-tidy --warnings-as-errors="*"
+
 help:
 	@echo "make          Build the kernel ELF"
 	@echo "make iso      Build a BIOS/UEFI bootable ISO"
 	@echo "make run      Boot it in QEMU; serial output appears here"
 	@echo "make debug    Boot paused and open QEMU's GDB stub"
+	@echo "make lint     Build a compile database and run format/lint checks"
 	@echo "make clean    Remove build products"
 	@echo "make distclean  Also remove downloaded dependencies"
 
