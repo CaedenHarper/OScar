@@ -1,0 +1,13 @@
+---
+Checks:
+  # --- Will almost certainly never change ---
+  - '*'                                                   # Start by allowing everything
+
+  # --- Might change one day ---
+  # ...
+
+  # --- Should change one day ---
+  # ...
+
+WarningsAsErrors: 'modernize-*'  # VSCode shows this as deprecated; enabling error makes them more visible in the IDE
+...

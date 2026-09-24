@@ -6,7 +6,10 @@ DEPS_DIR := deps
 ISO_ROOT := $(BUILD_DIR)/iso_root
 KERNEL := $(BUILD_DIR)/kernel.elf
 ISO := $(BUILD_DIR)/barebones-kernel.iso
-OBJECTS := $(BUILD_DIR)/main.o
+CPP_SOURCES := $(wildcard src/*.cpp)
+ASM_SOURCES := $(wildcard src/*.S)
+OBJECTS := $(patsubst src/%.cpp,$(BUILD_DIR)/%.o,$(CPP_SOURCES)) \
+	$(patsubst src/%.S,$(BUILD_DIR)/asm/%.o,$(ASM_SOURCES))
 
 CXX := clang++
 HOST_CC ?= cc
@@ -26,6 +29,9 @@ CXXFLAGS := \
 	-fno-pic -fno-pie -mno-red-zone -mcmodel=kernel \
 	-mno-mmx -mno-sse -mno-sse2 \
 	-ffunction-sections -fdata-sections
+ASFLAGS := \
+	-target x86_64-unknown-none-elf \
+	-ffreestanding -fno-pie -mno-red-zone
 LDFLAGS := \
 	-target x86_64-unknown-none-elf -fuse-ld=lld \
 	-nostdlib -static -no-pie \
@@ -37,7 +43,7 @@ LDFLAGS := \
 
 QEMUFLAGS ?= -M q35 -m 256M -serial stdio -display none -no-reboot -no-shutdown
 
-.PHONY: all iso run debug clean distclean help
+.PHONY: all iso run debug test-exception clean distclean help
 
 all: $(KERNEL)
 
@@ -50,6 +56,9 @@ debug: $(ISO)
 	@echo "QEMU is paused. In another terminal, run:"
 	@echo "  gdb $(KERNEL) -ex 'target remote localhost:1234'"
 	$(QEMU) $(QEMUFLAGS) -cdrom $(ISO) -boot d -S -s
+
+test-exception:
+	$(MAKE) BUILD_DIR=$(BUILD_DIR)-exception CXXFLAGS="$(CXXFLAGS) -DOSCAR_TEST_EXCEPTION" run
 
 help:
 	@echo "make          Build the kernel ELF"
@@ -78,8 +87,13 @@ $(LIMINE_DIR)/limine: $(LIMINE_ARCHIVE)
 	tar -xzf $(LIMINE_ARCHIVE) -C $(LIMINE_DIR) --strip-components=1
 	$(MAKE) -C $(LIMINE_DIR) CC="$(HOST_CC)"
 
-$(BUILD_DIR)/main.o: src/main.cpp $(PROTOCOL_DIR)/include/limine.h | $(BUILD_DIR)
+$(BUILD_DIR)/%.o: src/%.cpp $(PROTOCOL_DIR)/include/limine.h | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c $< -o $@
+
+
+$(BUILD_DIR)/asm/%.o: src/%.S | $(BUILD_DIR)
+	mkdir -p $(dir $@)
+	$(CXX) $(ASFLAGS) -c $< -o $@
 
 $(KERNEL): $(OBJECTS) linker.ld
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(OBJECTS) -o $@
@@ -108,4 +122,4 @@ clean:
 distclean: clean
 	rm -rf $(DEPS_DIR)
 
--include $(OBJECTS:.o=.d)
+-include $(patsubst %.o,%.d,$(filter %.o,$(OBJECTS)))

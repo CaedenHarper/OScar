@@ -1,0 +1,82 @@
+---
+Language: Cpp
+Standard: c++17
+
+IndentWidth: 4
+UseTab: Never
+
+IndentCaseLabels: true
+AccessModifierOffset: -4
+
+PointerAlignment: Left
+ReferenceAlignment: Left
+
+ColumnLimit: 120
+
+BinPackParameters: false
+BinPackArguments: false
+
+AlignAfterOpenBracket: BlockIndent
+
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: false
+  AfterFunction: false
+  AfterControlStatement: false
+  BeforeElse: false
+
+SpaceBeforeParens: Never
+
+SpaceBeforeAssignmentOperators: true
+
+AllowShortBlocksOnASingleLine: Never
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+
+BreakConstructorInitializers: BeforeColon
+PackConstructorInitializers: NextLine
+
+AlignConsecutiveDeclarations: false
+AlignConsecutiveAssignments: false
+
+AlignTrailingComments: false
+
+SpacesInConditionalStatement: false
+SpacesInAngles: false
+
+FixNamespaceComments: true
+
+CompactNamespaces: false
+
+SortIncludes: true
+IncludeBlocks: Regroup
+
+# Prevent return type on different line due to line length
+AlwaysBreakAfterReturnType: None
+PenaltyReturnTypeOnItsOwnLine: 5000
+AllowAllParametersOfDeclarationOnNextLine: false
+
+IncludeCategories:
+  # 1. Standard C++ Library Headers (<optional>, <vector>, etc.)
+  - Regex:           '^<(?!SFML\/)[^>]+>$'
+    Priority:        1
+
+  # 2. Same-directory local headers (excluding the matching header)
+  - Regex:           '^"([^.\/]+|\.[^\/]+)"$'
+    Priority:        2
+
+  # 3. "../" Imports (1 level up)
+  - Regex:           '^"\.\.\/[^\/]+"'
+    Priority:        10
+
+  # 4. "../../" Imports (2 levels up)
+  - Regex:           '^"\.\.\/\.\.\/[^\/]+"'
+    Priority:        11
+
+  # 5. "../../../" Imports (3 levels up)
+  - Regex:           '^"\.\.\/\.\.\/\.\.\/[^\/]+"'
+    Priority:        12
+
+  # 6. The matching header file for this .cpp file
+  - Regex:           '^"([^"]*)\.(h|hpp)"$'
+    Priority:        99
