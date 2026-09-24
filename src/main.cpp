@@ -1,4 +1,5 @@
 #include "idt.hpp"
+#include "memory.hpp"
 #include "panic.hpp"
 #include "serial.hpp"
 
@@ -38,6 +39,28 @@ extern "C" [[noreturn]] void kmain() {
     serial::write("Memory-map entries: ");
     serial::write_u64(g_memory_map_request.response->entry_count);
     serial::write("\n");
+
+    physical_memory::initialize(g_memory_map_request.response);
+    serial::write("Physical pages: ");
+    serial::write_u64(physical_memory::total_pages());
+    serial::write(" total, ");
+    serial::write_u64(physical_memory::free_pages());
+    serial::write(" free\n");
+
+    uintptr_t page_a;
+    uintptr_t page_b;
+    if(!physical_memory::allocate_page(&page_a) || !physical_memory::allocate_page(&page_b)) {
+        panic::halt("physical page allocator could not allocate its smoke-test pages");
+    }
+    serial::write("Allocated physical pages: ");
+    serial::write_hex(page_a);
+    serial::write(", ");
+    serial::write_hex(page_b);
+    serial::write("\n");
+    if(!physical_memory::free_page(page_a) || !physical_memory::free_page(page_b)) {
+        panic::halt("physical page allocator could not free its smoke-test pages");
+    }
+    serial::write("Physical page allocator smoke test passed.\n");
 
     idt::initialize();
 

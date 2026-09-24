@@ -24,6 +24,10 @@ hosted-runtime assumptions.
 - `deps/`: downloaded Limine dependencies; generated and ignored.
 - `build/`: compiled objects, kernel ELF, and ISO output; generated and ignored.
 
+The current source modules include serial output (`serial.*`), fatal error
+handling (`panic.*`), exception handling (`idt.*` and `idt.S`), and physical
+page allocation (`memory.*`).
+
 ## Build and test
 
 Use the following checks before submitting changes:

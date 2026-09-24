@@ -1,11 +1,12 @@
 # OScar x86-64 C++ kernel
 
-A deliberately small starting point for a freestanding C++ kernel. Limine loads
-the ELF kernel, the kernel initializes COM1, prints to QEMU's serial console,
-reads the Limine-provided memory map, and halts.
+A deliberately small freestanding C++ kernel. Limine loads the ELF kernel, and
+the kernel initializes COM1, reads the Limine-provided memory map, initializes
+a physical page allocator, installs an IDT, prints diagnostics to QEMU's serial
+console, and halts.
 
-This is a kernel seed, not yet an operating system. It has no interrupts,
-allocator, scheduler, user mode, filesystem, or drivers beyond basic serial I/O.
+This is a kernel seed, not yet an operating system. It has no virtual-memory
+manager, scheduler, user mode, filesystem, or drivers beyond basic serial I/O.
 
 ## Repository layout
 
@@ -19,7 +20,8 @@ allocator, scheduler, user mode, filesystem, or drivers beyond basic serial I/O.
     ├── serial.*      COM1 serial output
     ├── panic.*       Fatal error handling
     ├── idt.*         Interrupt Descriptor Table setup
-    └── idt.S         x86-64 exception entry stubs
+    ├── idt.S         x86-64 exception entry stubs
+    └── memory.*      Physical page allocator
 ```
 
 Limine and its protocol header are downloaded into `deps/` on the first build.
@@ -39,18 +41,26 @@ sudo apt install build-essential clang lld make git curl xorriso qemu-system-x86
 ```sh
 make iso
 make run
+make test-exception
 ```
 
-QEMU runs headlessly and connects its emulated COM1 port to the terminal. You
-should see output similar to:
+QEMU runs headlessly and connects its emulated COM1 port to the terminal. A
+normal run should show output similar to:
 
 ```text
 Barebones kernel started.
-Memory-map entries: 12
+Memory-map entries: 20
+Physical pages: 64127 total, 64127 free
+Allocated physical pages: 0x0000000000073000, 0x0000000000074000
+Physical page allocator smoke test passed.
+IDT initialized.
 Kernel initialization complete; halting.
 ```
 
 The exact memory-map entry count may differ.
+
+`make test-exception` builds a separate test kernel, executes `ud2`, and
+prints the invalid-opcode exception and saved register state.
 
 Press `Ctrl-A`, then `X`, to exit headless QEMU.
 
