@@ -16,4 +16,10 @@ void run(uintptr_t hhdm_offset);
  */
 void run_timer();
 
+/*
+ * Verify that kernel contexts preserve their stack, instruction, and
+ * callee-saved-register state across an assembly context switch.
+ */
+void run_context();
+
 } // namespace self_tests

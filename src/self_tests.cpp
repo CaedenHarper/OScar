@@ -1,5 +1,6 @@
 #include "self_tests.hpp"
 
+#include "context.hpp"
 #include "interrupts.hpp"
 #include "kernel_heap.hpp"
 #include "memory.hpp"
@@ -34,6 +35,22 @@ constexpr uint8_t kSecondHeapTestPattern = 0x5a;
 constexpr uint32_t kTimerTestFrequency = 100;
 constexpr uint64_t kRequiredTimerTicks = 3;
 constexpr uint64_t kTimerTestLoopLimit = 100000000;
+constexpr uint64_t kContextStackSize = 4096;
+
+struct ContextTestState {
+    context::CpuContext main_context;
+    context::CpuContext thread_context;
+    volatile uint64_t stage;
+};
+
+void context_test_entry(void* argument) {
+    auto* state = static_cast<ContextTestState*>(argument);
+    state->stage = 1;
+    context::switch_context(&state->thread_context, &state->main_context);
+    state->stage = 2;
+    context::switch_context(&state->thread_context, &state->main_context);
+    __builtin_unreachable();
+}
 
 void test_physical_memory() {
     uintptr_t page_a = 0;
@@ -183,6 +200,26 @@ void test_process_address_spaces() {
     serial::write("Process address-space smoke test passed.\n");
 }
 
+void test_context_switch() {
+    static uint8_t thread_stack[kContextStackSize];
+    ContextTestState state;
+    state.stage = 0;
+    if(!context::initialize(
+           &state.thread_context,
+           reinterpret_cast<uintptr_t>(thread_stack) + kContextStackSize,
+           context_test_entry,
+           &state
+       )) {
+        panic::halt("context smoke test could not initialize a thread context");
+    }
+
+    context::switch_context(&state.main_context, &state.thread_context);
+    if(state.stage != 1) {
+        panic::halt("context smoke test did not enter the thread context");
+    }
+    serial::write("Kernel context switch smoke test passed.\n");
+}
+
 } // namespace
 
 namespace self_tests {
@@ -212,6 +249,12 @@ void run_timer() {
     }
 
     panic::halt("timer smoke test did not receive timer interrupts");
+}
+
+void run_context() {
+    interrupts::disable();
+    test_context_switch();
+    interrupts::enable();
 }
 
 } // namespace self_tests

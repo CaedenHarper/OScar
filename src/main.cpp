@@ -68,6 +68,7 @@ extern "C" [[noreturn]] void kmain() {
     idt::initialize();
     interrupt_controller::initialize(g_hhdm_request.response->offset);
     self_tests::run_timer();
+    self_tests::run_context();
 
 #ifdef OSCAR_TEST_EXCEPTION
     serial::write("Triggering invalid-opcode exception...\n");
