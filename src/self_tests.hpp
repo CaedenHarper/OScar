@@ -10,4 +10,10 @@ namespace self_tests {
  */
 void run(uintptr_t hhdm_offset);
 
+/*
+ * Verify that the configured timer delivers bounded progress. The IDT,
+ * interrupt controller, and timer must be initialized before this function.
+ */
+void run_timer();
+
 } // namespace self_tests

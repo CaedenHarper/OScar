@@ -1,4 +1,5 @@
 #include "idt.hpp"
+#include "interrupt_controller.hpp"
 #include "memory.hpp"
 #include "panic.hpp"
 #include "self_tests.hpp"
@@ -65,6 +66,8 @@ extern "C" [[noreturn]] void kmain() {
     self_tests::run(g_hhdm_request.response->offset);
 
     idt::initialize();
+    interrupt_controller::initialize(g_hhdm_request.response->offset);
+    self_tests::run_timer();
 
 #ifdef OSCAR_TEST_EXCEPTION
     serial::write("Triggering invalid-opcode exception...\n");

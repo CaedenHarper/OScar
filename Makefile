@@ -34,7 +34,7 @@ ASFLAGS := \
 	-ffreestanding -fno-pie -mno-red-zone
 LDFLAGS := \
 	-target x86_64-unknown-none-elf -fuse-ld=lld \
-	-nostdlib -static -no-pie \
+	-nostdlib -static \
 	-Wl,-T,linker.ld \
 	-Wl,--gc-sections \
 	-Wl,--build-id=none \

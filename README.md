@@ -3,11 +3,11 @@
 A deliberately small freestanding C++ kernel. Limine loads the ELF kernel, and
 the kernel initializes COM1, reads the Limine-provided memory map, initializes
 a physical page allocator, manages kernel and process address-space mappings,
-validates user memory ranges, installs an IDT, provides a kernel heap, prints
-diagnostics to QEMU's serial console, and halts.
+validates user memory ranges, installs an IDT and PIT timer interrupts, provides
+a kernel heap, prints diagnostics to QEMU's serial console, and halts.
 
-This is a kernel seed, not yet an operating system. It has no process address
-spaces, scheduler, user mode, filesystem, or drivers beyond basic serial I/O.
+This is a kernel seed, not yet an operating system. It has no scheduler, user
+mode, filesystem, or drivers beyond basic serial I/O.
 
 ## Repository layout
 
@@ -22,6 +22,11 @@ spaces, scheduler, user mode, filesystem, or drivers beyond basic serial I/O.
     ├── panic.*       Fatal error handling
     ├── idt.*         Interrupt Descriptor Table setup
     ├── idt.S         x86-64 exception entry stubs
+    ├── irq.S         Hardware IRQ entry stubs
+    ├── interrupt_controller.* PIC and IOAPIC routing
+    ├── interrupts.*  CPU interrupt enable/disable helpers
+    ├── timer.*       Timer facade and tick accounting
+    ├── pit.*         PIT timer backend
     ├── memory.*      Physical page allocator
     ├── virtual_memory.* Page-table mappings and process address spaces
     ├── kernel_heap.* Kernel dynamic allocation
@@ -54,13 +59,15 @@ normal run should show output similar to:
 ```text
 Barebones kernel started.
 Memory-map entries: 20
-Physical pages: 64120 total, 64120 free
+Physical pages: 64112 total, 64112 free
 Allocated physical pages: 0x0000000000073000, 0x0000000000074000
 Physical page allocator smoke test passed.
 Virtual memory mapping smoke test passed.
 Process address-space smoke test passed.
 Kernel heap smoke test passed.
 IDT initialized.
+Interrupt controller: IOAPIC.
+Timer interrupt smoke test passed.
 Kernel initialization complete; halting.
 ```
 

@@ -7,8 +7,8 @@ freestanding C++ with a small amount of assembly. Limine loads the kernel ELF,
 and QEMU provides the primary development and test environment. The kernel
 initializes COM1 serial output, reads the Limine memory map, manages physical
 pages and basic virtual-memory mappings, provides a kernel heap, installs an
-Interrupt Descriptor Table for CPU exceptions, runs boot-time smoke tests,
-reports exception register state, and halts.
+Interrupt Descriptor Table and hardware timer interrupts, runs boot-time smoke
+tests, reports exception register state, and halts.
 
 This is a bare-metal kernel rather than a hosted application. The normal C++
 runtime, standard library, exceptions, RTTI, and operating-system services are
@@ -26,10 +26,12 @@ hosted-runtime assumptions.
 - `build/`: compiled objects, kernel ELF, and ISO output; generated and ignored.
 
 The current source modules include serial output (`serial.*`), fatal error
-handling (`panic.*`), exception handling (`idt.*` and `idt.S`), physical page
-allocation (`memory.*`), virtual-memory mappings (`virtual_memory.*`), boot-time
-subsystem smoke tests (`self_tests.*`), and kernel dynamic allocation
-(`kernel_heap.*`). Keep those tests out of `main.cpp`.
+handling (`panic.*`), exception and IRQ entry (`idt.*`, `idt.S`, and `irq.S`),
+interrupt routing (`interrupt_controller.*` and `interrupts.*`), timer
+abstraction and PIT support (`timer.*` and `pit.*`), physical page allocation
+(`memory.*`), virtual-memory mappings (`virtual_memory.*`), boot-time subsystem
+smoke tests (`self_tests.*`), and kernel dynamic allocation (`kernel_heap.*`).
+Keep those tests out of `main.cpp`.
 
 ## Build and test
 

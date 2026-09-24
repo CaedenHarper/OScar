@@ -51,6 +51,7 @@ struct ExceptionFrame {
 };
 
 extern "C" uintptr_t isr_stub_table[];
+extern "C" uintptr_t irq_stub_table[];
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables) these remain alive permanently and cannot be const
 constexpr unsigned kIdtEntryCount = 256;
@@ -161,6 +162,9 @@ void initialize() {
     for(unsigned vector = 0; vector < kExceptionVectorCount; ++vector) {
         set_gate(vector, isr_stub_table[vector]);
     }
+
+    constexpr unsigned kTimerVector = 32;
+    set_gate(kTimerVector, irq_stub_table[0]);
 
     const Idtr idtr = {
         .limit = sizeof(g_idt) - 1,

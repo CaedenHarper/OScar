@@ -1,9 +1,11 @@
 #include "self_tests.hpp"
 
+#include "interrupts.hpp"
 #include "kernel_heap.hpp"
 #include "memory.hpp"
 #include "panic.hpp"
 #include "serial.hpp"
+#include "timer.hpp"
 #include "virtual_memory.hpp"
 
 #include <stdint.h>
@@ -29,6 +31,9 @@ constexpr uint64_t kFirstAddressSpacePattern = 0x4f53636172415331ULL;
 constexpr uint64_t kSecondAddressSpacePattern = 0x4f53636172415332ULL;
 constexpr uint8_t kFirstHeapTestPattern = 0xa5;
 constexpr uint8_t kSecondHeapTestPattern = 0x5a;
+constexpr uint32_t kTimerTestFrequency = 100;
+constexpr uint64_t kRequiredTimerTicks = 3;
+constexpr uint64_t kTimerTestLoopLimit = 100000000;
 
 void test_physical_memory() {
     uintptr_t page_a = 0;
@@ -189,6 +194,24 @@ void run(uintptr_t hhdm_offset) {
     test_process_address_spaces();
     kernel_heap::initialize();
     test_kernel_heap();
+}
+
+void run_timer() {
+    if(!timer::initialize(kTimerTestFrequency)) {
+        panic::halt("timer smoke test could not initialize the PIT");
+    }
+
+    interrupts::enable();
+    const uint64_t initial_ticks = timer::ticks();
+    for(uint64_t loop = 0; loop < kTimerTestLoopLimit; ++loop) {
+        if(timer::ticks() >= initial_ticks + kRequiredTimerTicks) {
+            serial::write("Timer interrupt smoke test passed.\n");
+            return;
+        }
+        asm volatile("pause");
+    }
+
+    panic::halt("timer smoke test did not receive timer interrupts");
 }
 
 } // namespace self_tests
