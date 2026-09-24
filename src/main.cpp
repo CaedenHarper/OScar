@@ -1,11 +1,13 @@
 #include "idt.hpp"
 #include "memory.hpp"
 #include "panic.hpp"
-#include "serial.hpp"
 #include "self_tests.hpp"
+#include "serial.hpp"
 
 #include <limine.h>
 #include <stdint.h>
+
+// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables) vars must be externally mutable by limine
 
 namespace {
 
@@ -30,6 +32,8 @@ __attribute__((used, section(".limine_requests_end"))) volatile uint64_t g_limin
     LIMINE_REQUESTS_END_MARKER;
 
 } // namespace
+
+// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
 extern "C" [[noreturn]] void kmain() {
     serial::initialize();
@@ -62,7 +66,7 @@ extern "C" [[noreturn]] void kmain() {
 
     idt::initialize();
 
-#if defined(OSCAR_TEST_EXCEPTION)
+#ifdef OSCAR_TEST_EXCEPTION
     serial::write("Triggering invalid-opcode exception...\n");
     asm volatile("ud2");
 #endif

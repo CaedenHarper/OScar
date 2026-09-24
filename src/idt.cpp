@@ -5,6 +5,9 @@
 
 #include <stdint.h>
 
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index) this file uses hardware tables which require array
+// indexing
+
 namespace {
 
 struct [[gnu::packed]] IdtEntry {
@@ -49,8 +52,11 @@ struct ExceptionFrame {
 
 extern "C" uintptr_t isr_stub_table[];
 
-IdtEntry g_idt[256];
+// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables) these remain alive permanently and cannot be const
+constexpr unsigned kIdtEntryCount = 256;
+IdtEntry g_idt[kIdtEntryCount];
 uint16_t g_code_selector;
+// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
 constexpr const char* kExceptionNames[] = {
     "Divide error",
@@ -87,14 +93,25 @@ constexpr const char* kExceptionNames[] = {
     "Reserved",
 };
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters) this function is private, low risk
 void set_gate(unsigned vector, uintptr_t address) {
+    constexpr uintptr_t kOffset16Mask = 0xffffU;
+    constexpr uintptr_t kOffset32Mask = 0xffffffffU;
+
+    constexpr unsigned kIdtPresent = 1U << 7U;
+    constexpr unsigned kInterruptGateType = 0x0eU;
+    constexpr auto kKernelInterruptGate = static_cast<uint8_t>(kIdtPresent | kInterruptGateType);
+
+    constexpr unsigned kOffsetMiddleShift = 16;
+    constexpr unsigned kOffsetHighShift = 32;
+
     IdtEntry& entry = g_idt[vector];
-    entry.offset_low = address & 0xffff;
+    entry.offset_low = address & kOffset16Mask;
     entry.selector = g_code_selector;
     entry.ist = 0;
-    entry.attributes = 0x8e; // Present, ring 0, interrupt gate.
-    entry.offset_middle = (address >> 16) & 0xffff;
-    entry.offset_high = (address >> 32) & 0xffffffff;
+    entry.attributes = kKernelInterruptGate; // Present, ring 0, interrupt gate.
+    entry.offset_middle = (address >> kOffsetMiddleShift) & kOffset16Mask;
+    entry.offset_high = (address >> kOffsetHighShift) & kOffset32Mask;
     entry.reserved = 0;
 }
 
@@ -140,7 +157,8 @@ namespace idt {
 void initialize() {
     asm volatile("mov %%cs, %0" : "=r"(g_code_selector));
 
-    for(unsigned vector = 0; vector < 32; ++vector) {
+    constexpr unsigned kExceptionVectorCount = 32;
+    for(unsigned vector = 0; vector < kExceptionVectorCount; ++vector) {
         set_gate(vector, isr_stub_table[vector]);
     }
 
@@ -153,3 +171,5 @@ void initialize() {
 }
 
 } // namespace idt
+
+// NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index)

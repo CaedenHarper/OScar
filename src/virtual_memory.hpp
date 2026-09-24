@@ -6,14 +6,12 @@ namespace virtual_memory {
 
 constexpr uint64_t kPageSize = 4096;
 
-enum PageFlags : uint64_t {
-    kPresent = 1ULL << 0,
-    kWritable = 1ULL << 1,
-    kUser = 1ULL << 2,
-    kWriteThrough = 1ULL << 3,
-    kCacheDisable = 1ULL << 4,
-    kNoExecute = 1ULL << 63,
-};
+constexpr uint64_t kPresent = 1ULL << 0U;
+constexpr uint64_t kWritable = 1ULL << 1U;
+constexpr uint64_t kUser = 1ULL << 2U;
+constexpr uint64_t kWriteThrough = 1ULL << 3U;
+constexpr uint64_t kCacheDisable = 1ULL << 4U;
+constexpr uint64_t kNoExecute = 1ULL << 63U;
 
 /*
  * Initialize the virtual memory manager using Limine's higher-half direct

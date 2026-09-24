@@ -5,9 +5,10 @@
 OScar is a small educational x86-64 operating-system kernel written in
 freestanding C++ with a small amount of assembly. Limine loads the kernel ELF,
 and QEMU provides the primary development and test environment. The kernel
-currently initializes COM1 serial output, reads the Limine memory map, installs
-an Interrupt Descriptor Table for CPU exceptions, reports exception register
-state, and halts.
+initializes COM1 serial output, reads the Limine memory map, manages physical
+pages and basic virtual-memory mappings, provides a kernel heap, installs an
+Interrupt Descriptor Table for CPU exceptions, runs boot-time smoke tests,
+reports exception register state, and halts.
 
 This is a bare-metal kernel rather than a hosted application. The normal C++
 runtime, standard library, exceptions, RTTI, and operating-system services are
@@ -25,11 +26,10 @@ hosted-runtime assumptions.
 - `build/`: compiled objects, kernel ELF, and ISO output; generated and ignored.
 
 The current source modules include serial output (`serial.*`), fatal error
-handling (`panic.*`), exception handling (`idt.*` and `idt.S`), and physical
-page allocation (`memory.*`), and virtual-memory mappings
-(`virtual_memory.*`). Boot-time subsystem smoke tests live in
-`self_tests.*` rather than in `main.cpp`. Kernel dynamic allocation lives in
-`kernel_heap.*`.
+handling (`panic.*`), exception handling (`idt.*` and `idt.S`), physical page
+allocation (`memory.*`), virtual-memory mappings (`virtual_memory.*`), boot-time
+subsystem smoke tests (`self_tests.*`), and kernel dynamic allocation
+(`kernel_heap.*`). Keep those tests out of `main.cpp`.
 
 ## Build and test
 
@@ -61,14 +61,27 @@ The repository's tool configuration is kept in these files:
 Run the available C++ formatting and lint checks from the repository root:
 
 ```sh
+bear --output compile_commands.json -- make clean all
 clang-format --dry-run --Werror src/*.cpp src/*.hpp
 clang-tidy src/*.cpp --config-file=.clang-tidy
 ```
 
+When `clang-tidy` and `clang-format` are unavailable, use clangd's configured
+check mode for every C++ source file:
+
+```sh
+for source in src/*.cpp; do clangd --check="$source"; done
+```
+
+The clangd pass must use the generated `compile_commands.json` and the
+freestanding `x86_64-unknown-none-elf` target. Review any source diagnostics;
+clangd may also report internal code-action test failures, which are editor
+feature errors rather than source lint diagnostics.
+
 If a local environment does not provide `clang-format` or `clang-tidy`, at
-minimum run `make all`, `git diff --check`, and `clangd --check=src/main.cpp`
-when a usable compilation database is available. Do not treat the absence of a
-linter executable as evidence that linting passed.
+minimum run `make all`, `git diff --check`, and the repository-wide clangd
+checks above. Do not treat the absence of a linter executable as evidence that
+linting passed.
 
 Keep C++ source formatted according to `.clang-format`. Assembly should retain
 the existing GNU assembler style and is not passed through clang-format.

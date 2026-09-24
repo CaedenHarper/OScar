@@ -3,12 +3,15 @@
 #include "memory.hpp"
 #include "virtual_memory.hpp"
 
+// NOLINTBEGIN(performance-no-int-to-ptr, cppcoreguidelines-pro-bounds-pointer-arithmetic) Heap code must use pointer
+// arithmetic, and must convert ints to pointers
+
 namespace {
 
 constexpr uint64_t kPageSize = virtual_memory::kPageSize;
 constexpr uint64_t kAlignment = 16;
 constexpr uintptr_t kHeapBase = 0xffff900000000000ULL;
-constexpr uintptr_t kHeapLimit = kHeapBase + 1024ULL * 1024 * 1024;
+constexpr uintptr_t kHeapLimit = kHeapBase + (1024ULL * 1024 * 1024);
 
 struct Block {
     uint64_t size;
@@ -19,9 +22,11 @@ struct Block {
 
 static_assert(sizeof(Block) % kAlignment == 0);
 
+// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables) these remain alive permanently and cannot be const
 Block* g_first_block;
 Block* g_last_block;
 uintptr_t g_heap_end;
+// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
 uint64_t align_up(uint64_t value) {
     return (value + kAlignment - 1) & ~(kAlignment - 1);
@@ -34,29 +39,32 @@ bool grow(uint64_t minimum_bytes) {
 
     const uint64_t required_pages = (minimum_bytes + sizeof(Block) + kPageSize - 1) / kPageSize;
     const uint64_t bytes = required_pages * kPageSize;
-    if (bytes == 0 || g_heap_end > kHeapLimit - bytes) {
+    if(bytes == 0 || g_heap_end > kHeapLimit - bytes) {
         return false;
     }
 
     uint64_t mapped_count = 0;
-    for (; mapped_count < required_pages; ++mapped_count) {
-        uintptr_t physical_page;
+    for(; mapped_count < required_pages; ++mapped_count) {
+        uintptr_t physical_page = 0;
         if(!physical_memory::allocate_page(&physical_page)) {
-            for (uint64_t index = 0; index < mapped_count; ++index) {
-                uintptr_t unmapped_page;
-                if(virtual_memory::unmap_page(g_heap_end + index * kPageSize, &unmapped_page)) {
+            for(uint64_t index = 0; index < mapped_count; ++index) {
+                uintptr_t unmapped_page = 0;
+                if(virtual_memory::unmap_page(g_heap_end + (index * kPageSize), &unmapped_page)) {
                     physical_memory::free_page(unmapped_page);
                 }
             }
             return false;
         }
 
-        if(!virtual_memory::map_page(g_heap_end + mapped_count * kPageSize, physical_page,
-                                     virtual_memory::kWritable | virtual_memory::kNoExecute)) {
+        if(!virtual_memory::map_page(
+               g_heap_end + (mapped_count * kPageSize),
+               physical_page,
+               virtual_memory::kWritable | virtual_memory::kNoExecute
+           )) {
             physical_memory::free_page(physical_page);
-            for (uint64_t index = 0; index < mapped_count; ++index) {
-                uintptr_t unmapped_page;
-                if(virtual_memory::unmap_page(g_heap_end + index * kPageSize, &unmapped_page)) {
+            for(uint64_t index = 0; index < mapped_count; ++index) {
+                uintptr_t unmapped_page = 0;
+                if(virtual_memory::unmap_page(g_heap_end + (index * kPageSize), &unmapped_page)) {
                     physical_memory::free_page(unmapped_page);
                 }
             }
@@ -64,7 +72,7 @@ bool grow(uint64_t minimum_bytes) {
         }
     }
 
-    Block* block = reinterpret_cast<Block*>(g_heap_end);
+    auto* block = reinterpret_cast<Block*>(g_heap_end);
     block->size = bytes - sizeof(Block);
     block->free = true;
     block->next = nullptr;
@@ -85,7 +93,7 @@ void split_block(Block* block, uint64_t size) {
         return;
     }
 
-    Block* remainder = reinterpret_cast<Block*>(reinterpret_cast<uintptr_t>(block + 1) + size);
+    auto* remainder = reinterpret_cast<Block*>(reinterpret_cast<uintptr_t>(block + 1) + size);
     remainder->size = remaining - sizeof(Block);
     remainder->free = true;
     remainder->next = block->next;
@@ -100,7 +108,7 @@ void split_block(Block* block, uint64_t size) {
 }
 
 void merge_with_next(Block* block) {
-    Block* next = block->next;
+    Block const* next = block->next;
     if(next == nullptr || !next->free) {
         return;
     }
@@ -150,7 +158,7 @@ bool free(void* pointer) {
         return false;
     }
 
-    const uintptr_t address = reinterpret_cast<uintptr_t>(pointer);
+    const auto address = reinterpret_cast<uintptr_t>(pointer);
     if(address < kHeapBase + sizeof(Block) || address >= g_heap_end ||
        (address - (kHeapBase + sizeof(Block))) % kAlignment != 0) {
         return false;
@@ -170,3 +178,5 @@ bool free(void* pointer) {
 }
 
 } // namespace kernel_heap
+
+// NOLINTEND(performance-no-int-to-ptr, cppcoreguidelines-pro-bounds-pointer-arithmetic)

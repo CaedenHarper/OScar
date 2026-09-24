@@ -1,7 +1,19 @@
 ---
 Checks:
   # --- Will almost certainly never change ---
-  - '*'                                                   # Start by allowing everything
+  - '*'                                            # Start by allowing everything
+  - '-altera-*'                                    # This is not an altera project
+  - '-llvmlibc-*'                                  # This is not LLVM libc
+  - '-modernize-deprecated-headers'                # <stdint.h> is intentional in freestanding code
+  - '-hicpp-deprecated-headers'                    # ^
+  - '-hicpp-avoid-c-arrays'                        # Kernel needs C arrays
+  - '-cppcoreguidelines-avoid-c-arrays'            # ^
+  - '-modernize-avoid-c-arrays'                    # ^
+  - '-llvm-prefer-static-over-anonymous-namespace' # This project prefers anonymous namespaces
+  - '-hicpp-no-assembler'                          # This project is a kernel and requires assembly
+  - '-cppcoreguidelines-pro-type-reinterpret-cast' # This project requires converting raw addresses
+  - '-modernize-use-trailing-return-type'          # I don't like trailing return types
+  - '-readability-use-std-min-max'                 # We do not have std:min/std:max
 
   # --- Might change one day ---
   # ...
@@ -10,4 +22,3 @@ Checks:
   # ...
 
 WarningsAsErrors: 'modernize-*'  # VSCode shows this as deprecated; enabling error makes them more visible in the IDE
-...

@@ -54,7 +54,7 @@ normal run should show output similar to:
 ```text
 Barebones kernel started.
 Memory-map entries: 20
-Physical pages: 64127 total, 64127 free
+Physical pages: 64120 total, 64120 free
 Allocated physical pages: 0x0000000000073000, 0x0000000000074000
 Physical page allocator smoke test passed.
 Virtual memory mapping smoke test passed.
@@ -63,12 +63,33 @@ IDT initialized.
 Kernel initialization complete; halting.
 ```
 
-The exact memory-map entry count may differ.
+The exact memory-map entry count and usable-page count may differ.
 
 `make test-exception` builds a separate test kernel, executes `ud2`, and
 prints the invalid-opcode exception and saved register state.
 
 Press `Ctrl-A`, then `X`, to exit headless QEMU.
+
+## Formatting and linting
+
+The repository keeps its editor, lint, and formatting configuration in
+`.clangd`, `.clang-tidy`, and `.clang-format`. From the repository root, run:
+
+```sh
+bear --output compile_commands.json -- make clean all
+clang-format --dry-run --Werror src/*.cpp src/*.hpp
+clang-tidy src/*.cpp --config-file=.clang-tidy
+```
+
+If `clang-format` or `clang-tidy` is unavailable, use clangd's configured
+check mode for every C++ source file:
+
+```sh
+for source in src/*.cpp; do clangd --check="$source"; done
+```
+
+Review source diagnostics from clangd; its editor code-action tests may report
+internal failures that are not source lint errors.
 
 ## Debug with GDB
 

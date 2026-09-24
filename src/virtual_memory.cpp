@@ -1,22 +1,31 @@
 #include "virtual_memory.hpp"
 
+#include "memory.hpp"
+
 #include <stdint.h>
 
-#include "memory.hpp"
+// NOLINTBEGIN(performance-no-int-to-ptr, cppcoreguidelines-pro-bounds-pointer-arithmetic) pointer arithmetic is
+// required for memory management
 
 namespace {
 
-constexpr uint64_t kEntryPresent = 1ULL << 0;
-constexpr uint64_t kEntryWritable = 1ULL << 1;
-constexpr uint64_t kEntryUser = 1ULL << 2;
+constexpr uint64_t kEntryPresent = 1ULL << 0U;
+constexpr uint64_t kEntryWritable = 1ULL << 1U;
+constexpr uint64_t kEntryUser = 1ULL << 2U;
 constexpr uint64_t kEntryAddressMask = 0x000ffffffffff000ULL;
-constexpr uint64_t kLargePage = 1ULL << 7;
+constexpr uint64_t kLargePage = 1ULL << 7U;
 constexpr unsigned kEntriesPerTable = 512;
 
+constexpr unsigned kPageOffsetBits = 12U;
+constexpr unsigned kPageTableIndexBits = 9U;
+constexpr unsigned kPageTableIndexMask = kEntriesPerTable - 1U;
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) must outlive initialization and cannot be const
 uintptr_t g_hhdm_offset;
 
 uintptr_t read_cr3() {
-    uintptr_t value;
+    // NOLINTNEXTLINE(misc-const-correctness) ASM writes
+    uintptr_t value = 0;
     asm volatile("mov %%cr3, %0" : "=r"(value));
     return value & kEntryAddressMask;
 }
@@ -31,14 +40,14 @@ uint64_t* table_from_physical(uintptr_t physical_address) {
 
 void clear_page(uintptr_t physical_address) {
     uint64_t* page = table_from_physical(physical_address);
-    for (unsigned index = 0; index < kEntriesPerTable; ++index) {
+    for(unsigned index = 0; index < kEntriesPerTable; ++index) {
         page[index] = 0;
     }
 }
 
 bool allocate_table(uint64_t** table) {
-    uintptr_t physical_address;
-    if (!physical_memory::allocate_page(&physical_address)) {
+    uintptr_t physical_address = 0;
+    if(!physical_memory::allocate_page(&physical_address)) {
         return false;
     }
 
@@ -49,23 +58,24 @@ bool allocate_table(uint64_t** table) {
 
 uint64_t table_flags(uint64_t flags) {
     uint64_t result = kEntryPresent | kEntryWritable;
-    if ((flags & virtual_memory::kUser) != 0) {
+    if((flags & virtual_memory::kUser) != 0) {
         result |= kEntryUser;
     }
     return result;
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 uint64_t* next_table(uint64_t* table, unsigned index, uint64_t flags) {
     uint64_t& entry = table[index];
-    if ((entry & kEntryPresent) == 0) {
-        uint64_t* new_table;
-        if (!allocate_table(&new_table)) {
+    if((entry & kEntryPresent) == 0) {
+        uint64_t* new_table = nullptr;
+        if(!allocate_table(&new_table)) {
             return nullptr;
         }
 
         const uintptr_t physical_address = reinterpret_cast<uintptr_t>(new_table) - g_hhdm_offset;
         entry = physical_address | table_flags(flags);
-    } else if ((entry & kLargePage) != 0) {
+    } else if((entry & kLargePage) != 0) {
         return nullptr;
     }
 
@@ -73,14 +83,14 @@ uint64_t* next_table(uint64_t* table, unsigned index, uint64_t flags) {
 }
 
 unsigned page_table_index(uintptr_t virtual_address, unsigned level) {
-    return (virtual_address >> (12 + 9 * level)) & 0x1ff;
+    return (virtual_address >> (kPageOffsetBits + (kPageTableIndexBits * level))) & kPageTableIndexMask;
 }
 
 uint64_t* find_page_table(uintptr_t virtual_address) {
     uint64_t* table = table_from_physical(read_cr3());
-    for (int level = 3; level > 0; --level) {
+    for(int level = 3; level > 0; --level) {
         const uint64_t entry = table[page_table_index(virtual_address, level)];
-        if ((entry & kEntryPresent) == 0 || (entry & kLargePage) != 0) {
+        if((entry & kEntryPresent) == 0 || (entry & kLargePage) != 0) {
             return nullptr;
         }
         table = table_from_physical(entry & kEntryAddressMask);
@@ -101,20 +111,20 @@ void initialize(uintptr_t hhdm_offset) {
 }
 
 bool map_page(uintptr_t virtual_address, uintptr_t physical_address, uint64_t flags) {
-    if ((virtual_address % kPageSize) != 0 || (physical_address % kPageSize) != 0) {
+    if((virtual_address % kPageSize) != 0 || (physical_address % kPageSize) != 0) {
         return false;
     }
 
     uint64_t* table = table_from_physical(read_cr3());
-    for (int level = 3; level > 0; --level) {
+    for(int level = 3; level > 0; --level) {
         table = next_table(table, page_table_index(virtual_address, level), flags);
-        if (table == nullptr) {
+        if(table == nullptr) {
             return false;
         }
     }
 
     uint64_t& entry = table[page_table_index(virtual_address, 0)];
-    if ((entry & kEntryPresent) != 0) {
+    if((entry & kEntryPresent) != 0) {
         return false;
     }
 
@@ -125,17 +135,17 @@ bool map_page(uintptr_t virtual_address, uintptr_t physical_address, uint64_t fl
 }
 
 bool unmap_page(uintptr_t virtual_address, uintptr_t* physical_address) {
-    if (physical_address == nullptr || (virtual_address % kPageSize) != 0) {
+    if(physical_address == nullptr || (virtual_address % kPageSize) != 0) {
         return false;
     }
 
     uint64_t* table = find_page_table(virtual_address);
-    if (table == nullptr) {
+    if(table == nullptr) {
         return false;
     }
 
     uint64_t& entry = table[page_table_index(virtual_address, 0)];
-    if ((entry & kEntryPresent) == 0) {
+    if((entry & kEntryPresent) == 0) {
         return false;
     }
 
@@ -146,17 +156,17 @@ bool unmap_page(uintptr_t virtual_address, uintptr_t* physical_address) {
 }
 
 bool translate(uintptr_t virtual_address, uintptr_t* physical_address) {
-    if (physical_address == nullptr) {
+    if(physical_address == nullptr) {
         return false;
     }
 
-    uint64_t* table = find_page_table(virtual_address);
-    if (table == nullptr) {
+    const uint64_t* table = find_page_table(virtual_address);
+    if(table == nullptr) {
         return false;
     }
 
     const uint64_t entry = table[page_table_index(virtual_address, 0)];
-    if ((entry & kEntryPresent) == 0) {
+    if((entry & kEntryPresent) == 0) {
         return false;
     }
 
@@ -165,3 +175,5 @@ bool translate(uintptr_t virtual_address, uintptr_t* physical_address) {
 }
 
 } // namespace virtual_memory
+
+// NOLINTEND(performance-no-int-to-ptr, cppcoreguidelines-pro-bounds-pointer-arithmetic)
