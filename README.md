@@ -18,6 +18,7 @@ mode, filesystem, or drivers beyond basic serial I/O.
 ├── limine.conf       Limine boot entry
 └── src/
     ├── main.cpp      Entry point and Limine requests
+    ├── io.*          x86 port-I/O helpers
     ├── serial.*      COM1 serial output
     ├── panic.*       Fatal error handling
     ├── idt.*         Interrupt Descriptor Table setup

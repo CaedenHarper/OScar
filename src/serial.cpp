@@ -1,5 +1,7 @@
 #include "serial.hpp"
 
+#include "io.hpp"
+
 #include <stdint.h>
 
 // NOLINTBEGIN(bugprone-easily-swappable-parameters) private helpers here are low risk
@@ -34,23 +36,12 @@ constexpr unsigned kHexHighestShift = 60;
 constexpr unsigned kHexNibbleShift = 4;
 constexpr uint64_t kHexNibbleMask = 0xf;
 
-inline void outb(uint16_t port, uint8_t value) {
-    asm volatile("outb %0, %1" : : "a"(value), "Nd"(port));
-}
-
-inline uint8_t inb(uint16_t port) {
-    // NOLINTNEXTLINE(misc-const-correctness) assembly writes to it, so it cannot be const
-    uint8_t value = 0;
-    asm volatile("inb %1, %0" : "=a"(value) : "Nd"(port));
-    return value;
-}
-
 void write_raw(char character) {
-    while((inb(kCom1 + kLineStatusRegister) & kTransmitHoldingRegisterEmpty) == 0) {
+    while((io::in8(kCom1 + kLineStatusRegister) & kTransmitHoldingRegisterEmpty) == 0) {
         asm volatile("pause");
     }
 
-    outb(kCom1, static_cast<uint8_t>(character));
+    io::out8(kCom1, static_cast<uint8_t>(character));
 }
 
 } // namespace
@@ -58,13 +49,13 @@ void write_raw(char character) {
 namespace serial {
 
 void initialize() {
-    outb(kCom1 + kInterruptEnableRegister, kDisableInterrupts); // Disable interrupts.
-    outb(kCom1 + kLineControlRegister, kEnableDivisorLatch); // Enable divisor latch.
-    outb(kCom1 + kDataRegister, kBaudDivisorLow); // 38400 baud divisor, low byte.
-    outb(kCom1 + kInterruptEnableRegister, kDisableInterrupts); // Divisor, high byte.
-    outb(kCom1 + kLineControlRegister, kEightBitsNoParityOneStop); // 8 data bits, no parity, one stop bit.
-    outb(kCom1 + kFifoControlRegister, kEnableAndClearFifo); // Enable and clear the FIFO.
-    outb(kCom1 + kModemControlRegister, kModemReady); // Enable IRQs and mark the terminal ready.
+    io::out8(kCom1 + kInterruptEnableRegister, kDisableInterrupts); // Disable interrupts.
+    io::out8(kCom1 + kLineControlRegister, kEnableDivisorLatch); // Enable divisor latch.
+    io::out8(kCom1 + kDataRegister, kBaudDivisorLow); // 38400 baud divisor, low byte.
+    io::out8(kCom1 + kInterruptEnableRegister, kDisableInterrupts); // Divisor, high byte.
+    io::out8(kCom1 + kLineControlRegister, kEightBitsNoParityOneStop); // 8 data bits, no parity, one stop bit.
+    io::out8(kCom1 + kFifoControlRegister, kEnableAndClearFifo); // Enable and clear the FIFO.
+    io::out8(kCom1 + kModemControlRegister, kModemReady); // Enable IRQs and mark the terminal ready.
 }
 
 void putc(char character) {

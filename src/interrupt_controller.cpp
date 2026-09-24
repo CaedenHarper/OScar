@@ -1,5 +1,6 @@
 #include "interrupt_controller.hpp"
 
+#include "io.hpp"
 #include "serial.hpp"
 #include "virtual_memory.hpp"
 
@@ -43,16 +44,9 @@ constexpr uint32_t kApicAddressMask = 0xfffff000U;
 constexpr uint32_t kByteMask = 0xffU;
 constexpr unsigned kRegisterWordBits = 32U;
 
-// NOLINTBEGIN(bugprone-easily-swappable-parameters, hicpp-no-assembler) port I/O is required for the legacy PIC
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-inline void outb(uint16_t port, uint8_t value) {
-    asm volatile("outb %0, %1" : : "a"(value), "Nd"(port));
-}
-
 void io_wait() {
-    outb(kIoWaitPort, kIoWaitValue);
+    io::out8(kIoWaitPort, kIoWaitValue);
 }
-// NOLINTEND(bugprone-easily-swappable-parameters, hicpp-no-assembler)
 
 // NOLINTBEGIN(hicpp-no-assembler) architectural MSR access is required to enable the LAPIC
 uint64_t read_msr(uint32_t register_number) {
@@ -115,31 +109,31 @@ namespace interrupt_controller {
 void initialize(uintptr_t hhdm_offset) {
     const uint8_t master_mask = 0xff;
     const uint8_t slave_mask = 0xff;
-    outb(kMasterDataPort, master_mask);
-    outb(kSlaveDataPort, slave_mask);
+    io::out8(kMasterDataPort, master_mask);
+    io::out8(kSlaveDataPort, slave_mask);
 
-    outb(kMasterCommandPort, kCommandInitialization);
+    io::out8(kMasterCommandPort, kCommandInitialization);
     io_wait();
-    outb(kSlaveCommandPort, kCommandInitialization);
-    io_wait();
-
-    outb(kMasterDataPort, kMasterVectorOffset);
-    io_wait();
-    outb(kSlaveDataPort, kSlaveVectorOffset);
+    io::out8(kSlaveCommandPort, kCommandInitialization);
     io_wait();
 
-    outb(kMasterDataPort, kMasterCascadeBit);
+    io::out8(kMasterDataPort, kMasterVectorOffset);
     io_wait();
-    outb(kSlaveDataPort, kSlaveCascadeIdentity);
-    io_wait();
-
-    outb(kMasterDataPort, kMode8086);
-    io_wait();
-    outb(kSlaveDataPort, kMode8086);
+    io::out8(kSlaveDataPort, kSlaveVectorOffset);
     io_wait();
 
-    outb(kMasterDataPort, kTimerIrqMask);
-    outb(kSlaveDataPort, kAllIrqsMasked);
+    io::out8(kMasterDataPort, kMasterCascadeBit);
+    io_wait();
+    io::out8(kSlaveDataPort, kSlaveCascadeIdentity);
+    io_wait();
+
+    io::out8(kMasterDataPort, kMode8086);
+    io_wait();
+    io::out8(kSlaveDataPort, kMode8086);
+    io_wait();
+
+    io::out8(kMasterDataPort, kTimerIrqMask);
+    io::out8(kSlaveDataPort, kAllIrqsMasked);
 
     const uint64_t apic_base_msr = read_msr(kApicBaseMsr);
     write_msr(kApicBaseMsr, apic_base_msr | kApicEnableBit);
@@ -184,9 +178,9 @@ void end_of_interrupt(uint8_t irq) {
     }
 
     if(irq >= kSlaveIrqBoundary) {
-        outb(kSlaveCommandPort, kEndOfInterrupt);
+        io::out8(kSlaveCommandPort, kEndOfInterrupt);
     }
-    outb(kMasterCommandPort, kEndOfInterrupt);
+    io::out8(kMasterCommandPort, kEndOfInterrupt);
 }
 
 } // namespace interrupt_controller

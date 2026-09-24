@@ -25,7 +25,8 @@ hosted-runtime assumptions.
 - `deps/`: downloaded Limine dependencies; generated and ignored.
 - `build/`: compiled objects, kernel ELF, and ISO output; generated and ignored.
 
-The current source modules include serial output (`serial.*`), fatal error
+The current source modules include x86 port-I/O helpers (`io.*`), serial output
+(`serial.*`), fatal error
 handling (`panic.*`), exception and IRQ entry (`idt.*`, `idt.S`, and `irq.S`),
 interrupt routing (`interrupt_controller.*` and `interrupts.*`), timer
 abstraction and PIT support (`timer.*` and `pit.*`), physical page allocation
