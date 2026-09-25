@@ -24,6 +24,9 @@
 
 namespace {
 
+extern "C" const uint8_t user_program_start[];
+extern "C" const uint8_t user_program_end[];
+
 constexpr uint64_t kSmallAllocationSize = 37;
 constexpr uint64_t kCrossPageAllocationSize = virtual_memory::kPageSize + 1;
 constexpr uintptr_t kExpectedHeapAlignment = 16;
@@ -588,6 +591,18 @@ bool prepare_elf_test_thread() {
     return true;
 }
 
+bool prepare_real_elf_test_thread() {
+    process::Process* process = nullptr;
+    kernel_thread::Thread* thread = nullptr;
+    const uint64_t image_size = static_cast<uint64_t>(user_program_end - user_program_start);
+    if(!loader::load(user_program_start, image_size, &process, &thread) || process == nullptr || thread == nullptr ||
+       !scheduler::enqueue(thread)) {
+        return false;
+    }
+    serial::write("Real ELF process prepared.\n");
+    return true;
+}
+
 void preemption_test_entry(void* argument) {
     auto* test_argument = static_cast<PreemptionTestArgument*>(argument);
     auto* state = test_argument->state;
@@ -651,6 +666,9 @@ void prepare_scheduler_test() {
     }
     if(!prepare_elf_test_thread()) {
         panic::halt("ELF loader smoke test could not prepare its process");
+    }
+    if(!prepare_real_elf_test_thread()) {
+        panic::halt("real ELF executable smoke test could not prepare its process");
     }
 
     // Queue all participants as one transaction so the first scheduler decision cannot

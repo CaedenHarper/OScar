@@ -2,6 +2,8 @@ SHELL := /bin/sh
 .DELETE_ON_ERROR:
 
 BUILD_DIR := build
+USER_BUILD_DIR := $(BUILD_DIR)/user
+USER_ELF := $(USER_BUILD_DIR)/basic.elf
 DEPS_DIR := deps
 ISO_ROOT := $(BUILD_DIR)/iso_root
 KERNEL := $(BUILD_DIR)/kernel.elf
@@ -79,6 +81,9 @@ help:
 $(BUILD_DIR):
 	mkdir -p $@
 
+$(USER_BUILD_DIR):
+	mkdir -p $@
+
 $(DEPS_DIR):
 	mkdir -p $@
 
@@ -103,6 +108,12 @@ $(BUILD_DIR)/%.o: src/%.cpp $(PROTOCOL_DIR)/include/limine.h | $(BUILD_DIR)
 $(BUILD_DIR)/asm/%.o: src/%.S | $(BUILD_DIR)
 	mkdir -p $(dir $@)
 	$(CXX) $(ASFLAGS) -c $< -o $@
+
+$(USER_ELF): tests/user/basic.S tests/user/linker.ld | $(USER_BUILD_DIR)
+	$(CXX) -target x86_64-unknown-none-elf -ffreestanding -fno-pie -mno-red-zone -c tests/user/basic.S -o $(USER_BUILD_DIR)/basic.o
+	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/basic.o -o $@
+
+$(BUILD_DIR)/asm/tests/user_program.o: $(USER_ELF)
 
 $(KERNEL): $(OBJECTS) linker.ld
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(OBJECTS) -o $@

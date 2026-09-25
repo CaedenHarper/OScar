@@ -36,7 +36,9 @@ linking, or drivers beyond basic serial I/O.
 ```
 
 Limine and its protocol header are downloaded into `deps/` on the first build.
-Generated files go into `build/`.
+The build also compiles `tests/user/basic.S` into `build/user/basic.elf` and
+embeds that real ELF image into the kernel's loader smoke test. Generated files
+go into `build/`.
 
 ## Recommended environment
 

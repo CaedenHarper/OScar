@@ -41,6 +41,7 @@ The source tree is organized as follows:
   and kernel heap.
 - `src/synchronization/`: spinlocks, wait queues, and blocking mutexes.
 - `src/tests/`: boot-time subsystem smoke tests; keep them out of `main.cpp`.
+- `tests/user/`: source and linker script for the real user ELF smoke image.
 
 ## Build and test
 
