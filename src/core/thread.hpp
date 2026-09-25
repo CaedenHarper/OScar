@@ -51,6 +51,15 @@ Thread* create(process::Process* process, context::Entry entry, void* argument, 
 Thread* create(process::Process* process, context::Entry entry, void* argument);
 
 /**
+ * Create a user-mode thread in an existing process. The entry point and stack must already
+ * be mapped with user permissions; the kernel allocates a separate kernel stack.
+ */
+Thread* create_user(process::Process* process, uintptr_t user_entry, uintptr_t user_stack);
+
+/** Return whether the thread is initialized to enter ring 3. */
+bool is_user(const Thread* thread);
+
+/**
  * Release a thread and its kernel stack. The thread must not be Running, and
  * the pointer must still refer to a live thread returned by create().
  */

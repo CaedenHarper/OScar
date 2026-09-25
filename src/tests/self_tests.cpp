@@ -44,6 +44,9 @@ constexpr uint64_t kContextStackSize = 4096;
 constexpr uint64_t kThreadStackSize = 8192;
 constexpr uint64_t kPreemptionDurationTicks = 15;
 constexpr uint64_t kSleepTestDurationTicks = 2;
+constexpr uintptr_t kUserTestCodeAddress = 0x400000;
+constexpr uintptr_t kUserTestMessageAddress = kUserTestCodeAddress + virtual_memory::kPageSize;
+constexpr uintptr_t kUserTestStackAddress = kUserTestMessageAddress + virtual_memory::kPageSize;
 
 struct ContextTestState {
     context::CpuContext main_context;
@@ -425,6 +428,106 @@ void mutex_waiter_entry(void* argument) {
     serial::write("Synchronization primitive smoke test passed.\n");
 }
 
+bool write_user_bytes(
+    virtual_memory::AddressSpace* address_space,
+    uintptr_t virtual_address,
+    const uint8_t* bytes,
+    uint64_t length
+) {
+    uintptr_t physical_address = 0;
+    if(!virtual_memory::translate(address_space, virtual_address, &physical_address)) {
+        return false;
+    }
+    auto* destination = static_cast<uint8_t*>(virtual_memory::direct_map(physical_address));
+    const uint64_t offset = physical_address % virtual_memory::kPageSize;
+    if(offset + length > virtual_memory::kPageSize) {
+        return false;
+    }
+    for(uint64_t index = 0; index < length; ++index) {
+        destination[index] = bytes[index];
+    }
+    return true;
+}
+
+bool prepare_user_test_thread() {
+    constexpr char kMessage[] = "User-mode syscall smoke test passed.\n";
+    auto* user_process = process::create();
+    auto* address_space = user_process == nullptr ? nullptr : process::address_space(user_process);
+    if(address_space == nullptr || !virtual_memory::map_user_page(address_space, kUserTestCodeAddress, 0) ||
+       !virtual_memory::map_user_page(
+           address_space, kUserTestMessageAddress, virtual_memory::kWritable | virtual_memory::kNoExecute
+       ) ||
+       !virtual_memory::map_user_page(
+           address_space, kUserTestStackAddress, virtual_memory::kWritable | virtual_memory::kNoExecute
+       )) {
+        return false;
+    }
+
+    uint8_t code[] = {
+        0x48,
+        0xb8,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x48,
+        0xbf,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0x48,
+        0xbe,
+        sizeof(kMessage) - 1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0xcd,
+        0x80,
+        0x48,
+        0xb8,
+        0x01,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0xcd,
+        0x80,
+        0xeb,
+        0xfe,
+    };
+    const uint64_t message_address = kUserTestMessageAddress;
+    for(unsigned index = 0; index < sizeof(message_address); ++index) {
+        code[12 + index] = static_cast<uint8_t>(message_address >> (index * 8U));
+    }
+    if(!write_user_bytes(address_space, kUserTestCodeAddress, code, sizeof(code)) ||
+       !write_user_bytes(
+           address_space, kUserTestMessageAddress, reinterpret_cast<const uint8_t*>(kMessage), sizeof(kMessage) - 1
+       )) {
+        return false;
+    }
+
+    auto* user_thread = kernel_thread::create_user(
+        user_process, kUserTestCodeAddress, kUserTestStackAddress + virtual_memory::kPageSize
+    );
+    return user_thread != nullptr && scheduler::enqueue(user_thread);
+}
+
 void preemption_test_entry(void* argument) {
     auto* test_argument = static_cast<PreemptionTestArgument*>(argument);
     auto* state = test_argument->state;
@@ -481,6 +584,10 @@ void prepare_scheduler_test() {
     auto* mutex_waiter = kernel_thread::create(mutex_waiter_entry, &mutex_state);
     if(mutex_holder == nullptr || mutex_waiter == nullptr) {
         panic::halt("mutex smoke test could not create its threads");
+    }
+
+    if(!prepare_user_test_thread()) {
+        panic::halt("user-mode smoke test could not prepare its process");
     }
 
     // Queue all participants as one transaction so the first scheduler decision cannot

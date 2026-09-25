@@ -88,4 +88,7 @@ void yield();
  */
 [[noreturn]] void start();
 
+/** Terminate the current thread and switch permanently to the next runnable thread. */
+[[noreturn]] void thread_exit(kernel_thread::Thread* thread);
+
 } // namespace scheduler

@@ -22,6 +22,10 @@ ThreadId g_next_thread_id = 1;
     }
 }
 
+void user_placeholder(void* /*unused*/) {
+    park_terminated_thread();
+}
+
 void thread_bootstrap(void* argument) {
     auto* thread = static_cast<Thread*>(argument);
     thread->state = State::Running;
@@ -83,6 +87,7 @@ Thread* create(context::Entry entry, void* argument, uint64_t stack_size, virtua
     thread->waiting = false;
     thread->scheduler_managed = false;
     thread->idle = false;
+    thread->user_mode = false;
     thread->time_slice_remaining = 0;
     thread->wake_tick = 0;
     thread->wait_reason = WaitReason::None;
@@ -123,6 +128,23 @@ Thread* create(process::Process* process, context::Entry entry, void* argument, 
 
 Thread* create(process::Process* process, context::Entry entry, void* argument) {
     return create(process, entry, argument, kDefaultStackSize);
+}
+
+Thread* create_user(process::Process* process, uintptr_t user_entry, uintptr_t user_stack) {
+    if(process == nullptr) {
+        return nullptr;
+    }
+
+    auto* thread = create(process, user_placeholder, nullptr, kDefaultStackSize);
+    if(thread == nullptr ||
+       !context::initialize_user(&thread->cpu_context, thread->stack_top, user_entry, user_stack)) {
+        if(thread != nullptr) {
+            (void)destroy(thread);
+        }
+        return nullptr;
+    }
+    thread->user_mode = true;
+    return thread;
 }
 
 bool destroy(Thread* thread) {
@@ -177,6 +199,10 @@ virtual_memory::AddressSpace* address_space(const Thread* thread) {
 
 process::Process* owner_process(const Thread* thread) {
     return thread == nullptr ? nullptr : thread->owner_process;
+}
+
+bool is_user(const Thread* thread) {
+    return thread != nullptr && thread->user_mode;
 }
 
 uint64_t wake_tick(const Thread* thread) {

@@ -3,14 +3,17 @@
 A deliberately small freestanding C++ kernel. Limine loads the ELF kernel, and
 the kernel initializes COM1, reads the Limine-provided memory map, initializes
 a physical page allocator, manages kernel and process address-space structures and mappings,
-validates user memory ranges, installs an IDT and PIT timer interrupts, provides
-a kernel heap, creates and runs kernel-thread stacks, schedules kernel threads
-cooperatively and from timer interrupts, supports tick-based waiting and waking,
-provides interrupt-safe spinlocks, wait queues, and blocking mutexes,
-prints diagnostics to QEMU's serial console, and idles.
+validates user memory ranges, installs an IDT, GDT/TSS, and PIT timer
+interrupts, creates ring-3 user threads with private kernel stacks, handles an
+initial `int 0x80` system-call ABI (`write`, `exit`, `yield`, and `sleep`),
+provides a kernel heap, creates and runs kernel-thread stacks, schedules kernel
+threads cooperatively and from timer interrupts, supports tick-based waiting
+and waking, provides interrupt-safe spinlocks, wait queues, and blocking
+mutexes, prints diagnostics to QEMU's serial console, and idles.
 
-This is a kernel seed, not yet an operating system. It has no user mode,
-filesystem, or drivers beyond basic serial I/O.
+This is a kernel seed, not yet an operating system. It does not yet load ELF
+executables, provide process-creation system calls, or include a filesystem or
+drivers beyond basic serial I/O.
 
 ## Repository layout
 
@@ -20,8 +23,8 @@ filesystem, or drivers beyond basic serial I/O.
 ├── linker.ld         Places the kernel in the x86-64 higher half
 ├── limine.conf       Limine boot entry
 └── src/
-    ├── arch/x86_64/  CPU contexts, IDT, and interrupt entry stubs
-    ├── core/         Entry point, fatal error handling, threads, and scheduler
+    ├── arch/x86_64/  CPU contexts, GDT/TSS, IDT, and entry stubs
+    ├── core/         Entry point, processes, threads, scheduler, and syscalls
     ├── drivers/      Port I/O, serial output, and timer backends
     ├── interrupts/   Interrupt routing and CPU interrupt helpers
     ├── memory/       Physical pages, virtual memory, and kernel heap
@@ -63,12 +66,13 @@ Virtual memory mapping smoke test passed.
 Process address-space smoke test passed.
 Kernel heap smoke test passed.
 Process structure smoke test passed.
+IDT initialized.
+Interrupt controller: IOAPIC.
 Kernel thread stack and lifecycle smoke test passed.
+User-mode syscall smoke test passed.
 Round-robin scheduler smoke test passed.
 Timer preemption smoke test passed.
 Waiting-thread sleep smoke test passed.
-IDT initialized.
-Interrupt controller: IOAPIC.
 Timer interrupt smoke test passed.
 Synchronization primitive smoke test passed.
 Waiting-thread sleep smoke test passed.

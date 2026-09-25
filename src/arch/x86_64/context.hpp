@@ -59,4 +59,10 @@ extern "C" void switch_context(CpuContext* current, const CpuContext* next);
  */
 bool initialize(CpuContext* context, uintptr_t stack_top, Entry entry, void* argument);
 
+/**
+ * Prepare a kernel context that enters a mapped user instruction pointer with a mapped
+ * user stack. Both addresses must be canonical user addresses; this does not create mappings.
+ */
+bool initialize_user(CpuContext* context, uintptr_t stack_top, uintptr_t user_entry, uintptr_t user_stack);
+
 } // namespace context

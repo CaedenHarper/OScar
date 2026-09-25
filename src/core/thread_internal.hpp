@@ -36,6 +36,7 @@ struct Thread {
     bool waiting;
     bool scheduler_managed;
     bool idle;
+    bool user_mode;
     uint32_t time_slice_remaining;
     uint64_t wake_tick;
     WaitReason wait_reason;

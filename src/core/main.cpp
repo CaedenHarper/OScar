@@ -1,3 +1,4 @@
+#include "gdt.hpp"
 #include "idt.hpp"
 #include "interrupt_controller.hpp"
 #include "memory.hpp"
@@ -70,6 +71,10 @@ extern "C" [[noreturn]] void kmain() {
     // Memory tests must run before the IDT and scheduler take ownership of interrupts;
     // the later tests deliberately exercise those newly initialized subsystems.
     self_tests::run(g_hhdm_request.response->offset);
+
+    if(!gdt::initialize()) {
+        panic::halt("could not initialize the GDT and TSS");
+    }
 
     idt::initialize();
     interrupt_controller::initialize(g_hhdm_request.response->offset);

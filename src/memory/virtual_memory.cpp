@@ -240,6 +240,10 @@ bool translate(uintptr_t virtual_address, uintptr_t* physical_address) {
     return translate_in_root(g_active_address_space.root_physical, virtual_address, physical_address);
 }
 
+void* direct_map(uintptr_t physical_address) {
+    return reinterpret_cast<void*>(physical_to_virtual(physical_address));
+}
+
 bool create_address_space(AddressSpace* address_space) {
     if(address_space == nullptr || g_kernel_address_space.root_physical == 0) {
         return false;

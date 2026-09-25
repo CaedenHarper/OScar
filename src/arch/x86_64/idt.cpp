@@ -52,6 +52,7 @@ struct ExceptionFrame {
 
 extern "C" uintptr_t isr_stub_table[];
 extern "C" uintptr_t irq_stub_table[];
+extern "C" uintptr_t syscall80;
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables) these remain alive permanently and cannot be const
 constexpr unsigned kIdtEntryCount = 256;
@@ -95,7 +96,7 @@ constexpr const char* kExceptionNames[] = {
 };
 
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters) this function is private, low risk
-void set_gate(unsigned vector, uintptr_t address) {
+void set_gate(unsigned vector, uintptr_t address, uint8_t descriptor_privilege_level) {
     constexpr uintptr_t kOffset16Mask = 0xffffU;
     constexpr uintptr_t kOffset32Mask = 0xffffffffU;
 
@@ -110,7 +111,9 @@ void set_gate(unsigned vector, uintptr_t address) {
     entry.offset_low = address & kOffset16Mask;
     entry.selector = g_code_selector;
     entry.ist = 0;
-    entry.attributes = kKernelInterruptGate; // Present, ring 0, interrupt gate.
+    constexpr unsigned kDescriptorPrivilegeShift = 5U;
+    entry.attributes =
+        kKernelInterruptGate | static_cast<uint8_t>(descriptor_privilege_level << kDescriptorPrivilegeShift);
     entry.offset_middle = (address >> kOffsetMiddleShift) & kOffset16Mask;
     entry.offset_high = (address >> kOffsetHighShift) & kOffset32Mask;
     entry.reserved = 0;
@@ -164,11 +167,16 @@ void initialize() {
     // unrelated vectors unconfigured avoids claiming ownership of future device IRQs.
     constexpr unsigned kExceptionVectorCount = 32;
     for(unsigned vector = 0; vector < kExceptionVectorCount; ++vector) {
-        set_gate(vector, isr_stub_table[vector]);
+        set_gate(vector, isr_stub_table[vector], 0);
     }
 
     constexpr unsigned kTimerVector = 32;
-    set_gate(kTimerVector, irq_stub_table[0]);
+    set_gate(kTimerVector, irq_stub_table[0], 0);
+
+    // Only the syscall vector is callable from ring 3; all hardware and exception gates
+    // remain ring-0-only so user code cannot synthesize privileged interrupt paths.
+    constexpr unsigned kSyscallVector = 0x80;
+    set_gate(kSyscallVector, reinterpret_cast<uintptr_t>(&syscall80), 3);
 
     const Idtr idtr = {
         .limit = sizeof(g_idt) - 1,

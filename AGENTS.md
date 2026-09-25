@@ -6,8 +6,9 @@ OScar is a small educational x86-64 operating-system kernel written in
 freestanding C++ with a small amount of assembly. Limine loads the kernel ELF,
 and QEMU provides the primary development and test environment. The kernel
 initializes COM1 serial output, reads the Limine memory map, manages physical
-pages and basic virtual-memory mappings, provides a kernel heap, installs an
-Interrupt Descriptor Table and hardware timer interrupts, provides kernel
+pages and basic virtual-memory mappings, provides a kernel heap, installs the
+GDT/TSS, Interrupt Descriptor Table, and hardware timer interrupts, creates
+ring-3 user threads, handles an initial system-call ABI, provides kernel
 synchronization primitives and process structures, runs boot-time smoke tests,
 reports exception register state, and halts.
 
@@ -29,12 +30,13 @@ hosted-runtime assumptions.
 
 The source tree is organized as follows:
 
-- `src/arch/x86_64/`: kernel CPU contexts, IDT setup, and exception/IRQ entry.
-- `src/core/`: the kernel entry point, fatal error handling, kernel threads,
-  and the cooperative scheduler.
+- `src/arch/x86_64/`: CPU contexts, GDT/TSS, IDT setup, and exception/IRQ/syscall entry.
+- `src/core/`: the kernel entry point, fatal error handling, processes, kernel
+  and user threads, scheduler, and system calls.
 - `src/drivers/`: x86 port I/O, serial output, and timer/PIT support.
 - `src/interrupts/`: interrupt-controller routing and CPU interrupt helpers.
-- `src/memory/`: physical pages, virtual-memory mappings, and kernel heap.
+- `src/memory/`: physical pages, virtual-memory mappings, user-memory copying,
+  and kernel heap.
 - `src/synchronization/`: spinlocks, wait queues, and blocking mutexes.
 - `src/tests/`: boot-time subsystem smoke tests; keep them out of `main.cpp`.
 

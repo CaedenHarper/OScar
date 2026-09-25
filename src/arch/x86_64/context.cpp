@@ -5,6 +5,7 @@
 namespace context {
 
 extern "C" void context_start();
+extern "C" void context_start_user();
 
 namespace {
 
@@ -36,6 +37,25 @@ bool initialize(CpuContext* context, uintptr_t stack_top, Entry entry, void* arg
     // carry the entry routine and its argument until the stub can invoke it.
     context->r12 = reinterpret_cast<uintptr_t>(entry);
     context->r13 = reinterpret_cast<uintptr_t>(argument);
+    return true;
+}
+
+bool initialize_user(CpuContext* context, uintptr_t stack_top, uintptr_t user_entry, uintptr_t user_stack) {
+    constexpr uintptr_t kUserAddressLimit = 0x0000800000000000ULL;
+    if(context == nullptr || stack_top == 0 || user_entry >= kUserAddressLimit || user_stack >= kUserAddressLimit ||
+       user_entry == 0 || user_stack == 0) {
+        return false;
+    }
+
+    context->rsp = stack_top & kStackAlignmentMask;
+    context->rip = reinterpret_cast<uintptr_t>(context_start_user);
+    context->rflags = kInitialRflags;
+    context->rbx = 0;
+    context->rbp = 0;
+    context->r12 = user_entry;
+    context->r13 = user_stack;
+    context->r14 = 0;
+    context->r15 = 0;
     return true;
 }
 

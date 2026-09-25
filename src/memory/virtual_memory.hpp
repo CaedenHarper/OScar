@@ -41,6 +41,9 @@ bool unmap_page(uintptr_t virtual_address, uintptr_t* physical_address);
  */
 bool translate(uintptr_t virtual_address, uintptr_t* physical_address);
 
+/** Return the higher-half direct-map address for a physical address. */
+void* direct_map(uintptr_t physical_address);
+
 /*
  * Create an address space with the current kernel mappings and no user
  * mappings. The physical page allocator and virtual memory manager must be

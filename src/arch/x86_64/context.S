@@ -51,3 +51,17 @@ context_start:
     call *%r12
     ud2
 .size context_start, .-context_start
+
+.global context_start_user
+.type context_start_user, @function
+context_start_user:
+    # Interrupts are disabled while the kernel constructs the privilege-transition frame.
+    cli
+    movq $0x202, %rax
+    pushq $0x23
+    pushq %r13
+    pushq %rax
+    pushq $0x1b
+    pushq %r12
+    iretq
+.size context_start_user, .-context_start_user

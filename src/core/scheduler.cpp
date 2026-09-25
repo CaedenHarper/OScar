@@ -1,6 +1,7 @@
 #include "scheduler.hpp"
 
 #include "context.hpp"
+#include "gdt.hpp"
 #include "interrupts.hpp"
 #include "panic.hpp"
 #include "process_internal.hpp"
@@ -8,6 +9,7 @@
 #include "thread.hpp"
 #include "thread_internal.hpp"
 #include "timer.hpp"
+#include "virtual_memory.hpp"
 #include "wait_queue.hpp"
 
 #include <stdint.h>
@@ -119,6 +121,15 @@ void reset_time_slice(kernel_thread::Thread* thread) {
     }
 }
 
+void prepare_thread(kernel_thread::Thread* thread) {
+    gdt::set_kernel_stack(thread->stack_top);
+    const auto* address_space =
+        thread->address_space != nullptr ? thread->address_space : virtual_memory::kernel_address_space();
+    if(!virtual_memory::activate(address_space)) {
+        panic::halt("scheduler could not activate the next thread address space");
+    }
+}
+
 void schedule(bool restore_interrupts) {
     if(!g_initialized || !g_started || g_current_thread == nullptr) {
         return;
@@ -146,6 +157,7 @@ void schedule(bool restore_interrupts) {
     // A sole runnable thread is already executing. Avoid switching to its own saved
     // context, which would add no scheduling progress and could overwrite its queue state.
     if(next_thread != current_thread) {
+        prepare_thread(next_thread);
         next_thread->state = kernel_thread::State::Running;
         reset_time_slice(next_thread);
         g_current_thread = next_thread;
@@ -232,6 +244,7 @@ bool block_current(synchronization::WaitQueue* queue) {
     current_thread->state = kernel_thread::State::Waiting;
     auto* next_thread = next_locked();
     next_thread->state = kernel_thread::State::Running;
+    prepare_thread(next_thread);
     reset_time_slice(next_thread);
     g_current_thread = next_thread;
     context::switch_context(&current_thread->cpu_context, &next_thread->cpu_context);
@@ -325,6 +338,7 @@ void sleep_until(uint64_t wake_tick) {
     current_thread->state = kernel_thread::State::Waiting;
     auto* next_thread = next_locked();
     next_thread->state = kernel_thread::State::Running;
+    prepare_thread(next_thread);
     reset_time_slice(next_thread);
     g_current_thread = next_thread;
     context::switch_context(&current_thread->cpu_context, &next_thread->cpu_context);
@@ -353,6 +367,7 @@ void sleep(uint64_t ticks) {
     g_started = true;
     auto* next_thread = next_locked();
     next_thread->state = kernel_thread::State::Running;
+    prepare_thread(next_thread);
     reset_time_slice(next_thread);
     g_current_thread = next_thread;
     // Save the boot context only as a one-way origin. Once a thread runs, no scheduler
@@ -375,6 +390,7 @@ void sleep(uint64_t ticks) {
     thread->state = kernel_thread::State::Terminated;
     auto* next_thread = next_locked();
     next_thread->state = kernel_thread::State::Running;
+    prepare_thread(next_thread);
     reset_time_slice(next_thread);
     g_current_thread = next_thread;
     context::switch_context(&thread->cpu_context, &next_thread->cpu_context);
