@@ -26,6 +26,16 @@ namespace {
 
 extern "C" const uint8_t user_program_start[];
 extern "C" const uint8_t user_program_end[];
+extern "C" const uint8_t user_program_prime_start[];
+extern "C" const uint8_t user_program_prime_end[];
+extern "C" const uint8_t user_program_second_start[];
+extern "C" const uint8_t user_program_second_end[];
+extern "C" const uint8_t user_program_divzero_start[];
+extern "C" const uint8_t user_program_divzero_end[];
+extern "C" const uint8_t user_program_kernel_access_start[];
+extern "C" const uint8_t user_program_kernel_access_end[];
+extern "C" const uint8_t user_program_invalid_opcode_start[];
+extern "C" const uint8_t user_program_invalid_opcode_end[];
 
 constexpr uint64_t kSmallAllocationSize = 37;
 constexpr uint64_t kCrossPageAllocationSize = virtual_memory::kPageSize + 1;
@@ -167,6 +177,65 @@ void test_process_structures() {
         panic::halt("process smoke test could not release process-owned resources");
     }
     serial::write("Process structure smoke test passed.\n");
+}
+
+void initialize_minimal_elf(uint8_t* image) {
+    auto* header = reinterpret_cast<elf::Header*>(image);
+    header->identity[0] = 0x7f;
+    header->identity[1] = 'E';
+    header->identity[2] = 'L';
+    header->identity[3] = 'F';
+    header->identity[4] = elf::kClass64;
+    header->identity[5] = elf::kLittleEndian;
+    header->type = elf::kExecutable;
+    header->machine = elf::kMachineX86_64;
+    header->version = elf::kCurrentVersion;
+    header->entry = 0x400000;
+    header->program_header_offset = sizeof(elf::Header);
+    header->header_size = sizeof(elf::Header);
+    header->program_header_size = sizeof(elf::ProgramHeader);
+    header->program_header_count = 1;
+
+    auto* segment = reinterpret_cast<elf::ProgramHeader*>(image + sizeof(elf::Header));
+    segment->type = elf::kLoad;
+    segment->flags = elf::kReadable | elf::kExecutableFlag;
+    segment->offset = 0;
+    segment->virtual_address = 0x400000;
+    segment->file_size = 1;
+    segment->memory_size = virtual_memory::kPageSize;
+    segment->alignment = virtual_memory::kPageSize;
+}
+
+void test_malformed_elf_validation() {
+    alignas(8) uint8_t truncated[sizeof(elf::Header)] = {};
+    if(elf::validate(truncated, sizeof(truncated))) {
+        panic::halt("ELF validation accepted a truncated header");
+    }
+
+    alignas(8) uint8_t image[sizeof(elf::Header) + sizeof(elf::ProgramHeader)] = {};
+    initialize_minimal_elf(image);
+    auto* header = reinterpret_cast<elf::Header*>(image);
+    auto* segment = reinterpret_cast<elf::ProgramHeader*>(image + sizeof(elf::Header));
+
+    segment->file_size = 2;
+    segment->memory_size = 1;
+    if(elf::validate(image, sizeof(image))) {
+        panic::halt("ELF validation accepted p_filesz larger than p_memsz");
+    }
+
+    initialize_minimal_elf(image);
+    header->entry = 0x500000;
+    if(elf::validate(image, sizeof(image))) {
+        panic::halt("ELF validation accepted an entry point outside executable segments");
+    }
+
+    initialize_minimal_elf(image);
+    segment->virtual_address = 0x00007ffffffff000ULL;
+    segment->memory_size = virtual_memory::kPageSize * 2;
+    if(elf::validate(image, sizeof(image))) {
+        panic::halt("ELF validation accepted a segment crossing the user address limit");
+    }
+    serial::write("Malformed ELF validation smoke test passed.\n");
 }
 
 void test_process_address_spaces() {
@@ -603,6 +672,26 @@ bool prepare_real_elf_test_thread() {
     return true;
 }
 
+bool prepare_embedded_elf_thread(const uint8_t* image, const uint8_t* image_end) {
+    process::Process* process = nullptr;
+    kernel_thread::Thread* thread = nullptr;
+    const uint64_t image_size = static_cast<uint64_t>(image_end - image);
+    if(!loader::load(image, image_size, &process, &thread) || process == nullptr || thread == nullptr) {
+        return false;
+    }
+    return scheduler::enqueue(thread);
+}
+
+bool prepare_crash_test_thread(const uint8_t* image, const uint8_t* image_end) {
+    process::Process* process = nullptr;
+    kernel_thread::Thread* thread = nullptr;
+    const uint64_t image_size = static_cast<uint64_t>(image_end - image);
+    if(!loader::load(image, image_size, &process, &thread) || process == nullptr || thread == nullptr) {
+        return false;
+    }
+    return scheduler::enqueue(thread);
+}
+
 void preemption_test_entry(void* argument) {
     auto* test_argument = static_cast<PreemptionTestArgument*>(argument);
     auto* state = test_argument->state;
@@ -670,6 +759,15 @@ void prepare_scheduler_test() {
     if(!prepare_real_elf_test_thread()) {
         panic::halt("real ELF executable smoke test could not prepare its process");
     }
+    if(!prepare_embedded_elf_thread(user_program_prime_start, user_program_prime_end) ||
+       !prepare_embedded_elf_thread(user_program_second_start, user_program_second_end)) {
+        panic::halt("multiple ELF executable smoke tests could not prepare their processes");
+    }
+    if(!prepare_crash_test_thread(user_program_divzero_start, user_program_divzero_end) ||
+       !prepare_crash_test_thread(user_program_kernel_access_start, user_program_kernel_access_end) ||
+       !prepare_crash_test_thread(user_program_invalid_opcode_start, user_program_invalid_opcode_end)) {
+        panic::halt("crash ELF smoke tests could not prepare their processes");
+    }
 
     // Queue all participants as one transaction so the first scheduler decision cannot
     // observe an incomplete test population or start a thread during queue mutation.
@@ -699,6 +797,7 @@ void run(uintptr_t hhdm_offset) {
     kernel_heap::initialize();
     test_kernel_heap();
     test_process_structures();
+    test_malformed_elf_validation();
     if(!scheduler::initialize()) {
         panic::halt("scheduler smoke test could not initialize the scheduler");
     }

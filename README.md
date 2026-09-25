@@ -36,9 +36,11 @@ linking, or drivers beyond basic serial I/O.
 ```
 
 Limine and its protocol header are downloaded into `deps/` on the first build.
-The build also compiles `tests/user/basic.S` into `build/user/basic.elf` and
-embeds that real ELF image into the kernel's loader smoke test. Generated files
-go into `build/`.
+The build compiles the user ELF fixtures in `tests/user/`—including the basic,
+computed-prime, and second-program success cases plus intentional-crash
+programs—and embeds them into the kernel smoke tests. The kernel also tests
+malformed ELF metadata directly before scheduling user processes.
+Generated files go into `build/`.
 
 ## Recommended environment
 
@@ -71,12 +73,25 @@ Virtual memory mapping smoke test passed.
 Process address-space smoke test passed.
 Kernel heap smoke test passed.
 Process structure smoke test passed.
+Malformed ELF validation smoke test passed.
 IDT initialized.
 Interrupt controller: IOAPIC.
 Kernel thread stack and lifecycle smoke test passed.
 ELF loader process prepared.
 User-mode syscall smoke test passed.
 ELF loader smoke test passed.
+Real ELF program executed.
+Primes: 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97
+Second ELF program executed.
+Starting divide-by-zero test.
+EXCEPTION: Divide error (#0)
+User program fault; terminating thread ...
+Starting kernel-space access test.
+EXCEPTION: Page fault (#14)
+User program fault; terminating thread ...
+Starting invalid-opcode test.
+EXCEPTION: Invalid opcode (#6)
+User program fault; terminating thread ...
 Round-robin scheduler smoke test passed.
 Timer preemption smoke test passed.
 Waiting-thread sleep smoke test passed.

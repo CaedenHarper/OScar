@@ -3,7 +3,8 @@ SHELL := /bin/sh
 
 BUILD_DIR := build
 USER_BUILD_DIR := $(BUILD_DIR)/user
-USER_ELF := $(USER_BUILD_DIR)/basic.elf
+USER_PROGRAM_NAMES := basic prime second divzero kernel_access invalid_opcode
+USER_ELFS := $(addprefix $(USER_BUILD_DIR)/,$(addsuffix .elf,$(USER_PROGRAM_NAMES)))
 DEPS_DIR := deps
 ISO_ROOT := $(BUILD_DIR)/iso_root
 KERNEL := $(BUILD_DIR)/kernel.elf
@@ -109,11 +110,20 @@ $(BUILD_DIR)/asm/%.o: src/%.S | $(BUILD_DIR)
 	mkdir -p $(dir $@)
 	$(CXX) $(ASFLAGS) -c $< -o $@
 
-$(USER_ELF): tests/user/basic.S tests/user/linker.ld | $(USER_BUILD_DIR)
-	$(CXX) -target x86_64-unknown-none-elf -ffreestanding -fno-pie -mno-red-zone -c tests/user/basic.S -o $(USER_BUILD_DIR)/basic.o
-	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/basic.o -o $@
+$(USER_BUILD_DIR)/%.elf: tests/user/%.S tests/user/linker.ld | $(USER_BUILD_DIR)
+	$(CXX) -target x86_64-unknown-none-elf -ffreestanding -fno-pie -mno-red-zone -c $< -o $(USER_BUILD_DIR)/$*.o
+	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/$*.o -o $@
 
-$(BUILD_DIR)/asm/tests/user_program.o: $(USER_ELF)
+$(USER_BUILD_DIR)/prime.elf: tests/user/prime.c tests/user/linker.ld | $(USER_BUILD_DIR)
+	$(CXX) -x c -target x86_64-unknown-none-elf -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c $< -o $(USER_BUILD_DIR)/prime.o
+	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/prime.o -o $@
+
+$(BUILD_DIR)/asm/tests/user_program.o: $(USER_BUILD_DIR)/basic.elf
+$(BUILD_DIR)/asm/tests/user_program_prime.o: $(USER_BUILD_DIR)/prime.elf
+$(BUILD_DIR)/asm/tests/user_program_second.o: $(USER_BUILD_DIR)/second.elf
+$(BUILD_DIR)/asm/tests/user_program_divzero.o: $(USER_BUILD_DIR)/divzero.elf
+$(BUILD_DIR)/asm/tests/user_program_kernel_access.o: $(USER_BUILD_DIR)/kernel_access.elf
+$(BUILD_DIR)/asm/tests/user_program_invalid_opcode.o: $(USER_BUILD_DIR)/invalid_opcode.elf
 
 $(KERNEL): $(OBJECTS) linker.ld
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(OBJECTS) -o $@
