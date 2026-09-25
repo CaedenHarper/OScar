@@ -28,11 +28,26 @@ bool enqueue(kernel_thread::Thread* thread);
 bool remove(kernel_thread::Thread* thread);
 
 /**
+ * Put the current thread into State::Waiting until wake_tick. A deadline at or before
+ * the current timer tick returns immediately; interrupts are disabled while scheduler
+ * queues are updated. The current thread must be scheduler-managed.
+ */
+void sleep_until(uint64_t wake_tick);
+
+/**
+ * Put the current thread into State::Waiting for the requested number of timer ticks.
+ * sleep(0) is defined as yield(), and therefore returns after another runnable thread
+ * may have executed. The current thread must be scheduler-managed.
+ */
+void sleep(uint64_t ticks);
+
+/**
  * Account for one timer tick and request a reschedule when the current
  * thread's time slice expires. Called from the timer interrupt with
- * interrupts already disabled; it does not switch contexts itself.
+ * interrupts already disabled; it wakes expired threads but does not switch contexts
+ * itself.
  */
-void timer_tick();
+void timer_tick(uint64_t current_tick);
 
 /**
  * Return the currently running thread, or nullptr before start() is called.

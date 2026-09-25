@@ -19,10 +19,13 @@ struct Thread {
     virtual_memory::AddressSpace* address_space;
     context::CpuContext* return_context;
     Thread* ready_next;
+    Thread* waiting_next;
     bool queued;
+    bool waiting;
     bool scheduler_managed;
     bool idle;
     uint32_t time_slice_remaining;
+    uint64_t wake_tick;
 };
 
 } // namespace kernel_thread

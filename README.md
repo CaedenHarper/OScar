@@ -5,8 +5,8 @@ the kernel initializes COM1, reads the Limine-provided memory map, initializes
 a physical page allocator, manages kernel and process address-space mappings,
 validates user memory ranges, installs an IDT and PIT timer interrupts, provides
 a kernel heap, creates and runs kernel-thread stacks, schedules kernel threads
-cooperatively and from timer interrupts, prints diagnostics to QEMU's serial
-console, and idles.
+cooperatively and from timer interrupts, supports tick-based waiting and waking,
+prints diagnostics to QEMU's serial console, and idles.
 
 This is a kernel seed, not yet an operating system. It has no user mode,
 filesystem, or drivers beyond basic serial I/O.
@@ -62,6 +62,7 @@ Kernel heap smoke test passed.
 Kernel thread stack and lifecycle smoke test passed.
 Round-robin scheduler smoke test passed.
 Timer preemption smoke test passed.
+Waiting-thread sleep smoke test passed.
 IDT initialized.
 Interrupt controller: IOAPIC.
 Timer interrupt smoke test passed.

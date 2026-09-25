@@ -6,6 +6,9 @@
 #include "scheduler_internal.hpp"
 #include "thread.hpp"
 #include "thread_internal.hpp"
+#include "timer.hpp"
+
+#include <stdint.h>
 
 namespace scheduler {
 
@@ -14,6 +17,7 @@ namespace {
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables) scheduler state must survive context switches
 kernel_thread::Thread* g_ready_head = nullptr;
 kernel_thread::Thread* g_ready_tail = nullptr;
+kernel_thread::Thread* g_waiting_head = nullptr;
 kernel_thread::Thread* g_current_thread = nullptr;
 kernel_thread::Thread* g_idle_thread = nullptr;
 context::CpuContext g_bootstrap_context = {};
@@ -67,6 +71,34 @@ kernel_thread::Thread* dequeue_locked() {
     return thread;
 }
 
+void enqueue_waiting_locked(kernel_thread::Thread* thread, uint64_t wake_tick) {
+    thread->wake_tick = wake_tick;
+    thread->waiting = true;
+    thread->waiting_next = nullptr;
+
+    // Keep the earliest deadline at the head so each timer tick examines only the
+    // expired prefix instead of scanning every waiting thread.
+    kernel_thread::Thread** link = &g_waiting_head;
+    while(*link != nullptr && (*link)->wake_tick <= wake_tick) {
+        link = &(*link)->waiting_next;
+    }
+    thread->waiting_next = *link;
+    *link = thread;
+}
+
+void wake_expired_locked(uint64_t current_tick) {
+    while(g_waiting_head != nullptr && g_waiting_head->wake_tick <= current_tick) {
+        auto* thread = g_waiting_head;
+        g_waiting_head = thread->waiting_next;
+        thread->waiting_next = nullptr;
+        thread->waiting = false;
+        thread->state = kernel_thread::State::Ready;
+        // A waiting thread is converted back to Ready before entering the same queue used
+        // by ordinary yields, preserving one FIFO scheduling policy after wake-up.
+        (void)enqueue_locked(thread);
+    }
+}
+
 kernel_thread::Thread* next_locked() {
     // The idle thread is a real context rather than a null sentinel, so the scheduler
     // always has a valid stack to switch to when all ordinary threads are waiting.
@@ -90,7 +122,11 @@ void schedule(bool restore_interrupts) {
     interrupts::disable();
     auto* current_thread = g_current_thread;
     auto* next_thread = current_thread;
-    if(current_thread != g_idle_thread && g_ready_head != nullptr) {
+    if(current_thread == g_idle_thread && g_ready_head != nullptr) {
+        // The idle thread is not put on the ready queue. When a timer wakes a thread,
+        // select that queued thread explicitly instead of treating idle as runnable work.
+        next_thread = next_locked();
+    } else if(current_thread != g_idle_thread && g_ready_head != nullptr) {
         current_thread->state = kernel_thread::State::Ready;
         if(!enqueue_locked(current_thread)) {
             current_thread->state = kernel_thread::State::Running;
@@ -184,8 +220,16 @@ kernel_thread::Thread* idle() {
     return g_idle_thread;
 }
 
-void timer_tick() {
-    if(!g_initialized || !g_started || g_current_thread == nullptr || g_current_thread == g_idle_thread) {
+void timer_tick(uint64_t current_tick) {
+    if(!g_initialized || !g_started || g_current_thread == nullptr) {
+        return;
+    }
+
+    wake_expired_locked(current_tick);
+    if(g_current_thread == g_idle_thread) {
+        if(g_ready_head != nullptr) {
+            g_reschedule_pending = true;
+        }
         return;
     }
 
@@ -205,6 +249,44 @@ void yield() {
         return;
     }
     schedule(true);
+}
+
+void sleep_until(uint64_t wake_tick) {
+    if(!g_initialized || !g_started || g_current_thread == nullptr || g_current_thread == g_idle_thread) {
+        return;
+    }
+
+    interrupts::disable();
+    const uint64_t current_tick = timer::ticks();
+    if(wake_tick <= current_tick) {
+        // An expired deadline must not enter the wait queue; returning immediately keeps
+        // callers from sleeping forever when a timeout was computed before this call.
+        interrupts::enable();
+        return;
+    }
+
+    auto* current_thread = g_current_thread;
+    enqueue_waiting_locked(current_thread, wake_tick);
+    current_thread->state = kernel_thread::State::Waiting;
+    auto* next_thread = next_locked();
+    next_thread->state = kernel_thread::State::Running;
+    reset_time_slice(next_thread);
+    g_current_thread = next_thread;
+    context::switch_context(&current_thread->cpu_context, &next_thread->cpu_context);
+    interrupts::enable();
+}
+
+void sleep(uint64_t ticks) {
+    if(ticks == 0) {
+        // Zero-duration sleep is a cooperative yield rather than a queue insertion with
+        // a deadline that is already due.
+        yield();
+        return;
+    }
+
+    const uint64_t current_tick = timer::ticks();
+    const uint64_t wake_tick = ticks > UINT64_MAX - current_tick ? UINT64_MAX : current_tick + ticks;
+    sleep_until(wake_tick);
 }
 
 [[noreturn]] void start() {

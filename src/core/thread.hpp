@@ -71,4 +71,7 @@ uintptr_t stack_top(const Thread* thread);
 /** Return the non-owning address-space reference associated with the thread. */
 virtual_memory::AddressSpace* address_space(const Thread* thread);
 
+/** Return the timer tick at which the thread is scheduled to leave State::Waiting. */
+uint64_t wake_tick(const Thread* thread);
+
 } // namespace kernel_thread

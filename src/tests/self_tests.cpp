@@ -40,6 +40,7 @@ constexpr uint64_t kTimerTestLoopLimit = 100000000;
 constexpr uint64_t kContextStackSize = 4096;
 constexpr uint64_t kThreadStackSize = 8192;
 constexpr uint64_t kPreemptionDurationTicks = 15;
+constexpr uint64_t kSleepTestDurationTicks = 2;
 
 struct ContextTestState {
     context::CpuContext main_context;
@@ -330,6 +331,24 @@ struct PreemptionTestArgument {
     uint64_t id;
 };
 
+struct WaitingTestState {
+    volatile uint8_t expired_deadline_returned;
+};
+
+void waiting_test_entry(void* argument) {
+    auto* state = static_cast<WaitingTestState*>(argument);
+    scheduler::sleep(0);
+    scheduler::sleep_until(timer::ticks());
+    state->expired_deadline_returned = 1;
+
+    const uint64_t wake_tick = timer::ticks() + kSleepTestDurationTicks;
+    scheduler::sleep_until(wake_tick);
+    if(timer::ticks() < wake_tick || state->expired_deadline_returned == 0) {
+        panic::halt("waiting-thread smoke test resumed before its deadline");
+    }
+    serial::write("Waiting-thread sleep smoke test passed.\n");
+}
+
 void preemption_test_entry(void* argument) {
     auto* test_argument = static_cast<PreemptionTestArgument*>(argument);
     auto* state = test_argument->state;
@@ -361,6 +380,7 @@ void prepare_scheduler_test() {
     static PreemptionTestState preemption_state = {};
     static PreemptionTestArgument preemption_first_argument = {&preemption_state, 1};
     static PreemptionTestArgument preemption_second_argument = {&preemption_state, 2};
+    static WaitingTestState waiting_state = {};
 
     state.first = kernel_thread::create(scheduler_test_entry, &first_argument);
     state.second = kernel_thread::create(scheduler_test_entry, &second_argument);
@@ -374,11 +394,17 @@ void prepare_scheduler_test() {
         panic::halt("timer scheduler smoke test could not create its threads");
     }
 
+    auto* waiting_thread = kernel_thread::create(waiting_test_entry, &waiting_state);
+    if(waiting_thread == nullptr) {
+        panic::halt("waiting-thread smoke test could not create its thread");
+    }
+
     // Queue all participants as one transaction so the first scheduler decision cannot
     // observe an incomplete test population or start a thread during queue mutation.
     interrupts::disable();
     const bool queued = scheduler::enqueue(state.first) && scheduler::enqueue(state.second) &&
-                        scheduler::enqueue(preemption_first) && scheduler::enqueue(preemption_second);
+                        scheduler::enqueue(preemption_first) && scheduler::enqueue(preemption_second) &&
+                        scheduler::enqueue(waiting_thread);
     interrupts::enable();
     if(!queued) {
         panic::halt("scheduler smoke test could not queue its threads");

@@ -43,6 +43,6 @@ extern "C" void timer_irq_handler() {
     g_ticks = current_ticks + 1;
     // Let the scheduler observe the tick before acknowledging the controller; the IRQ
     // exit hook then performs any requested switch after the hardware is fully serviced.
-    scheduler::timer_tick();
+    scheduler::timer_tick(g_ticks);
     interrupt_controller::end_of_interrupt(0);
 }

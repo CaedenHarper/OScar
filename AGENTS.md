@@ -89,6 +89,19 @@ feature errors rather than source lint diagnostics.
 Keep C++ source formatted according to `.clang-format`. Assembly should retain
 the existing GNU assembler style and is not passed through clang-format.
 
+## Commenting complex code
+
+Add comments when a branch, invariant, ordering constraint, or low-level
+implementation choice is not obvious from the code itself. Explain why the
+choice exists and what incorrect behavior it prevents—for example, why a
+context switch is skipped when the selected thread is already current, or why
+interrupts must remain disabled while scheduler queues are updated.
+
+Do not add comments that merely restate straightforward code. Comments should
+capture design decisions, assumptions, ownership rules, hardware constraints,
+failure-rollback reasoning, or other context that would otherwise be lost when
+the implementation is changed.
+
 ## API documentation requirement
 
 Every new public function must have API documentation in its header file.

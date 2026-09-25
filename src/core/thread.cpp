@@ -72,10 +72,13 @@ Thread* create(context::Entry entry, void* argument, uint64_t stack_size, virtua
     thread->address_space = address_space;
     thread->return_context = nullptr;
     thread->ready_next = nullptr;
+    thread->waiting_next = nullptr;
     thread->queued = false;
+    thread->waiting = false;
     thread->scheduler_managed = false;
     thread->idle = false;
     thread->time_slice_remaining = 0;
+    thread->wake_tick = 0;
 
     if(!context::initialize(&thread->cpu_context, thread->stack_top, thread_bootstrap, thread)) {
         // Context construction is the final fallible step; release both allocations while
@@ -139,6 +142,10 @@ uintptr_t stack_top(const Thread* thread) {
 
 virtual_memory::AddressSpace* address_space(const Thread* thread) {
     return thread == nullptr ? nullptr : thread->address_space;
+}
+
+uint64_t wake_tick(const Thread* thread) {
+    return thread == nullptr ? 0 : thread->wake_tick;
 }
 
 } // namespace kernel_thread
