@@ -39,6 +39,7 @@ constexpr uint64_t kRequiredTimerTicks = 3;
 constexpr uint64_t kTimerTestLoopLimit = 100000000;
 constexpr uint64_t kContextStackSize = 4096;
 constexpr uint64_t kThreadStackSize = 8192;
+constexpr uint64_t kPreemptionDurationTicks = 15;
 
 struct ContextTestState {
     context::CpuContext main_context;
@@ -311,10 +312,47 @@ void scheduler_test_entry(void* argument) {
     }
 }
 
+struct PreemptionTestState {
+    volatile uint8_t first_completed;
+    volatile uint8_t second_started;
+};
+
+struct PreemptionTestArgument {
+    PreemptionTestState* state;
+    uint64_t id;
+};
+
+void preemption_test_entry(void* argument) {
+    auto* test_argument = static_cast<PreemptionTestArgument*>(argument);
+    auto* state = test_argument->state;
+    const uint64_t start_tick = timer::ticks();
+    if(test_argument->id == 2) {
+        if(state->first_completed != 0) {
+            panic::halt("timer scheduler smoke test did not preempt the first thread");
+        }
+        state->second_started = 1;
+    }
+
+    while(timer::ticks() < start_tick + kPreemptionDurationTicks) {
+        asm volatile("pause");
+    }
+
+    if(test_argument->id == 1) {
+        state->first_completed = 1;
+    } else if(state->second_started == 0) {
+        panic::halt("timer scheduler smoke test did not start the second thread");
+    } else {
+        serial::write("Timer preemption smoke test passed.\n");
+    }
+}
+
 void prepare_scheduler_test() {
     static SchedulerTestState state = {};
     static SchedulerTestArgument first_argument = {&state, 1};
     static SchedulerTestArgument second_argument = {&state, 2};
+    static PreemptionTestState preemption_state = {};
+    static PreemptionTestArgument preemption_first_argument = {&preemption_state, 1};
+    static PreemptionTestArgument preemption_second_argument = {&preemption_state, 2};
 
     state.first = kernel_thread::create(scheduler_test_entry, &first_argument);
     state.second = kernel_thread::create(scheduler_test_entry, &second_argument);
@@ -322,8 +360,15 @@ void prepare_scheduler_test() {
         panic::halt("scheduler smoke test could not create its threads");
     }
 
+    auto* preemption_first = kernel_thread::create(preemption_test_entry, &preemption_first_argument);
+    auto* preemption_second = kernel_thread::create(preemption_test_entry, &preemption_second_argument);
+    if(preemption_first == nullptr || preemption_second == nullptr) {
+        panic::halt("timer scheduler smoke test could not create its threads");
+    }
+
     interrupts::disable();
-    const bool queued = scheduler::enqueue(state.first) && scheduler::enqueue(state.second);
+    const bool queued = scheduler::enqueue(state.first) && scheduler::enqueue(state.second) &&
+                        scheduler::enqueue(preemption_first) && scheduler::enqueue(preemption_second);
     interrupts::enable();
     if(!queued) {
         panic::halt("scheduler smoke test could not queue its threads");

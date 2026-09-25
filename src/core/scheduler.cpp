@@ -19,6 +19,7 @@ kernel_thread::Thread* g_idle_thread = nullptr;
 context::CpuContext g_bootstrap_context = {};
 bool g_initialized = false;
 bool g_started = false;
+bool g_reschedule_pending = false;
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
 [[noreturn]] void park() {
@@ -71,6 +72,43 @@ kernel_thread::Thread* next_locked() {
     return thread == nullptr ? g_idle_thread : thread;
 }
 
+void reset_time_slice(kernel_thread::Thread* thread) {
+    if(thread != nullptr && thread != g_idle_thread) {
+        thread->time_slice_remaining = kDefaultTimeSliceTicks;
+    }
+}
+
+void schedule(bool restore_interrupts) {
+    if(!g_initialized || !g_started || g_current_thread == nullptr) {
+        return;
+    }
+
+    interrupts::disable();
+    auto* current_thread = g_current_thread;
+    auto* next_thread = current_thread;
+    if(current_thread != g_idle_thread && g_ready_head != nullptr) {
+        current_thread->state = kernel_thread::State::Ready;
+        if(!enqueue_locked(current_thread)) {
+            current_thread->state = kernel_thread::State::Running;
+            if(restore_interrupts) {
+                interrupts::enable();
+            }
+            return;
+        }
+        next_thread = next_locked();
+    }
+
+    if(next_thread != current_thread) {
+        next_thread->state = kernel_thread::State::Running;
+        reset_time_slice(next_thread);
+        g_current_thread = next_thread;
+        context::switch_context(&current_thread->cpu_context, &next_thread->cpu_context);
+    }
+    if(restore_interrupts) {
+        interrupts::enable();
+    }
+}
+
 } // namespace
 
 bool initialize() {
@@ -99,6 +137,7 @@ bool enqueue(kernel_thread::Thread* thread) {
         return false;
     }
     thread->scheduler_managed = true;
+    reset_time_slice(thread);
     return true;
 }
 
@@ -137,30 +176,25 @@ kernel_thread::Thread* idle() {
     return g_idle_thread;
 }
 
-void yield() {
+void timer_tick() {
     if(!g_initialized || !g_started || g_current_thread == nullptr || g_current_thread == g_idle_thread) {
         return;
     }
 
-    interrupts::disable();
-    auto* current_thread = g_current_thread;
-    auto* next_thread = current_thread;
-    if(g_ready_head != nullptr) {
-        current_thread->state = kernel_thread::State::Ready;
-        if(!enqueue_locked(current_thread)) {
-            current_thread->state = kernel_thread::State::Running;
-            interrupts::enable();
-            return;
-        }
-        next_thread = next_locked();
+    if(g_current_thread->time_slice_remaining > 0) {
+        --g_current_thread->time_slice_remaining;
     }
+    if(g_current_thread->time_slice_remaining == 0) {
+        g_current_thread->time_slice_remaining = kDefaultTimeSliceTicks;
+        g_reschedule_pending = true;
+    }
+}
 
-    if(next_thread != current_thread) {
-        next_thread->state = kernel_thread::State::Running;
-        g_current_thread = next_thread;
-        context::switch_context(&current_thread->cpu_context, &next_thread->cpu_context);
+void yield() {
+    if(!g_initialized || !g_started || g_current_thread == nullptr || g_current_thread == g_idle_thread) {
+        return;
     }
-    interrupts::enable();
+    schedule(true);
 }
 
 [[noreturn]] void start() {
@@ -172,6 +206,7 @@ void yield() {
     g_started = true;
     auto* next_thread = next_locked();
     next_thread->state = kernel_thread::State::Running;
+    reset_time_slice(next_thread);
     g_current_thread = next_thread;
     context::switch_context(&g_bootstrap_context, &next_thread->cpu_context);
     park();
@@ -186,9 +221,19 @@ void yield() {
     thread->state = kernel_thread::State::Terminated;
     auto* next_thread = next_locked();
     next_thread->state = kernel_thread::State::Running;
+    reset_time_slice(next_thread);
     g_current_thread = next_thread;
     context::switch_context(&thread->cpu_context, &next_thread->cpu_context);
     park();
+}
+
+extern "C" void scheduler_interrupt_exit() {
+    if(!g_reschedule_pending) {
+        return;
+    }
+
+    g_reschedule_pending = false;
+    schedule(false);
 }
 
 } // namespace scheduler

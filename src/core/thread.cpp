@@ -67,6 +67,7 @@ Thread* create(context::Entry entry, void* argument, uint64_t stack_size, virtua
     thread->queued = false;
     thread->scheduler_managed = false;
     thread->idle = false;
+    thread->time_slice_remaining = 0;
 
     if(!context::initialize(&thread->cpu_context, thread->stack_top, thread_bootstrap, thread)) {
         kernel_heap::free(stack);

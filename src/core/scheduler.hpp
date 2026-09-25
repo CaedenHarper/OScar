@@ -2,7 +2,11 @@
 
 #include "thread.hpp"
 
+#include <stdint.h>
+
 namespace scheduler {
+
+constexpr uint32_t kDefaultTimeSliceTicks = 5;
 
 /**
  * Initialize the single-CPU scheduler and create its idle thread. The kernel
@@ -22,6 +26,13 @@ bool enqueue(kernel_thread::Thread* thread);
  * and in State::Ready. Interrupts must be disabled by the caller.
  */
 bool remove(kernel_thread::Thread* thread);
+
+/**
+ * Account for one timer tick and request a reschedule when the current
+ * thread's time slice expires. Called from the timer interrupt with
+ * interrupts already disabled; it does not switch contexts itself.
+ */
+void timer_tick();
 
 /**
  * Return the currently running thread, or nullptr before start() is called.

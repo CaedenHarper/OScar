@@ -1,6 +1,7 @@
 .section .text
 
 .extern timer_irq_handler
+.extern scheduler_interrupt_exit
 
 .global irq0
 .type irq0, @function
@@ -22,6 +23,7 @@ irq0:
     pushq %r14
     pushq %r15
     call timer_irq_handler
+    call scheduler_interrupt_exit
     popq %r15
     popq %r14
     popq %r13

@@ -2,6 +2,7 @@
 
 #include "interrupt_controller.hpp"
 #include "pit.hpp"
+#include "scheduler.hpp"
 
 #include <stdint.h>
 
@@ -40,5 +41,6 @@ uint32_t frequency_hz() {
 extern "C" void timer_irq_handler() {
     const uint64_t current_ticks = g_ticks;
     g_ticks = current_ticks + 1;
+    scheduler::timer_tick();
     interrupt_controller::end_of_interrupt(0);
 }

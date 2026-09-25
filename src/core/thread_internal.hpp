@@ -22,6 +22,7 @@ struct Thread {
     bool queued;
     bool scheduler_managed;
     bool idle;
+    uint32_t time_slice_remaining;
 };
 
 } // namespace kernel_thread
