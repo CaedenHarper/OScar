@@ -384,6 +384,11 @@ bool activate(const AddressSpace* address_space) {
     return true;
 }
 
+bool is_active(const AddressSpace* address_space) {
+    return address_space != nullptr && address_space->root_physical != 0 &&
+           address_space->root_physical == g_active_address_space.root_physical;
+}
+
 const AddressSpace* kernel_address_space() {
     return &g_kernel_address_space;
 }

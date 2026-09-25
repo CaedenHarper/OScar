@@ -8,8 +8,8 @@ and QEMU provides the primary development and test environment. The kernel
 initializes COM1 serial output, reads the Limine memory map, manages physical
 pages and basic virtual-memory mappings, provides a kernel heap, installs an
 Interrupt Descriptor Table and hardware timer interrupts, provides kernel
-synchronization primitives, runs boot-time smoke tests, reports exception
-register state, and halts.
+synchronization primitives and process structures, runs boot-time smoke tests,
+reports exception register state, and halts.
 
 This is a bare-metal kernel rather than a hosted application. The normal C++
 runtime, standard library, exceptions, RTTI, and operating-system services are

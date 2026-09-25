@@ -6,6 +6,7 @@
 #include "memory.hpp"
 #include "mutex.hpp"
 #include "panic.hpp"
+#include "process.hpp"
 #include "scheduler.hpp"
 #include "serial.hpp"
 #include "spinlock.hpp"
@@ -49,6 +50,8 @@ struct ContextTestState {
     context::CpuContext thread_context;
     volatile uint64_t stage;
 };
+
+void thread_test_entry(void* argument);
 
 void context_test_entry(void* argument) {
     auto* state = static_cast<ContextTestState*>(argument);
@@ -127,6 +130,35 @@ void test_kernel_heap() {
         panic::halt("kernel heap smoke test accepted a zero-sized allocation");
     }
     serial::write("Kernel heap smoke test passed.\n");
+}
+
+void test_process_structures() {
+    auto* first_process = process::create();
+    auto* second_process = process::create();
+    if(first_process == nullptr || second_process == nullptr || process::id(first_process) == 0 ||
+       process::id(first_process) == process::id(second_process) ||
+       process::state(first_process) != process::State::New || process::thread_count(first_process) != 0 ||
+       process::address_space(first_process) == nullptr) {
+        panic::halt("process smoke test could not create independent processes");
+    }
+
+    auto* first_thread = kernel_thread::create(first_process, thread_test_entry, nullptr, kThreadStackSize);
+    auto* second_thread = kernel_thread::create(first_process, thread_test_entry, nullptr, kThreadStackSize);
+    if(first_thread == nullptr || second_thread == nullptr ||
+       process::state(first_process) != process::State::Running || process::thread_count(first_process) != 2 ||
+       kernel_thread::owner_process(first_thread) != first_process ||
+       kernel_thread::address_space(first_thread) != process::address_space(first_process) ||
+       process::destroy(first_process)) {
+        panic::halt("process smoke test could not associate threads with a process");
+    }
+
+    if(!kernel_thread::destroy(first_thread) || process::thread_count(first_process) != 1 ||
+       !kernel_thread::destroy(second_thread) || process::thread_count(first_process) != 0 ||
+       process::state(first_process) != process::State::Terminated || !process::destroy(first_process) ||
+       !process::destroy(second_process)) {
+        panic::halt("process smoke test could not release process-owned resources");
+    }
+    serial::write("Process structure smoke test passed.\n");
 }
 
 void test_process_address_spaces() {
@@ -478,6 +510,7 @@ void run(uintptr_t hhdm_offset) {
     // on the virtual-memory and physical-page allocators being ready first.
     kernel_heap::initialize();
     test_kernel_heap();
+    test_process_structures();
     if(!scheduler::initialize()) {
         panic::halt("scheduler smoke test could not initialize the scheduler");
     }

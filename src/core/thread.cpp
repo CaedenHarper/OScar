@@ -2,6 +2,7 @@
 
 #include "context.hpp"
 #include "kernel_heap.hpp"
+#include "process_internal.hpp"
 #include "scheduler_internal.hpp"
 #include "thread_internal.hpp"
 
@@ -32,6 +33,9 @@ void thread_bootstrap(void* argument) {
         scheduler::thread_exit(thread);
     }
 
+    if(!process::detach_thread(thread)) {
+        park_terminated_thread();
+    }
     thread->state = State::Terminated;
 
     context::switch_context(&thread->cpu_context, thread->return_context);
@@ -70,6 +74,7 @@ Thread* create(context::Entry entry, void* argument, uint64_t stack_size, virtua
     thread->entry = entry;
     thread->argument = argument;
     thread->address_space = address_space;
+    thread->owner_process = nullptr;
     thread->return_context = nullptr;
     thread->ready_next = nullptr;
     thread->waiting_next = nullptr;
@@ -81,6 +86,7 @@ Thread* create(context::Entry entry, void* argument, uint64_t stack_size, virtua
     thread->time_slice_remaining = 0;
     thread->wake_tick = 0;
     thread->wait_reason = WaitReason::None;
+    thread->process_next = nullptr;
 
     if(!context::initialize(&thread->cpu_context, thread->stack_top, thread_bootstrap, thread)) {
         // Context construction is the final fallible step; release both allocations while
@@ -100,10 +106,33 @@ Thread* create(context::Entry entry, void* argument, uint64_t stack_size) {
     return create(entry, argument, stack_size, nullptr);
 }
 
+Thread* create(process::Process* process, context::Entry entry, void* argument, uint64_t stack_size) {
+    if(process == nullptr) {
+        return nullptr;
+    }
+
+    auto* thread = create(entry, argument, stack_size, &process->address_space);
+    if(thread == nullptr || !process::attach_thread(process, thread)) {
+        if(thread != nullptr) {
+            (void)destroy(thread);
+        }
+        return nullptr;
+    }
+    return thread;
+}
+
+Thread* create(process::Process* process, context::Entry entry, void* argument) {
+    return create(process, entry, argument, kDefaultStackSize);
+}
+
 bool destroy(Thread* thread) {
     // Queued or scheduler-managed threads may still be referenced by scheduler state;
     // freeing them here would leave an intrusive queue link pointing into reclaimed heap.
     if(thread == nullptr || thread->state == State::Running || thread->queued || thread->scheduler_managed) {
+        return false;
+    }
+
+    if(!process::detach_thread(thread)) {
         return false;
     }
 
@@ -144,6 +173,10 @@ uintptr_t stack_top(const Thread* thread) {
 
 virtual_memory::AddressSpace* address_space(const Thread* thread) {
     return thread == nullptr ? nullptr : thread->address_space;
+}
+
+process::Process* owner_process(const Thread* thread) {
+    return thread == nullptr ? nullptr : thread->owner_process;
 }
 
 uint64_t wake_tick(const Thread* thread) {

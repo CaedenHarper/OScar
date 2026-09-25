@@ -27,6 +27,7 @@ struct Thread {
     context::Entry entry;
     void* argument;
     virtual_memory::AddressSpace* address_space;
+    process::Process* owner_process;
     context::CpuContext* return_context;
     Thread* ready_next;
     Thread* waiting_next;
@@ -38,6 +39,7 @@ struct Thread {
     uint32_t time_slice_remaining;
     uint64_t wake_tick;
     WaitReason wait_reason;
+    Thread* process_next;
 };
 
 } // namespace kernel_thread

@@ -2,7 +2,7 @@
 
 A deliberately small freestanding C++ kernel. Limine loads the ELF kernel, and
 the kernel initializes COM1, reads the Limine-provided memory map, initializes
-a physical page allocator, manages kernel and process address-space mappings,
+a physical page allocator, manages kernel and process address-space structures and mappings,
 validates user memory ranges, installs an IDT and PIT timer interrupts, provides
 a kernel heap, creates and runs kernel-thread stacks, schedules kernel threads
 cooperatively and from timer interrupts, supports tick-based waiting and waking,
@@ -62,6 +62,7 @@ Physical page allocator smoke test passed.
 Virtual memory mapping smoke test passed.
 Process address-space smoke test passed.
 Kernel heap smoke test passed.
+Process structure smoke test passed.
 Kernel thread stack and lifecycle smoke test passed.
 Round-robin scheduler smoke test passed.
 Timer preemption smoke test passed.

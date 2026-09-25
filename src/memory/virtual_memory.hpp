@@ -96,6 +96,9 @@ bool validate_user_range(
  */
 bool activate(const AddressSpace* address_space);
 
+/** Return whether address_space is the currently active translation root. */
+bool is_active(const AddressSpace* address_space);
+
 /*
  * Return the address space established by the bootloader and kernel
  * initialization. Its page tables are owned by Limine and must not be

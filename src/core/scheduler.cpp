@@ -3,6 +3,7 @@
 #include "context.hpp"
 #include "interrupts.hpp"
 #include "panic.hpp"
+#include "process_internal.hpp"
 #include "scheduler_internal.hpp"
 #include "thread.hpp"
 #include "thread_internal.hpp"
@@ -366,6 +367,9 @@ void sleep(uint64_t ticks) {
     }
 
     interrupts::disable();
+    if(!process::detach_thread(thread)) {
+        park();
+    }
     // A terminated thread cannot remain on its own stack: its stack may be reclaimed
     // later, so transfer directly to another scheduler-owned context before parking.
     thread->state = kernel_thread::State::Terminated;

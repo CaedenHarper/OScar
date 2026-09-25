@@ -8,6 +8,10 @@ namespace virtual_memory {
 struct AddressSpace;
 } // namespace virtual_memory
 
+namespace process {
+struct Process;
+} // namespace process
+
 namespace kernel_thread {
 
 using ThreadId = uint64_t;
@@ -40,6 +44,12 @@ Thread* create(context::Entry entry, void* argument, uint64_t stack_size);
  */
 Thread* create(context::Entry entry, void* argument, uint64_t stack_size, virtual_memory::AddressSpace* address_space);
 
+/** Create a thread associated with a process and its owned address space. */
+Thread* create(process::Process* process, context::Entry entry, void* argument, uint64_t stack_size);
+
+/** Create a process-associated thread using the default kernel stack size. */
+Thread* create(process::Process* process, context::Entry entry, void* argument);
+
 /**
  * Release a thread and its kernel stack. The thread must not be Running, and
  * the pointer must still refer to a live thread returned by create().
@@ -70,6 +80,9 @@ uintptr_t stack_top(const Thread* thread);
 
 /** Return the non-owning address-space reference associated with the thread. */
 virtual_memory::AddressSpace* address_space(const Thread* thread);
+
+/** Return the non-owning process reference associated with the thread. */
+process::Process* owner_process(const Thread* thread);
 
 /** Return the timer tick at which the thread is scheduled to leave State::Waiting. */
 uint64_t wake_tick(const Thread* thread);
