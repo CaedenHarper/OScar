@@ -1,8 +1,10 @@
 #include "self_tests.hpp"
 
 #include "context.hpp"
+#include "elf.hpp"
 #include "interrupts.hpp"
 #include "kernel_heap.hpp"
+#include "loader.hpp"
 #include "memory.hpp"
 #include "mutex.hpp"
 #include "panic.hpp"
@@ -528,6 +530,64 @@ bool prepare_user_test_thread() {
     return user_thread != nullptr && scheduler::enqueue(user_thread);
 }
 
+bool prepare_elf_test_thread() {
+    constexpr uintptr_t kEntry = 0x400100;
+    constexpr uintptr_t kMessageAddress = kEntry + 0x40;
+    constexpr uint64_t kProgramOffset = 0x100;
+    constexpr uint64_t kMessageOffset = 0x40;
+    constexpr char kMessage[] = "ELF loader smoke test passed.\n";
+    constexpr uint64_t kImageSize = 512;
+    alignas(8) static uint8_t image[kImageSize] = {};
+
+    auto* header = reinterpret_cast<elf::Header*>(image);
+    header->identity[0] = 0x7f;
+    header->identity[1] = 'E';
+    header->identity[2] = 'L';
+    header->identity[3] = 'F';
+    header->identity[4] = elf::kClass64;
+    header->identity[5] = elf::kLittleEndian;
+    header->type = elf::kExecutable;
+    header->machine = elf::kMachineX86_64;
+    header->version = elf::kCurrentVersion;
+    header->entry = kEntry;
+    header->program_header_offset = sizeof(elf::Header);
+    header->header_size = sizeof(elf::Header);
+    header->program_header_size = sizeof(elf::ProgramHeader);
+    header->program_header_count = 1;
+
+    auto* program_header = reinterpret_cast<elf::ProgramHeader*>(image + sizeof(elf::Header));
+    program_header->type = elf::kLoad;
+    program_header->flags = elf::kReadable | elf::kExecutableFlag;
+    program_header->offset = kProgramOffset;
+    program_header->virtual_address = kEntry;
+    program_header->file_size = kMessageOffset + sizeof(kMessage) - 1;
+    program_header->memory_size = virtual_memory::kPageSize;
+    program_header->alignment = virtual_memory::kPageSize;
+
+    uint8_t code[] = {
+        0xb8, 0, 0, 0,    0,    0x48, 0xbf, 0, 0, 0, 0,    0,    0,    0,    0, 0xbe, sizeof(kMessage) - 1,
+        0,    0, 0, 0xcd, 0x80, 0xb8, 0x01, 0, 0, 0, 0xcd, 0x80, 0xeb, 0xfe,
+    };
+    for(uint64_t index = 0; index < sizeof(code); ++index) {
+        image[kProgramOffset + index] = code[index];
+    }
+    for(uint64_t index = 0; index < sizeof(kMessageAddress); ++index) {
+        image[kProgramOffset + 7 + index] = static_cast<uint8_t>(kMessageAddress >> (index * 8U));
+    }
+    for(uint64_t index = 0; index < sizeof(kMessage) - 1; ++index) {
+        image[kProgramOffset + kMessageOffset + index] = static_cast<uint8_t>(kMessage[index]);
+    }
+
+    process::Process* process = nullptr;
+    kernel_thread::Thread* thread = nullptr;
+    if(!loader::load(image, sizeof(image), &process, &thread) || process == nullptr || thread == nullptr ||
+       !scheduler::enqueue(thread)) {
+        return false;
+    }
+    serial::write("ELF loader process prepared.\n");
+    return true;
+}
+
 void preemption_test_entry(void* argument) {
     auto* test_argument = static_cast<PreemptionTestArgument*>(argument);
     auto* state = test_argument->state;
@@ -588,6 +648,9 @@ void prepare_scheduler_test() {
 
     if(!prepare_user_test_thread()) {
         panic::halt("user-mode smoke test could not prepare its process");
+    }
+    if(!prepare_elf_test_thread()) {
+        panic::halt("ELF loader smoke test could not prepare its process");
     }
 
     // Queue all participants as one transaction so the first scheduler decision cannot

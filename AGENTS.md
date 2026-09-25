@@ -8,9 +8,10 @@ and QEMU provides the primary development and test environment. The kernel
 initializes COM1 serial output, reads the Limine memory map, manages physical
 pages and basic virtual-memory mappings, provides a kernel heap, installs the
 GDT/TSS, Interrupt Descriptor Table, and hardware timer interrupts, creates
-ring-3 user threads, handles an initial system-call ABI, provides kernel
-synchronization primitives and process structures, runs boot-time smoke tests,
-reports exception register state, and halts.
+ring-3 user threads, handles an initial system-call ABI, loads validated
+in-memory ELF64 executables, provides kernel synchronization primitives and
+process structures, runs boot-time smoke tests, reports exception register
+state, and halts.
 
 This is a bare-metal kernel rather than a hosted application. The normal C++
 runtime, standard library, exceptions, RTTI, and operating-system services are
@@ -34,6 +35,7 @@ The source tree is organized as follows:
 - `src/core/`: the kernel entry point, fatal error handling, processes, kernel
   and user threads, scheduler, and system calls.
 - `src/drivers/`: x86 port I/O, serial output, and timer/PIT support.
+- `src/exec/`: freestanding ELF64 validation and process image loading.
 - `src/interrupts/`: interrupt-controller routing and CPU interrupt helpers.
 - `src/memory/`: physical pages, virtual-memory mappings, user-memory copying,
   and kernel heap.
