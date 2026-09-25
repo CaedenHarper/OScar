@@ -11,6 +11,8 @@ KERNEL := $(BUILD_DIR)/kernel.elf
 ISO := $(BUILD_DIR)/barebones-kernel.iso
 CPP_SOURCES := $(wildcard src/*.cpp src/*/*.cpp src/*/*/*.cpp)
 ASM_SOURCES := $(wildcard src/*.S src/*/*.S src/*/*/*.S)
+LINT_CPP_FILES := $(shell find src -name '*.cpp' -o -name '*.hpp')
+LINT_USER_C_FILES := $(shell find tests/user -name '*.c')
 OBJECTS := $(patsubst src/%.cpp,$(BUILD_DIR)/%.o,$(CPP_SOURCES)) \
 	$(patsubst src/%.S,$(BUILD_DIR)/asm/%.o,$(ASM_SOURCES))
 
@@ -67,8 +69,8 @@ test-exception:
 
 lint:
 	bear --output compile_commands.json -- $(MAKE) clean all
-	clang-format --dry-run --Werror $$(find src -name '*.cpp' -o -name '*.hpp')
-	clang-tidy $$(find src -name '*.cpp' -o -name '*.hpp') --config-file=.clang-tidy --warnings-as-errors="*"
+	clang-format --dry-run --Werror $(LINT_CPP_FILES) $(LINT_USER_C_FILES)
+	clang-tidy $(LINT_CPP_FILES) $(LINT_USER_C_FILES) --config-file=.clang-tidy --warnings-as-errors="*"
 
 help:
 	@echo "make          Build the kernel ELF"

@@ -115,8 +115,8 @@ The repository keeps its editor, lint, and formatting configuration in
 
 ```sh
 bear --output compile_commands.json -- make clean all
-clang-format --dry-run --Werror $(find src -name '*.cpp' -o -name '*.hpp')
-clang-tidy $(find src -name '*.cpp' -o -name '*.hpp') --config-file=.clang-tidy --warnings-as-errors="*"
+clang-format --dry-run --Werror $(find src -name '*.cpp' -o -name '*.hpp') $(find tests/user -name '*.c')
+clang-tidy $(find src -name '*.cpp' -o -name '*.hpp') $(find tests/user -name '*.c') --config-file=.clang-tidy --warnings-as-errors="*"
 ```
 
 The repository-local equivalent is:
@@ -125,8 +125,9 @@ The repository-local equivalent is:
 make lint
 ```
 
-It regenerates `compile_commands.json`, formats all C++ sources, and runs
-clang-tidy with all diagnostics treated as errors.
+It regenerates `compile_commands.json`, formats kernel C++ and user C test
+sources, and runs clang-tidy over those files with all diagnostics treated as
+errors. User assembly fixtures are built but are not passed to these tools.
 
 If `clang-format` or `clang-tidy` is unavailable, use clangd's configured
 check mode for every C++ source file:

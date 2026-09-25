@@ -41,6 +41,9 @@ The source tree is organized as follows:
   and kernel heap.
 - `src/synchronization/`: spinlocks, wait queues, and blocking mutexes.
 - `src/tests/`: boot-time subsystem smoke tests; keep them out of `main.cpp`.
+  `self_tests.cpp` coordinates the suite, while `self_tests_*.cpp` group
+  context, memory/process, scheduler, synchronization, and user-mode tests.
+  `self_tests_internal.hpp` contains private cross-test declarations.
 - `tests/user/`: source and linker script for successful, computed-output, and
   intentional-crash user ELF smoke images. Malformed ELF metadata tests live in
   `src/tests/` because they exercise validation without loading an image.
@@ -76,11 +79,14 @@ Run the available C++ formatting and lint checks from the repository root:
 
 ```sh
 bear --output compile_commands.json -- make clean all
-clang-format --dry-run --Werror $(find src -name '*.cpp' -o -name '*.hpp')
-clang-tidy $(find src -name '*.cpp' -o -name '*.hpp') --config-file=.clang-tidy --warnings-as-errors="*"
+clang-format --dry-run --Werror $(find src -name '*.cpp' -o -name '*.hpp') $(find tests/user -name '*.c')
+clang-tidy $(find src -name '*.cpp' -o -name '*.hpp') $(find tests/user -name '*.c') --config-file=.clang-tidy --warnings-as-errors="*"
 ```
 
-The repository-local `make lint` target runs the same three commands.
+The repository-local `make lint` target runs the same three commands and also
+formats and lints freestanding C user-test sources under `tests/user/`. User
+assembly fixtures are compiled and embedded by the build but are not inputs to
+the C/C++ format or clang-tidy checks.
 
 These checks must pass. When a check reports a diagnostic, first determine
 whether it identifies a real defect. Fix real defects in the code. When a

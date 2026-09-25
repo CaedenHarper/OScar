@@ -1,6 +1,16 @@
 #include <stdint.h>
 
-static char output[512];
+// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables, cppcoreguidelines-avoid-magic-numbers,
+//             readability-magic-numbers, readability-math-missing-parentheses, bugprone-reserved-identifier,
+//             cert-dcl37-c, cert-dcl51-cpp)
+enum {
+    kOutputCapacity = 512,
+    kDecimalBase = 10,
+    kFirstPrimeCandidate = 2,
+    kLastPrimeCandidate = 97,
+};
+
+static char output[kOutputCapacity];
 static uint64_t output_length;
 
 static int is_prime(uint32_t value) {
@@ -23,8 +33,8 @@ static void append_number(uint32_t value) {
     char digits[3];
     uint32_t count = 0;
     do {
-        digits[count++] = (char)('0' + value % 10);
-        value /= 10;
+        digits[count++] = (char)('0' + (value % kDecimalBase));
+        value /= kDecimalBase;
     } while(value != 0);
 
     while(count != 0) {
@@ -53,7 +63,7 @@ void _start(void) {
     }
 
     int first = 1;
-    for(uint32_t value = 2; value <= 97; ++value) {
+    for(uint32_t value = kFirstPrimeCandidate; value <= kLastPrimeCandidate; ++value) {
         if(!is_prime(value)) {
             continue;
         }
@@ -68,3 +78,7 @@ void _start(void) {
     (void)write_output(output, output_length);
     exit_program();
 }
+
+// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables, cppcoreguidelines-avoid-magic-numbers,
+//           readability-magic-numbers, readability-math-missing-parentheses, bugprone-reserved-identifier,
+//           cert-dcl37-c, cert-dcl51-cpp)
