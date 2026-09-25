@@ -41,6 +41,8 @@ struct Thread {
     uint64_t wake_tick;
     WaitReason wait_reason;
     Thread* process_next;
+    process::Process* terminated_process;
+    Thread* reap_next;
 };
 
 } // namespace kernel_thread

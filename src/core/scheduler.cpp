@@ -4,6 +4,7 @@
 #include "gdt.hpp"
 #include "interrupts.hpp"
 #include "panic.hpp"
+#include "process.hpp"
 #include "process_internal.hpp"
 #include "scheduler_internal.hpp"
 #include "thread.hpp"
@@ -28,6 +29,7 @@ context::CpuContext g_bootstrap_context = {};
 bool g_initialized = false;
 bool g_started = false;
 bool g_reschedule_pending = false;
+kernel_thread::Thread* g_reap_head = nullptr;
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
 [[noreturn]] void park() {
@@ -130,12 +132,42 @@ void prepare_thread(kernel_thread::Thread* thread) {
     }
 }
 
+void reap_terminated_locked() {
+    while(g_reap_head != nullptr) {
+        auto* thread = g_reap_head;
+        auto* process = thread->terminated_process;
+        if(process != nullptr && !process::destroy(process)) {
+            // A process can only remain unreapable while its address space is active. Leave
+            // it queued so a later switch can retry without leaking the termination record.
+            return;
+        }
+
+        if(process != nullptr) {
+            // All threads are detached before a process can be destroyed. Clear the same
+            // process pointer from sibling termination records before freeing that process.
+            for(auto* candidate = g_reap_head; candidate != nullptr; candidate = candidate->reap_next) {
+                if(candidate->terminated_process == process) {
+                    candidate->terminated_process = nullptr;
+                }
+            }
+        }
+
+        g_reap_head = thread->reap_next;
+        thread->reap_next = nullptr;
+        thread->terminated_process = nullptr;
+        if(!kernel_thread::destroy(thread)) {
+            panic::halt("scheduler could not reap a terminated thread");
+        }
+    }
+}
+
 void schedule(bool restore_interrupts) {
     if(!g_initialized || !g_started || g_current_thread == nullptr) {
         return;
     }
 
     interrupts::disable();
+    reap_terminated_locked();
     auto* current_thread = g_current_thread;
     auto* next_thread = current_thread;
     if(current_thread == g_idle_thread && g_ready_head != nullptr) {
@@ -246,6 +278,7 @@ bool block_current(synchronization::WaitQueue* queue) {
     next_thread->state = kernel_thread::State::Running;
     prepare_thread(next_thread);
     reset_time_slice(next_thread);
+    reap_terminated_locked();
     g_current_thread = next_thread;
     context::switch_context(&current_thread->cpu_context, &next_thread->cpu_context);
     return true;
@@ -382,12 +415,16 @@ void sleep(uint64_t ticks) {
     }
 
     interrupts::disable();
+    auto* terminated_process = kernel_thread::owner_process(thread);
     if(!process::detach_thread(thread)) {
         park();
     }
     // A terminated thread cannot remain on its own stack: its stack may be reclaimed
     // later, so transfer directly to another scheduler-owned context before parking.
     thread->state = kernel_thread::State::Terminated;
+    thread->terminated_process = terminated_process;
+    thread->reap_next = g_reap_head;
+    g_reap_head = thread;
     auto* next_thread = next_locked();
     next_thread->state = kernel_thread::State::Running;
     prepare_thread(next_thread);

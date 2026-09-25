@@ -92,6 +92,8 @@ Thread* create(context::Entry entry, void* argument, uint64_t stack_size, virtua
     thread->wake_tick = 0;
     thread->wait_reason = WaitReason::None;
     thread->process_next = nullptr;
+    thread->terminated_process = nullptr;
+    thread->reap_next = nullptr;
 
     if(!context::initialize(&thread->cpu_context, thread->stack_top, thread_bootstrap, thread)) {
         // Context construction is the final fallible step; release both allocations while
@@ -150,7 +152,8 @@ Thread* create_user(process::Process* process, uintptr_t user_entry, uintptr_t u
 bool destroy(Thread* thread) {
     // Queued or scheduler-managed threads may still be referenced by scheduler state;
     // freeing them here would leave an intrusive queue link pointing into reclaimed heap.
-    if(thread == nullptr || thread->state == State::Running || thread->queued || thread->scheduler_managed) {
+    if(thread == nullptr || thread->state == State::Running || thread->queued ||
+       (thread->scheduler_managed && thread->state != State::Terminated)) {
         return false;
     }
 

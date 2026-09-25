@@ -1,7 +1,10 @@
 #include "idt.hpp"
 
 #include "panic.hpp"
+#include "process.hpp"
+#include "scheduler.hpp"
 #include "serial.hpp"
+#include "thread.hpp"
 
 #include <stdint.h>
 
@@ -153,8 +156,23 @@ extern "C" [[noreturn]] void idt_exception_handler(ExceptionFrame* frame) {
     print_register("rbp", frame->rbp);
     print_register("rflags", frame->rflags);
 
-    // There is no recovery policy yet, and returning would re-execute the faulting
-    // instruction with the same corrupted or invalid machine state.
+    auto* thread = scheduler::current();
+    if((frame->cs & 3U) == 3U && thread != nullptr && kernel_thread::is_user(thread)) {
+        auto* process = kernel_thread::owner_process(thread);
+        serial::write("User program fault; terminating thread ");
+        serial::write_u64(kernel_thread::id(thread));
+        serial::write(" in process ");
+        serial::write_u64(process::id(process));
+        serial::write(".\n");
+
+        // The exception frame belongs to the faulting thread's kernel stack. The scheduler
+        // switches away without returning through the frame, so the bad user instruction
+        // cannot be retried and the still-active stack is not freed prematurely.
+        scheduler::thread_exit(thread);
+    }
+
+    // A kernel fault cannot be isolated from the system: continuing could corrupt scheduler,
+    // memory-management, or interrupt state. Keep the fail-stop policy for ring 0.
     panic::halt("unhandled CPU exception");
 }
 
