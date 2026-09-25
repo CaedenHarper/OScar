@@ -26,6 +26,8 @@ void thread_bootstrap(void* argument) {
     thread->state = State::Running;
     thread->entry(thread->argument);
 
+    // Scheduler-managed threads must exit through the scheduler so their stack is never
+    // selected again. Standalone threads instead return to the context supplied by run().
     if(thread->scheduler_managed) {
         scheduler::thread_exit(thread);
     }
@@ -43,6 +45,8 @@ Thread* create(context::Entry entry, void* argument, uint64_t stack_size, virtua
         return nullptr;
     }
 
+    // Allocate the descriptor and stack separately: the descriptor remains reachable
+    // after a context switch, while the stack is the independently owned execution area.
     auto* thread = static_cast<Thread*>(kernel_heap::allocate(sizeof(Thread)));
     if(thread == nullptr) {
         return nullptr;
@@ -50,10 +54,14 @@ Thread* create(context::Entry entry, void* argument, uint64_t stack_size, virtua
 
     auto* stack = static_cast<uint8_t*>(kernel_heap::allocate(stack_size));
     if(stack == nullptr) {
+        // Roll back the descriptor immediately so a partially created thread cannot leak
+        // heap space or appear in later allocation diagnostics.
         kernel_heap::free(thread);
         return nullptr;
     }
 
+    // Initialize every field explicitly because this freestanding kernel does not rely
+    // on hosted-runtime zero initialization or constructors for heap objects.
     thread->id = g_next_thread_id++;
     thread->stack = stack;
     thread->stack_bottom = reinterpret_cast<uintptr_t>(stack);
@@ -70,6 +78,8 @@ Thread* create(context::Entry entry, void* argument, uint64_t stack_size, virtua
     thread->time_slice_remaining = 0;
 
     if(!context::initialize(&thread->cpu_context, thread->stack_top, thread_bootstrap, thread)) {
+        // Context construction is the final fallible step; release both allocations while
+        // the descriptor still contains the original stack pointer.
         kernel_heap::free(stack);
         kernel_heap::free(thread);
         return nullptr;
@@ -86,6 +96,8 @@ Thread* create(context::Entry entry, void* argument, uint64_t stack_size) {
 }
 
 bool destroy(Thread* thread) {
+    // Queued or scheduler-managed threads may still be referenced by scheduler state;
+    // freeing them here would leave an intrusive queue link pointing into reclaimed heap.
     if(thread == nullptr || thread->state == State::Running || thread->queued || thread->scheduler_managed) {
         return false;
     }

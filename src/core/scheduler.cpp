@@ -68,11 +68,15 @@ kernel_thread::Thread* dequeue_locked() {
 }
 
 kernel_thread::Thread* next_locked() {
+    // The idle thread is a real context rather than a null sentinel, so the scheduler
+    // always has a valid stack to switch to when all ordinary threads are waiting.
     auto* thread = dequeue_locked();
     return thread == nullptr ? g_idle_thread : thread;
 }
 
 void reset_time_slice(kernel_thread::Thread* thread) {
+    // Idle work has no fairness budget; assigning it a slice would make its accounting
+    // indistinguishable from a runnable thread and could create needless reschedules.
     if(thread != nullptr && thread != g_idle_thread) {
         thread->time_slice_remaining = kDefaultTimeSliceTicks;
     }
@@ -98,6 +102,8 @@ void schedule(bool restore_interrupts) {
         next_thread = next_locked();
     }
 
+    // A sole runnable thread is already executing. Avoid switching to its own saved
+    // context, which would add no scheduling progress and could overwrite its queue state.
     if(next_thread != current_thread) {
         next_thread->state = kernel_thread::State::Running;
         reset_time_slice(next_thread);
@@ -133,6 +139,8 @@ bool enqueue(kernel_thread::Thread* thread) {
         return false;
     }
 
+    // Mark ownership only after queue insertion succeeds; callers can safely retry a
+    // failed enqueue without the scheduler believing it already owns the thread.
     if(!enqueue_locked(thread)) {
         return false;
     }
@@ -184,6 +192,8 @@ void timer_tick() {
     if(g_current_thread->time_slice_remaining > 0) {
         --g_current_thread->time_slice_remaining;
     }
+    // The timer interrupt only records work here. Switching in the middle of the timer
+    // handler would bypass the common interrupt-exit path and make the saved frame unsafe.
     if(g_current_thread->time_slice_remaining == 0) {
         g_current_thread->time_slice_remaining = kDefaultTimeSliceTicks;
         g_reschedule_pending = true;
@@ -208,6 +218,8 @@ void yield() {
     next_thread->state = kernel_thread::State::Running;
     reset_time_slice(next_thread);
     g_current_thread = next_thread;
+    // Save the boot context only as a one-way origin. Once a thread runs, no scheduler
+    // path returns to kmain, so the parked bootstrap context is never scheduled again.
     context::switch_context(&g_bootstrap_context, &next_thread->cpu_context);
     park();
 }
@@ -218,6 +230,8 @@ void yield() {
     }
 
     interrupts::disable();
+    // A terminated thread cannot remain on its own stack: its stack may be reclaimed
+    // later, so transfer directly to another scheduler-owned context before parking.
     thread->state = kernel_thread::State::Terminated;
     auto* next_thread = next_locked();
     next_thread->state = kernel_thread::State::Running;
@@ -232,6 +246,8 @@ extern "C" void scheduler_interrupt_exit() {
         return;
     }
 
+    // Clear the request before switching because the outgoing thread's next timer tick
+    // must be allowed to create a fresh request rather than replaying this one forever.
     g_reschedule_pending = false;
     schedule(false);
 }

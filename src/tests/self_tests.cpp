@@ -85,6 +85,8 @@ void test_virtual_memory() {
         panic::halt("virtual memory smoke test could not create a mapping");
     }
 
+    // Touch the mapping before translating it so the test covers both page-table setup
+    // and the CPU's ability to use the resulting virtual address.
     *reinterpret_cast<volatile uint64_t*>(kTestVirtualAddress) = kVirtualMemoryTestPattern;
 
     uintptr_t translated_page = 0;
@@ -193,6 +195,8 @@ void test_process_address_spaces() {
         panic::halt("address-space smoke test found identical physical mappings");
     }
 
+    // Restore the kernel root before destroying either test root; destroying the active
+    // page tables would leave CR3 pointing at physical pages returned to the allocator.
     if(!virtual_memory::activate(virtual_memory::kernel_address_space())) {
         panic::halt("address-space smoke test could not restore the kernel address space");
     }
@@ -217,6 +221,8 @@ void test_context_switch() {
         panic::halt("context smoke test could not initialize a thread context");
     }
 
+    // Each switch resumes at the instruction after the previous switch call, proving that
+    // the saved callee-saved registers and instruction pointer belong to the right context.
     context::switch_context(&state.main_context, &state.thread_context);
     if(state.stage != 1) {
         panic::halt("context smoke test did not enter the thread context");
@@ -242,6 +248,8 @@ void test_kernel_thread() {
     ThreadTestState second_state = {};
     auto* first = kernel_thread::create(thread_test_entry, &first_state, kThreadStackSize);
     auto* second = kernel_thread::create(thread_test_entry, &second_state, kThreadStackSize);
+    // Compare bounds before running either thread: independent stacks are an ownership
+    // guarantee, not merely an implementation detail of the allocator.
     const bool stacks_overlap = kernel_thread::stack_bottom(first) < kernel_thread::stack_top(second) &&
                                 kernel_thread::stack_bottom(second) < kernel_thread::stack_top(first);
     if(first == nullptr || second == nullptr || kernel_thread::id(first) == 0 ||
@@ -366,6 +374,8 @@ void prepare_scheduler_test() {
         panic::halt("timer scheduler smoke test could not create its threads");
     }
 
+    // Queue all participants as one transaction so the first scheduler decision cannot
+    // observe an incomplete test population or start a thread during queue mutation.
     interrupts::disable();
     const bool queued = scheduler::enqueue(state.first) && scheduler::enqueue(state.second) &&
                         scheduler::enqueue(preemption_first) && scheduler::enqueue(preemption_second);
@@ -384,6 +394,8 @@ void run(uintptr_t hhdm_offset) {
     virtual_memory::initialize(hhdm_offset);
     test_virtual_memory();
     test_process_address_spaces();
+    // The heap is initialized after page-table tests because its backing mappings depend
+    // on the virtual-memory and physical-page allocators being ready first.
     kernel_heap::initialize();
     test_kernel_heap();
     if(!scheduler::initialize()) {
@@ -396,6 +408,8 @@ void run_timer() {
         panic::halt("timer smoke test could not initialize the PIT");
     }
 
+    // This test intentionally waits for hardware ticks rather than calling the handler,
+    // ensuring the IDT, PIC/APIC routing, PIT, and interrupt-enable path work together.
     interrupts::enable();
     const uint64_t initial_ticks = timer::ticks();
     for(uint64_t loop = 0; loop < kTimerTestLoopLimit; ++loop) {

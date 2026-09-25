@@ -150,6 +150,8 @@ extern "C" [[noreturn]] void idt_exception_handler(ExceptionFrame* frame) {
     print_register("rbp", frame->rbp);
     print_register("rflags", frame->rflags);
 
+    // There is no recovery policy yet, and returning would re-execute the faulting
+    // instruction with the same corrupted or invalid machine state.
     panic::halt("unhandled CPU exception");
 }
 
@@ -158,6 +160,8 @@ namespace idt {
 void initialize() {
     asm volatile("mov %%cs, %0" : "=r"(g_code_selector));
 
+    // Install only the exceptions and timer currently understood by the kernel; leaving
+    // unrelated vectors unconfigured avoids claiming ownership of future device IRQs.
     constexpr unsigned kExceptionVectorCount = 32;
     for(unsigned vector = 0; vector < kExceptionVectorCount; ++vector) {
         set_gate(vector, isr_stub_table[vector]);

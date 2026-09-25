@@ -83,6 +83,8 @@ uint64_t* next_table(uint64_t* table, unsigned index, uint64_t flags) {
         const uintptr_t physical_address = reinterpret_cast<uintptr_t>(new_table) - g_hhdm_offset;
         entry = physical_address | table_flags(flags);
     } else if((entry & kLargePage) != 0) {
+        // This mapper intentionally supports 4 KiB leaves only; refusing to descend
+        // through a large-page entry avoids silently replacing a larger mapping.
         return nullptr;
     }
 
@@ -123,6 +125,8 @@ bool map_page_in_root(uintptr_t root_physical, uintptr_t virtual_address, uintpt
 
     uint64_t& entry = table[page_table_index(virtual_address, 0)];
     if((entry & kEntryPresent) != 0) {
+        // Refuse remapping rather than discarding the old physical page, since ownership
+        // of that page belongs to the caller of unmap_user_page or unmap_page.
         return false;
     }
 
@@ -249,6 +253,8 @@ bool create_address_space(AddressSpace* address_space) {
     clear_page(root_physical);
     uint64_t* root = table_from_physical(root_physical);
     const uint64_t* kernel_root = table_from_physical(g_kernel_address_space.root_physical);
+    // Share the higher-half kernel mappings while leaving all lower-half entries private
+    // to the new address space; later process support can populate those entries safely.
     for(unsigned index = kKernelPml4Index; index < kEntriesPerTable; ++index) {
         root[index] = kernel_root[index];
     }
@@ -258,6 +264,8 @@ bool create_address_space(AddressSpace* address_space) {
 }
 
 void destroy_address_space(AddressSpace* address_space) {
+    // Never free a root that is globally owned or currently active; callers must switch
+    // away before destroying an address space.
     if(address_space == nullptr || address_space->root_physical == 0 ||
        address_space->root_physical == g_kernel_address_space.root_physical ||
        address_space->root_physical == g_active_address_space.root_physical) {
@@ -343,6 +351,8 @@ bool validate_user_range(
     if(address_space == nullptr || address_space->root_physical == 0 || virtual_address >= kUserAddressLimit) {
         return false;
     }
+    // Empty buffers are valid without touching page tables, while non-empty buffers are
+    // checked page by page so unaligned endpoints are covered by their containing pages.
     if(length == 0) {
         return true;
     }
@@ -367,6 +377,8 @@ bool activate(const AddressSpace* address_space) {
         return false;
     }
 
+    // Loading CR3 changes the translation root and flushes the relevant TLB state; mirror
+    // it in software only after the instruction succeeds.
     asm volatile("mov %0, %%cr3" : : "r"(address_space->root_physical) : "memory");
     g_active_address_space = *address_space;
     return true;

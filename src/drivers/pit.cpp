@@ -24,6 +24,8 @@ bool initialize(uint32_t requested_frequency_hz, uint32_t* configured_frequency_
         return false;
     }
 
+    // Round to the nearest representable divisor so the reported frequency reflects the
+    // actual PIT cadence rather than silently biasing every request downward.
     uint32_t divisor = (kPitBaseFrequency + (requested_frequency_hz / 2)) / requested_frequency_hz;
     if(divisor < kMinimumDivisor) {
         divisor = kMinimumDivisor;
@@ -32,6 +34,8 @@ bool initialize(uint32_t requested_frequency_hz, uint32_t* configured_frequency_
         return false;
     }
 
+    // The PIT latches the divisor low byte first, so split the 16-bit value in hardware
+    // order even though the host CPU is little-endian.
     io::out8(kCommandPort, kChannelZeroPeriodicCommand);
     io::out8(kChannelZeroDataPort, static_cast<uint8_t>(divisor & kByteMask));
     io::out8(kChannelZeroDataPort, static_cast<uint8_t>((divisor >> kHighByteShift) & kByteMask));

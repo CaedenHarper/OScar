@@ -37,6 +37,8 @@ constexpr unsigned kHexNibbleShift = 4;
 constexpr uint64_t kHexNibbleMask = 0xf;
 
 void write_raw(char character) {
+    // Polling keeps early diagnostics independent of a serial IRQ handler, which is not
+    // installed yet and would otherwise introduce another boot-time dependency.
     while((io::in8(kCom1 + kLineStatusRegister) & kTransmitHoldingRegisterEmpty) == 0) {
         asm volatile("pause");
     }
@@ -59,6 +61,7 @@ void initialize() {
 }
 
 void putc(char character) {
+    // Terminals and QEMU's serial capture conventionally expect CRLF line endings.
     if(character == '\n') {
         write_raw('\r');
     }
@@ -90,6 +93,8 @@ void write_u64(uint64_t value) {
 void write_hex(uint64_t value) {
     constexpr char kDigits[] = "0123456789abcdef";
     write("0x");
+    // Fixed-width output is intentional: exception diagnostics should preserve leading
+    // zeroes so register values can be compared directly with debugger output.
     for(unsigned shift = kHexHighestShift;; shift -= kHexNibbleShift) {
         putc(kDigits[(value >> shift) & kHexNibbleMask]);
 

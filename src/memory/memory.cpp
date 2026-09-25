@@ -70,6 +70,8 @@ void initialize(const limine_memmap_response* memory_map) {
     g_free_pages = 0;
     g_next_page = kFirstAllocatablePage;
 
+    // Start pessimistic: only pages explicitly reported as usable are released into the
+    // allocator, which keeps firmware, kernel, and reserved regions unavailable by default.
     for(uint64_t entry_index = 0; entry_index < memory_map->entry_count; ++entry_index) {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) we are managing memory here, so we must
         const limine_memmap_entry* entry = memory_map->entries[entry_index];
@@ -85,6 +87,8 @@ void initialize(const limine_memmap_response* memory_map) {
         for(uint64_t address = first_page_address; address < last_page_address; address += kPageSize) {
             const uint64_t page = address / kPageSize;
             if(page_is_used(page)) {
+                // Page zero stays reserved even if firmware labels the surrounding range
+                // usable because null-pointer accesses must not become valid mappings.
                 mark_page_usable(page);
                 mark_page_free(page);
                 ++g_total_pages;
@@ -99,6 +103,8 @@ bool allocate_page(uintptr_t* physical_address) {
         return false;
     }
 
+    // Continue from the last allocation to avoid rescanning the same low pages on every
+    // request; wrapping makes the simple bitmap scan exhaustive.
     for(uint64_t offset = 0; offset < kMaximumPages; ++offset) {
         const uint64_t page = (g_next_page + offset) % kMaximumPages;
         if(!page_is_used(page)) {

@@ -107,6 +107,8 @@ void ioapic_write(uint8_t register_number, uint32_t value) {
 namespace interrupt_controller {
 
 void initialize(uintptr_t hhdm_offset) {
+    // Program the legacy PIC first and mask it while probing the APIC path. This leaves a
+    // safe fallback if MMIO mapping or APIC discovery fails during early boot.
     const uint8_t master_mask = 0xff;
     const uint8_t slave_mask = 0xff;
     io::out8(kMasterDataPort, master_mask);
@@ -168,11 +170,15 @@ void initialize(uintptr_t hhdm_offset) {
 
     // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-avoid-magic-numbers)
 
+    // Keep the PIC configuration usable when the platform does not expose a valid IOAPIC
+    // page or version register; timer delivery still works through the legacy route.
     g_use_ioapic = false;
     serial::write("Interrupt controller: PIC fallback.\n");
 }
 
 void end_of_interrupt(uint8_t irq) {
+    // IRQs from the slave PIC require two acknowledgements. The LAPIC EOI is independent
+    // of that cascade and is issued whenever APIC routing was selected.
     if(g_use_ioapic) {
         *g_lapic_eoi = 0;
     }

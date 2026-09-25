@@ -41,6 +41,9 @@ extern "C" [[noreturn]] void kmain() {
     serial::initialize();
     serial::write("Barebones kernel started.\n");
 
+    // Validate Limine responses before passing their pointers to subsystem code. This
+    // keeps boot failures at the boundary instead of turning missing firmware data into
+    // an unrelated page fault later in initialization.
     if(!LIMINE_BASE_REVISION_SUPPORTED(g_limine_base_revision)) {
         panic::halt("unsupported Limine base revision");
     }
@@ -64,6 +67,8 @@ extern "C" [[noreturn]] void kmain() {
     serial::write_u64(physical_memory::free_pages());
     serial::write(" free\n");
 
+    // Memory tests must run before the IDT and scheduler take ownership of interrupts;
+    // the later tests deliberately exercise those newly initialized subsystems.
     self_tests::run(g_hhdm_request.response->offset);
 
     idt::initialize();
@@ -77,5 +82,7 @@ extern "C" [[noreturn]] void kmain() {
     asm volatile("ud2");
 #endif
 
+    // Scheduler::start does not return: after this point execution belongs to a thread,
+    // and the bootstrap stack is retained only as a context-switch origin.
     scheduler::start();
 }

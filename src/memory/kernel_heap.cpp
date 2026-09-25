@@ -45,6 +45,8 @@ bool grow(uint64_t minimum_bytes) {
         return false;
     }
 
+    // Map the whole growth request transactionally. If any page fails, release every page
+    // already acquired so the allocator does not expose a partially backed heap block.
     uint64_t mapped_count = 0;
     for(; mapped_count < required_pages; ++mapped_count) {
         uintptr_t physical_page = 0;
@@ -91,6 +93,8 @@ bool grow(uint64_t minimum_bytes) {
 
 void split_block(Block* block, uint64_t size) {
     const uint64_t remaining = block->size - size;
+    // Avoid creating unusable fragments; keeping the excess in the current block is more
+    // useful than adding metadata that can never satisfy an aligned allocation.
     if(remaining < sizeof(Block) + kAlignment) {
         return;
     }
@@ -115,6 +119,8 @@ void merge_with_next(Block* block) {
         return;
     }
 
+    // Coalescing adjacent free blocks limits fragmentation without requiring a separate
+    // free-list search or moving any live allocation.
     block->size += sizeof(Block) + next->size;
     block->next = next->next;
     if(block->next != nullptr) {
@@ -161,6 +167,8 @@ bool free(void* pointer) {
     }
 
     const auto address = reinterpret_cast<uintptr_t>(pointer);
+    // Validate the address before deriving its header; callers may pass arbitrary values,
+    // and subtracting metadata from an out-of-heap pointer would itself be unsafe.
     if(address < kHeapBase + sizeof(Block) || address >= g_heap_end ||
        (address - (kHeapBase + sizeof(Block))) % kAlignment != 0) {
         return false;

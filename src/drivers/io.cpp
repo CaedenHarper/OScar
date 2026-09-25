@@ -6,6 +6,8 @@ namespace io {
 
 // NOLINTBEGIN(hicpp-no-assembler, bugprone-easily-swappable-parameters) x86 port I/O requires inline assembly
 void out8(uint16_t port, uint8_t value) {
+    // The "Nd" constraint lets GCC use an immediate port for constant callers while
+    // still supporting the DX register for runtime-selected ports.
     asm volatile("outb %0, %1" : : "a"(value), "Nd"(port));
 }
 
