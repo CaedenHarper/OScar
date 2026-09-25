@@ -73,12 +73,14 @@ Thread* create(context::Entry entry, void* argument, uint64_t stack_size, virtua
     thread->return_context = nullptr;
     thread->ready_next = nullptr;
     thread->waiting_next = nullptr;
+    thread->wait_queue = nullptr;
     thread->queued = false;
     thread->waiting = false;
     thread->scheduler_managed = false;
     thread->idle = false;
     thread->time_slice_remaining = 0;
     thread->wake_tick = 0;
+    thread->wait_reason = WaitReason::None;
 
     if(!context::initialize(&thread->cpu_context, thread->stack_top, thread_bootstrap, thread)) {
         // Context construction is the final fallible step; release both allocations while

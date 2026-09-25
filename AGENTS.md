@@ -7,8 +7,9 @@ freestanding C++ with a small amount of assembly. Limine loads the kernel ELF,
 and QEMU provides the primary development and test environment. The kernel
 initializes COM1 serial output, reads the Limine memory map, manages physical
 pages and basic virtual-memory mappings, provides a kernel heap, installs an
-Interrupt Descriptor Table and hardware timer interrupts, runs boot-time smoke
-tests, reports exception register state, and halts.
+Interrupt Descriptor Table and hardware timer interrupts, provides kernel
+synchronization primitives, runs boot-time smoke tests, reports exception
+register state, and halts.
 
 This is a bare-metal kernel rather than a hosted application. The normal C++
 runtime, standard library, exceptions, RTTI, and operating-system services are
@@ -34,6 +35,7 @@ The source tree is organized as follows:
 - `src/drivers/`: x86 port I/O, serial output, and timer/PIT support.
 - `src/interrupts/`: interrupt-controller routing and CPU interrupt helpers.
 - `src/memory/`: physical pages, virtual-memory mappings, and kernel heap.
+- `src/synchronization/`: spinlocks, wait queues, and blocking mutexes.
 - `src/tests/`: boot-time subsystem smoke tests; keep them out of `main.cpp`.
 
 ## Build and test

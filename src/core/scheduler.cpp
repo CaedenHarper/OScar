@@ -7,6 +7,7 @@
 #include "thread.hpp"
 #include "thread_internal.hpp"
 #include "timer.hpp"
+#include "wait_queue.hpp"
 
 #include <stdint.h>
 
@@ -74,6 +75,8 @@ kernel_thread::Thread* dequeue_locked() {
 void enqueue_waiting_locked(kernel_thread::Thread* thread, uint64_t wake_tick) {
     thread->wake_tick = wake_tick;
     thread->waiting = true;
+    thread->wait_queue = nullptr;
+    thread->wait_reason = kernel_thread::WaitReason::Sleeping;
     thread->waiting_next = nullptr;
 
     // Keep the earliest deadline at the head so each timer tick examines only the
@@ -92,6 +95,7 @@ void wake_expired_locked(uint64_t current_tick) {
         g_waiting_head = thread->waiting_next;
         thread->waiting_next = nullptr;
         thread->waiting = false;
+        thread->wait_reason = kernel_thread::WaitReason::None;
         thread->state = kernel_thread::State::Ready;
         // A waiting thread is converted back to Ready before entering the same queue used
         // by ordinary yields, preserving one FIFO scheduling policy after wake-up.
@@ -210,6 +214,56 @@ bool remove(kernel_thread::Thread* thread) {
         return true;
     }
     return false;
+}
+
+bool block_current(synchronization::WaitQueue* queue) {
+    if(!g_initialized || !g_started || g_current_thread == nullptr || g_current_thread == g_idle_thread ||
+       queue == nullptr) {
+        return false;
+    }
+
+    auto* current_thread = g_current_thread;
+    if(!synchronization::enqueue_locked(queue, current_thread)) {
+        return false;
+    }
+
+    current_thread->wait_reason = kernel_thread::WaitReason::Waiting;
+    current_thread->state = kernel_thread::State::Waiting;
+    auto* next_thread = next_locked();
+    next_thread->state = kernel_thread::State::Running;
+    reset_time_slice(next_thread);
+    g_current_thread = next_thread;
+    context::switch_context(&current_thread->cpu_context, &next_thread->cpu_context);
+    return true;
+}
+
+bool wake_one(synchronization::WaitQueue* queue) {
+    if(!g_initialized || queue == nullptr) {
+        return false;
+    }
+
+    auto* thread = synchronization::dequeue_locked(queue);
+    if(thread == nullptr) {
+        return false;
+    }
+
+    thread->wait_reason = kernel_thread::WaitReason::None;
+    thread->state = kernel_thread::State::Ready;
+    if(!enqueue_locked(thread)) {
+        return false;
+    }
+    if(g_current_thread == g_idle_thread) {
+        g_reschedule_pending = true;
+    }
+    return true;
+}
+
+uint32_t wake_all(synchronization::WaitQueue* queue) {
+    uint32_t count = 0;
+    while(wake_one(queue)) {
+        ++count;
+    }
+    return count;
 }
 
 kernel_thread::Thread* current() {

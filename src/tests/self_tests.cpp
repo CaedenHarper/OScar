@@ -4,9 +4,11 @@
 #include "interrupts.hpp"
 #include "kernel_heap.hpp"
 #include "memory.hpp"
+#include "mutex.hpp"
 #include "panic.hpp"
 #include "scheduler.hpp"
 #include "serial.hpp"
+#include "spinlock.hpp"
 #include "thread.hpp"
 #include "timer.hpp"
 #include "virtual_memory.hpp"
@@ -335,6 +337,22 @@ struct WaitingTestState {
     volatile uint8_t expired_deadline_returned;
 };
 
+void test_spinlock() {
+    synchronization::Spinlock lock = {};
+    synchronization::initialize(&lock);
+    interrupts::State previous_state = {false};
+    if(!synchronization::try_lock(&lock, &previous_state)) {
+        panic::halt("spinlock smoke test could not acquire an unlocked lock");
+    }
+    synchronization::unlock(&lock, previous_state);
+
+    if(!synchronization::try_lock(&lock, &previous_state)) {
+        panic::halt("spinlock smoke test could not reacquire a released lock");
+    }
+    synchronization::unlock(&lock, previous_state);
+    serial::write("Spinlock smoke test passed.\n");
+}
+
 void waiting_test_entry(void* argument) {
     auto* state = static_cast<WaitingTestState*>(argument);
     scheduler::sleep(0);
@@ -347,6 +365,32 @@ void waiting_test_entry(void* argument) {
         panic::halt("waiting-thread smoke test resumed before its deadline");
     }
     serial::write("Waiting-thread sleep smoke test passed.\n");
+}
+
+struct MutexTestState {
+    synchronization::Mutex mutex;
+    volatile uint8_t holder_acquired;
+};
+
+void mutex_holder_entry(void* argument) {
+    auto* state = static_cast<MutexTestState*>(argument);
+    if(!synchronization::lock(&state->mutex)) {
+        panic::halt("mutex smoke test holder could not acquire the mutex");
+    }
+    state->holder_acquired = 1;
+    scheduler::yield();
+    if(!synchronization::unlock(&state->mutex)) {
+        panic::halt("mutex smoke test holder could not release the mutex");
+    }
+}
+
+void mutex_waiter_entry(void* argument) {
+    auto* state = static_cast<MutexTestState*>(argument);
+    if(!synchronization::lock(&state->mutex) || state->holder_acquired == 0 ||
+       !synchronization::unlock(&state->mutex)) {
+        panic::halt("mutex smoke test waiter did not block and acquire in order");
+    }
+    serial::write("Synchronization primitive smoke test passed.\n");
 }
 
 void preemption_test_entry(void* argument) {
@@ -381,6 +425,7 @@ void prepare_scheduler_test() {
     static PreemptionTestArgument preemption_first_argument = {&preemption_state, 1};
     static PreemptionTestArgument preemption_second_argument = {&preemption_state, 2};
     static WaitingTestState waiting_state = {};
+    static MutexTestState mutex_state = {};
 
     state.first = kernel_thread::create(scheduler_test_entry, &first_argument);
     state.second = kernel_thread::create(scheduler_test_entry, &second_argument);
@@ -399,12 +444,20 @@ void prepare_scheduler_test() {
         panic::halt("waiting-thread smoke test could not create its thread");
     }
 
+    synchronization::initialize(&mutex_state.mutex);
+    auto* mutex_holder = kernel_thread::create(mutex_holder_entry, &mutex_state);
+    auto* mutex_waiter = kernel_thread::create(mutex_waiter_entry, &mutex_state);
+    if(mutex_holder == nullptr || mutex_waiter == nullptr) {
+        panic::halt("mutex smoke test could not create its threads");
+    }
+
     // Queue all participants as one transaction so the first scheduler decision cannot
     // observe an incomplete test population or start a thread during queue mutation.
     interrupts::disable();
     const bool queued = scheduler::enqueue(state.first) && scheduler::enqueue(state.second) &&
                         scheduler::enqueue(preemption_first) && scheduler::enqueue(preemption_second) &&
-                        scheduler::enqueue(waiting_thread);
+                        scheduler::enqueue(waiting_thread) && scheduler::enqueue(mutex_holder) &&
+                        scheduler::enqueue(mutex_waiter);
     interrupts::enable();
     if(!queued) {
         panic::halt("scheduler smoke test could not queue its threads");
@@ -416,6 +469,7 @@ void prepare_scheduler_test() {
 namespace self_tests {
 
 void run(uintptr_t hhdm_offset) {
+    test_spinlock();
     test_physical_memory();
     virtual_memory::initialize(hhdm_offset);
     test_virtual_memory();

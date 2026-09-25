@@ -1,6 +1,7 @@
 #pragma once
 
 #include "thread.hpp"
+#include "wait_queue.hpp"
 
 #include <stdint.h>
 
@@ -26,6 +27,18 @@ bool enqueue(kernel_thread::Thread* thread);
  * and in State::Ready. Interrupts must be disabled by the caller.
  */
 bool remove(kernel_thread::Thread* thread);
+
+/**
+ * Block the running thread on a FIFO wait queue and switch to another thread. Interrupts
+ * must already be disabled; they remain disabled when this function returns after wake-up.
+ */
+bool block_current(synchronization::WaitQueue* queue);
+
+/** Wake the oldest thread on a wait queue and append it to the ready queue. */
+bool wake_one(synchronization::WaitQueue* queue);
+
+/** Wake every thread currently on a wait queue and return the number released. */
+uint32_t wake_all(synchronization::WaitQueue* queue);
 
 /**
  * Put the current thread into State::Waiting until wake_tick. A deadline at or before
