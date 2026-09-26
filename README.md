@@ -5,7 +5,8 @@ the kernel initializes COM1, reads the Limine-provided memory map, initializes
 a physical page allocator, manages kernel and process address-space structures and mappings,
 validates user memory ranges, installs an IDT, GDT/TSS, and PIT timer
 interrupts, creates ring-3 user threads with private kernel stacks, handles an
-initial `int 0x80` system-call ABI (`write`, `exit`, `yield`, and `sleep`),
+initial `int 0x80` system-call ABI (`write`, `exit`, `yield`, `sleep`, `getpid`,
+and `getid`),
 loads validated in-memory ELF64 executables with `PT_LOAD` segments, including
 zero-filled memory and an initial user stack,
 provides a kernel heap, creates and runs kernel-thread stacks, schedules kernel

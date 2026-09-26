@@ -1,7 +1,9 @@
 #include "syscalls.hpp"
 
+#include "process.hpp"
 #include "scheduler.hpp"
 #include "serial.hpp"
+#include "thread.hpp"
 #include "user_memory.hpp"
 
 #include <stdint.h>
@@ -12,6 +14,8 @@ constexpr uint64_t kWrite = 0;
 constexpr uint64_t kExit = 1;
 constexpr uint64_t kYield = 2;
 constexpr uint64_t kSleep = 3;
+constexpr uint64_t kGetPid = 4;
+constexpr uint64_t kGetId = 5;
 constexpr uint64_t kMaximumWriteLength = 4096;
 constexpr int64_t kErrorInvalidArgument = -1;
 constexpr int64_t kErrorUnknownCall = -2;
@@ -26,9 +30,7 @@ int64_t write(const syscalls::Frame* frame) {
     uint64_t copied = 0;
     while(copied < frame->rsi) {
         const uint64_t chunk = frame->rsi - copied > kBufferSize ? kBufferSize : frame->rsi - copied;
-        if(!user_memory::copy_from_user(
-               static_cast<void*>(buffer), frame->rdi + copied, chunk
-           )) { // NOLINT(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+        if(!user_memory::copy_from_user(static_cast<void*>(buffer), frame->rdi + copied, chunk)) {
             return kErrorInvalidArgument;
         }
         for(uint64_t index = 0; index < chunk; ++index) {
@@ -37,6 +39,17 @@ int64_t write(const syscalls::Frame* frame) {
         copied += chunk;
     }
     return static_cast<int64_t>(copied);
+}
+
+int64_t get_pid() {
+    auto* thread = scheduler::current();
+    auto* owner = kernel_thread::owner_process(thread);
+    return owner == nullptr ? kErrorInvalidArgument : static_cast<int64_t>(process::id(owner));
+}
+
+int64_t get_id() {
+    auto* thread = scheduler::current();
+    return thread == nullptr ? kErrorInvalidArgument : static_cast<int64_t>(kernel_thread::id(thread));
 }
 
 } // namespace
@@ -61,6 +74,12 @@ extern "C" void handle(Frame* frame) {
         case kSleep:
             scheduler::sleep(frame->rdi);
             frame->rax = 0;
+            return;
+        case kGetPid:
+            frame->rax = static_cast<uint64_t>(get_pid());
+            return;
+        case kGetId:
+            frame->rax = static_cast<uint64_t>(get_id());
             return;
         default:
             frame->rax = static_cast<uint64_t>(kErrorUnknownCall);
