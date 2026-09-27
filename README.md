@@ -31,11 +31,13 @@ dynamic linking.
     ├── core/         Entry point, processes, threads, scheduler, and syscalls
     ├── drivers/      Port I/O, serial, timer, and VirtIO block support
     ├── exec/         ELF64 validation and executable loading
+    ├── filesystem/   Read-only ext2 mounting and inode/path lookup
     ├── interrupts/   Interrupt routing and CPU interrupt helpers
     ├── memory/       Physical pages, virtual memory, and kernel heap
     ├── synchronization/ Spinlocks, wait queues, and mutexes
     ├── storage/      Hardware-independent block-device protocol
-    └── tests/        Boot-time subsystem smoke tests
+    ├── tests/        Boot-time subsystem smoke tests
+    └── tests/filesystem/ Files copied into the generated ext2 test image
 ```
 
 Limine and its protocol header are downloaded into `deps/` on the first build.
@@ -48,6 +50,8 @@ Generated files go into `build/`.
 `make run` creates and attaches the persistent `build/virtio-test.img` disk to
 QEMU. The image is ignored by Git and remains across emulator runs; `make
 clean` removes it with the other build products.
+The image is formatted as ext2 and populated with filesystem lookup fixtures;
+install `mke2fs` and `debugfs` in addition to the tools listed below.
 
 ## Recommended environment
 
@@ -55,7 +59,7 @@ Use a Linux system or Ubuntu under WSL2. On Ubuntu/Debian, install:
 
 ```sh
 sudo apt update
-sudo apt install build-essential clang lld make git curl xorriso qemu-system-x86 gdb
+sudo apt install build-essential clang lld make git curl xorriso e2fsprogs qemu-system-x86 gdb
 ```
 
 ## Build and run

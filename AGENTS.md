@@ -36,6 +36,7 @@ The source tree is organized as follows:
   and user threads, scheduler, and system calls.
 - `src/drivers/`: x86 port I/O, serial output, timer/PIT support, and the
   polling legacy VirtIO block driver.
+- `src/filesystem/`: read-only ext2 mounting, inode loading, and path lookup.
 - `src/exec/`: freestanding ELF64 validation and process image loading.
 - `src/interrupts/`: interrupt-controller routing and CPU interrupt helpers.
 - `src/memory/`: physical pages, virtual-memory mappings, user-memory copying,
@@ -49,6 +50,7 @@ The source tree is organized as follows:
 - `tests/user/`: source and linker script for successful, computed-output, and
   intentional-crash user ELF smoke images. Malformed ELF metadata tests live in
   `src/tests/` because they exercise validation without loading an image.
+- `tests/filesystem/`: source files copied into the generated ext2 test image.
 
 ## Build and test
 
@@ -63,6 +65,8 @@ make test-exception
 `make run` should boot the kernel in headless QEMU and print serial output. It
 also attaches the persistent, generated `build/virtio-test.img` disk used by
 the VirtIO block-driver smoke test; `make clean` removes that image.
+The image is formatted as ext2 and populated with lookup fixtures during its
+first build; `mke2fs` and `debugfs` are required.
 `make test-exception` builds in a separate `build-exception/` directory,
 executes `ud2`, and should print an invalid-opcode diagnostic with register
 state before halting.

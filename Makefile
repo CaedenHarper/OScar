@@ -10,6 +10,7 @@ ISO_ROOT := $(BUILD_DIR)/iso_root
 KERNEL := $(BUILD_DIR)/kernel.elf
 ISO := $(BUILD_DIR)/barebones-kernel.iso
 VIRTIO_DISK := $(BUILD_DIR)/virtio-test.img
+FILESYSTEM_TEST_FILES := tests/filesystem/hello.txt tests/filesystem/config.txt
 CPP_SOURCES := $(wildcard src/*.cpp src/*/*.cpp src/*/*/*.cpp)
 ASM_SOURCES := $(wildcard src/*.S src/*/*.S src/*/*/*.S)
 LINT_CPP_FILES := $(shell find src -name '*.cpp' -o -name '*.hpp')
@@ -26,8 +27,8 @@ PROTOCOL_DIR := $(DEPS_DIR)/limine-protocol
 LIMINE_ARCHIVE := $(DEPS_DIR)/limine-binary.tar.gz
 
 CPPFLAGS := -I$(PROTOCOL_DIR)/include \
-	-Isrc/arch/x86_64 -Isrc/core -Isrc/drivers -Isrc/interrupts -Isrc/memory -Isrc/synchronization -Isrc/tests \
-	-Isrc/exec -Isrc/storage
+	-Isrc/arch/x86_64 -Isrc/core -Isrc/drivers -Isrc/filesystem -Isrc/interrupts -Isrc/memory \
+	-Isrc/synchronization -Isrc/tests -Isrc/exec -Isrc/storage
 CXXFLAGS := \
 	-target x86_64-unknown-none-elf \
 	-std=gnu++20 -O2 -g \
@@ -85,8 +86,13 @@ help:
 $(BUILD_DIR):
 	mkdir -p $@
 
-$(VIRTIO_DISK): | $(BUILD_DIR)
+$(VIRTIO_DISK): $(FILESYSTEM_TEST_FILES) | $(BUILD_DIR)
 	truncate -s 8M $@
+	mke2fs -q -F -t ext2 -b 1024 $@
+	debugfs -w -R 'mkdir /etc' $@
+	debugfs -w -R 'mkdir /etc/oscar' $@
+	debugfs -w -R 'write tests/filesystem/hello.txt /hello.txt' $@
+	debugfs -w -R 'write tests/filesystem/config.txt /etc/oscar/config.txt' $@
 
 $(USER_BUILD_DIR):
 	mkdir -p $@
