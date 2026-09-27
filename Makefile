@@ -9,6 +9,7 @@ DEPS_DIR := deps
 ISO_ROOT := $(BUILD_DIR)/iso_root
 KERNEL := $(BUILD_DIR)/kernel.elf
 ISO := $(BUILD_DIR)/barebones-kernel.iso
+VIRTIO_DISK := $(BUILD_DIR)/virtio-test.img
 CPP_SOURCES := $(wildcard src/*.cpp src/*/*.cpp src/*/*/*.cpp)
 ASM_SOURCES := $(wildcard src/*.S src/*/*.S src/*/*/*.S)
 LINT_CPP_FILES := $(shell find src -name '*.cpp' -o -name '*.hpp')
@@ -56,13 +57,13 @@ all: $(KERNEL)
 
 iso: $(ISO)
 
-run: $(ISO)
-	$(QEMU) $(QEMUFLAGS) -cdrom $(ISO) -boot d
+run: $(ISO) $(VIRTIO_DISK)
+	$(QEMU) $(QEMUFLAGS) -drive file=$(VIRTIO_DISK),format=raw,if=none,id=virtio-disk -device virtio-blk-pci,disable-modern=on,drive=virtio-disk -cdrom $(ISO) -boot d
 
-debug: $(ISO)
+debug: $(ISO) $(VIRTIO_DISK)
 	@echo "QEMU is paused. In another terminal, run:"
 	@echo "  gdb $(KERNEL) -ex 'target remote localhost:1234'"
-	$(QEMU) $(QEMUFLAGS) -cdrom $(ISO) -boot d -S -s
+	$(QEMU) $(QEMUFLAGS) -drive file=$(VIRTIO_DISK),format=raw,if=none,id=virtio-disk -device virtio-blk-pci,disable-modern=on,drive=virtio-disk -cdrom $(ISO) -boot d -S -s
 
 test-exception:
 	$(MAKE) BUILD_DIR=$(BUILD_DIR)-exception CXXFLAGS="$(CXXFLAGS) -DOSCAR_TEST_EXCEPTION" run
@@ -83,6 +84,9 @@ help:
 
 $(BUILD_DIR):
 	mkdir -p $@
+
+$(VIRTIO_DISK): | $(BUILD_DIR)
+	truncate -s 8M $@
 
 $(USER_BUILD_DIR):
 	mkdir -p $@

@@ -119,6 +119,35 @@ bool allocate_page(uintptr_t* physical_address) {
     return false;
 }
 
+bool allocate_contiguous_pages(uint64_t page_count, uintptr_t* physical_address) {
+    if(page_count == 0 || physical_address == nullptr || page_count > kMaximumPages || g_free_pages < page_count) {
+        return false;
+    }
+
+    for(uint64_t first_page = kFirstAllocatablePage; first_page + page_count <= kMaximumPages; ++first_page) {
+        bool available = true;
+        for(uint64_t offset = 0; offset < page_count; ++offset) {
+            const uint64_t page = first_page + offset;
+            if(!page_is_usable(page) || page_is_used(page)) {
+                available = false;
+                break;
+            }
+        }
+        if(!available) {
+            continue;
+        }
+
+        for(uint64_t offset = 0; offset < page_count; ++offset) {
+            mark_page_used(first_page + offset);
+        }
+        g_free_pages -= page_count;
+        *physical_address = first_page * kPageSize;
+        g_next_page = first_page + page_count;
+        return true;
+    }
+    return false;
+}
+
 bool free_page(uintptr_t physical_address) {
     if(!valid_page(physical_address)) {
         return false;
@@ -133,6 +162,31 @@ bool free_page(uintptr_t physical_address) {
     ++g_free_pages;
     if(page < g_next_page) {
         g_next_page = page;
+    }
+    return true;
+}
+
+bool free_contiguous_pages(uintptr_t physical_address, uint64_t page_count) {
+    if(page_count == 0 || physical_address % kPageSize != 0 ||
+       physical_address > UINTPTR_MAX - (page_count * kPageSize)) {
+        return false;
+    }
+
+    const uint64_t first_page = physical_address / kPageSize;
+    if(first_page == 0 || first_page + page_count > kMaximumPages) {
+        return false;
+    }
+    for(uint64_t offset = 0; offset < page_count; ++offset) {
+        if(!page_is_usable(first_page + offset) || !page_is_used(first_page + offset)) {
+            return false;
+        }
+    }
+    for(uint64_t offset = 0; offset < page_count; ++offset) {
+        mark_page_free(first_page + offset);
+    }
+    g_free_pages += page_count;
+    if(first_page < g_next_page) {
+        g_next_page = first_page;
     }
     return true;
 }

@@ -34,7 +34,8 @@ The source tree is organized as follows:
 - `src/arch/x86_64/`: CPU contexts, GDT/TSS, IDT setup, and exception/IRQ/syscall entry.
 - `src/core/`: the kernel entry point, fatal error handling, processes, kernel
   and user threads, scheduler, and system calls.
-- `src/drivers/`: x86 port I/O, serial output, and timer/PIT support.
+- `src/drivers/`: x86 port I/O, serial output, timer/PIT support, and the
+  polling legacy VirtIO block driver.
 - `src/exec/`: freestanding ELF64 validation and process image loading.
 - `src/interrupts/`: interrupt-controller routing and CPU interrupt helpers.
 - `src/memory/`: physical pages, virtual-memory mappings, user-memory copying,
@@ -59,7 +60,9 @@ make run
 make test-exception
 ```
 
-`make run` should boot the kernel in headless QEMU and print serial output.
+`make run` should boot the kernel in headless QEMU and print serial output. It
+also attaches the persistent, generated `build/virtio-test.img` disk used by
+the VirtIO block-driver smoke test; `make clean` removes that image.
 `make test-exception` builds in a separate `build-exception/` directory,
 executes `ud2`, and should print an invalid-opcode diagnostic with register
 state before halting.

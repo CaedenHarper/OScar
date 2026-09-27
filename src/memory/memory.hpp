@@ -19,11 +19,17 @@ void initialize(const limine_memmap_response* memory_map);
  */
 bool allocate_page(uintptr_t* physical_address);
 
+/** Allocate a physically contiguous run of pages and return its first address. */
+bool allocate_contiguous_pages(uint64_t page_count, uintptr_t* physical_address);
+
 /*
  * Return one previously allocated 4 KiB physical page to the free pool.
  * Returns false if the address is invalid or was not currently allocated.
  */
 bool free_page(uintptr_t physical_address);
+
+/** Free a previously allocated contiguous run of pages. */
+bool free_contiguous_pages(uintptr_t physical_address, uint64_t page_count);
 
 /*
  * Return the number of usable physical pages discovered during initialization.

@@ -2,6 +2,7 @@
 #include "panic.hpp"
 #include "self_tests_internal.hpp"
 #include "serial.hpp"
+#include "virtio_block.hpp"
 
 #include <stdint.h>
 
@@ -86,6 +87,31 @@ void test_block_device() {
         panic::halt("block-device smoke test wrote to a read-only device");
     }
     serial::write("Block-device protocol smoke test passed.\n");
+
+    if(!virtio_block::initialize() || virtio_block::device() == nullptr) {
+        panic::halt("VirtIO block device could not be initialized");
+    }
+    auto* disk = virtio_block::device();
+    const auto disk_geometry = block_device::get_geometry(disk);
+    alignas(4096) static uint8_t disk_write[kTestBlockSize * 32] = {};
+    alignas(4096) static uint8_t disk_read[kTestBlockSize * 32] = {};
+    for(uint8_t& byte : disk_write) {
+        byte = static_cast<uint8_t>(byte ^ kWritePattern);
+    }
+    const auto write_status = block_device::write(disk, 0, 1, disk_write);
+    const auto read_status = block_device::read(disk, 0, 1, disk_read);
+    const auto flush_status = block_device::flush(disk);
+    if(disk_geometry.block_size != 512 || disk_geometry.block_count == 0 ||
+       write_status != block_device::Status::Success || read_status != block_device::Status::Success ||
+       flush_status != block_device::Status::Success) {
+        panic::halt("VirtIO block smoke test could not complete a polling request");
+    }
+    for(uint32_t index = 0; index < disk_geometry.block_size; ++index) {
+        if(disk_read[index] != disk_write[index]) {
+            panic::halt("VirtIO block smoke test read back incorrect data");
+        }
+    }
+    serial::write("VirtIO polling block-driver smoke test passed.\n");
 }
 
 } // namespace self_tests_detail

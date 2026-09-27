@@ -12,11 +12,12 @@ zero-filled memory and an initial user stack,
 provides a kernel heap, creates and runs kernel-thread stacks, schedules kernel
 threads cooperatively and from timer interrupts, supports tick-based waiting
 and waking, provides interrupt-safe spinlocks, wait queues, and blocking
-mutexes, prints diagnostics to QEMU's serial console, and idles.
+mutexes, exposes a block-device protocol with a polling legacy VirtIO block
+driver, prints diagnostics to QEMU's serial console, and idles.
 
 This is a kernel seed, not yet an operating system. It does not yet provide
-filesystem-backed executable loading, process-creation system calls, dynamic
-linking, or drivers beyond basic serial I/O.
+filesystem-backed executable loading, process-creation system calls, or
+dynamic linking.
 
 ## Repository layout
 
@@ -28,7 +29,7 @@ linking, or drivers beyond basic serial I/O.
 └── src/
     ├── arch/x86_64/  CPU contexts, GDT/TSS, IDT, and entry stubs
     ├── core/         Entry point, processes, threads, scheduler, and syscalls
-    ├── drivers/      Port I/O, serial output, and timer backends
+    ├── drivers/      Port I/O, serial, timer, and VirtIO block support
     ├── exec/         ELF64 validation and executable loading
     ├── interrupts/   Interrupt routing and CPU interrupt helpers
     ├── memory/       Physical pages, virtual memory, and kernel heap
@@ -43,6 +44,10 @@ computed-prime, and second-program success cases plus intentional-crash
 programs—and embeds them into the kernel smoke tests. The kernel also tests
 malformed ELF metadata directly before scheduling user processes.
 Generated files go into `build/`.
+
+`make run` creates and attaches the persistent `build/virtio-test.img` disk to
+QEMU. The image is ignored by Git and remains across emulator runs; `make
+clean` removes it with the other build products.
 
 ## Recommended environment
 
