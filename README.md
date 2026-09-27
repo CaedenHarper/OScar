@@ -6,7 +6,7 @@ a physical page allocator, manages kernel and process address-space structures a
 validates user memory ranges, installs an IDT, GDT/TSS, and PIT timer
 interrupts, creates ring-3 user threads with private kernel stacks, handles an
 initial `int 0x80` system-call ABI (`write`, `exit`, `yield`, `sleep`, `getpid`,
-and `getid`),
+and `getid`, plus read-only filesystem `open`, `read`, `seek`, and `close`),
 loads validated in-memory ELF64 executables with `PT_LOAD` segments, including
 zero-filled memory and an initial user stack,
 provides a kernel heap, creates and runs kernel-thread stacks, schedules kernel
@@ -43,7 +43,7 @@ dynamic linking.
 
 Limine and its protocol header are downloaded into `deps/` on the first build.
 The build compiles the user ELF fixtures in `tests/user/`—including the basic,
-computed-prime, and second-program success cases plus intentional-crash
+filesystem-read, computed-prime, and second-program success cases plus intentional-crash
 programs—and embeds them into the kernel smoke tests. The kernel also tests
 malformed ELF metadata directly before scheduling user processes.
 Generated files go into `build/`.

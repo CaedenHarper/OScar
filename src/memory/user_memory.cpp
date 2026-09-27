@@ -48,6 +48,14 @@ bool copy(void* kernel_address, uintptr_t user_address, const void* source, uint
 
 namespace user_memory {
 
+bool validate(uintptr_t user_address, uint64_t length, bool writable) {
+    auto* thread = scheduler::current();
+    auto* address_space = thread == nullptr ? nullptr : thread->address_space;
+    return address_space != nullptr && virtual_memory::validate_user_range(
+                                           address_space, user_address, length, writable ? virtual_memory::kWritable : 0
+                                       );
+}
+
 bool copy_from_user(void* kernel_destination, uintptr_t user_source, uint64_t length) {
     return copy(kernel_destination, user_source, kernel_destination, length, false);
 }

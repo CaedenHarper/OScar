@@ -8,7 +8,8 @@ and QEMU provides the primary development and test environment. The kernel
 initializes COM1 serial output, reads the Limine memory map, manages physical
 pages and basic virtual-memory mappings, provides a kernel heap, installs the
 GDT/TSS, Interrupt Descriptor Table, and hardware timer interrupts, creates
-ring-3 user threads, handles an initial system-call ABI, loads validated
+ring-3 user threads, handles an initial system-call ABI including read-only
+filesystem file operations, loads validated
 in-memory ELF64 executables, provides kernel synchronization primitives and
 process structures, runs boot-time smoke tests, reports exception register
 state, and halts.
@@ -48,8 +49,8 @@ The source tree is organized as follows:
   `self_tests.cpp` coordinates the suite, while `self_tests_*.cpp` group
   context, memory/process, scheduler, synchronization, and user-mode tests.
   `self_tests_internal.hpp` contains private cross-test declarations.
-- `tests/user/`: source and linker script for successful, computed-output, and
-  intentional-crash user ELF smoke images. Malformed ELF metadata tests live in
+- `tests/user/`: source and linker script for successful, filesystem-read,
+  computed-output, and intentional-crash user ELF smoke images. Malformed ELF metadata tests live in
   `src/tests/` because they exercise validation without loading an image.
 - `tests/filesystem/`: source files copied into the generated ext2 test image.
 

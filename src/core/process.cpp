@@ -5,6 +5,7 @@
 #include "process_internal.hpp"
 #include "thread.hpp"
 #include "thread_internal.hpp"
+#include "vfs.hpp"
 #include "virtual_memory.hpp"
 
 #include <stdint.h>
@@ -39,6 +40,10 @@ Process* create() {
     process->thread_head = nullptr;
     process->thread_tail = nullptr;
     process->thread_count = 0;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
+    for(auto& descriptor : process->descriptors) {
+        descriptor = {};
+    }
     return process;
 }
 
@@ -48,6 +53,7 @@ bool destroy(Process* process) {
         return false;
     }
 
+    close_file_descriptors(process);
     virtual_memory::destroy_address_space(&process->address_space);
     if(process->address_space.root_physical != 0) {
         return false;
@@ -133,6 +139,53 @@ virtual_memory::AddressSpace* address_space(Process* process) {
 
 uint32_t thread_count(const Process* process) {
     return process == nullptr ? 0 : process->thread_count;
+}
+
+int32_t allocate_file_descriptor(Process* process, const vfs::File* file) {
+    if(process == nullptr || file == nullptr || !file->open) {
+        return -1;
+    }
+    for(uint32_t descriptor = kFirstFileDescriptor; descriptor < kMaximumFileDescriptors; ++descriptor) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
+        if(!process->descriptors[descriptor].open) {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
+            process->descriptors[descriptor] = {.file = *file, .open = true};
+            return static_cast<int32_t>(descriptor);
+        }
+    }
+    return -1;
+}
+
+vfs::File* file_descriptor(Process* process, uint64_t descriptor) {
+    if(process == nullptr || descriptor >= kMaximumFileDescriptors ||
+       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
+       !process->descriptors[descriptor].open) {
+        return nullptr;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
+    return &process->descriptors[descriptor].file;
+}
+
+bool close_file_descriptor(Process* process, uint64_t descriptor) {
+    auto* file = file_descriptor(process, descriptor);
+    if(file == nullptr || vfs::close(file) != vfs::Status::Success) {
+        return false;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor was validated by helper
+    process->descriptors[descriptor].open = false;
+    return true;
+}
+
+void close_file_descriptors(Process* process) {
+    if(process == nullptr) {
+        return;
+    }
+    for(uint32_t descriptor = kFirstFileDescriptor; descriptor < kMaximumFileDescriptors; ++descriptor) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
+        if(process->descriptors[descriptor].open) {
+            (void)close_file_descriptor(process, descriptor);
+        }
+    }
 }
 
 } // namespace process

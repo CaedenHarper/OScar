@@ -1,0 +1,70 @@
+.section .text
+.global _start
+.type _start, @function
+_start:
+    movl $6, %eax
+    leaq path(%rip), %rdi
+    movl $1, %esi
+    int $0x80
+    testq %rax, %rax
+    js .Lfail
+    movq %rax, %r12
+
+    movl $7, %eax
+    movq %r12, %rdi
+    leaq buffer(%rip), %rsi
+    movl $(buffer_end - buffer), %edx
+    int $0x80
+    testq %rax, %rax
+    js .Lfail_close
+    movq %rax, %r13
+
+    movl $0, %eax
+    leaq buffer(%rip), %rdi
+    movq %r13, %rsi
+    int $0x80
+
+    movl $9, %eax
+    movq %r12, %rdi
+    xorl %esi, %esi
+    int $0x80
+    testq %rax, %rax
+    js .Lfail_close
+
+    movl $8, %eax
+    movq %r12, %rdi
+    int $0x80
+    testq %rax, %rax
+    js .Lfail
+
+    movl $1, %eax
+    int $0x80
+.Lhalt:
+    jmp .Lhalt
+
+.Lfail_close:
+    movl $8, %eax
+    movq %r12, %rdi
+    int $0x80
+.Lfail:
+    movl $0, %eax
+    leaq failure(%rip), %rdi
+    movl $(failure_end - failure), %esi
+    int $0x80
+    movl $1, %eax
+    int $0x80
+    jmp .Lhalt
+.size _start, .-_start
+
+.section .rodata
+path:
+    .asciz "/hello.txt"
+failure:
+    .ascii "Filesystem syscall test failed.\n"
+failure_end:
+
+.section .bss
+.balign 16
+buffer:
+    .space 64
+buffer_end:

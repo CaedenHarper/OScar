@@ -12,6 +12,8 @@ extern "C" const uint8_t user_program_prime_start[];
 extern "C" const uint8_t user_program_prime_end[];
 extern "C" const uint8_t user_program_second_start[];
 extern "C" const uint8_t user_program_second_end[];
+extern "C" const uint8_t user_program_filesystem_start[];
+extern "C" const uint8_t user_program_filesystem_end[];
 extern "C" const uint8_t user_program_divzero_start[];
 extern "C" const uint8_t user_program_divzero_end[];
 extern "C" const uint8_t user_program_kernel_access_start[];

@@ -3,7 +3,7 @@ SHELL := /bin/sh
 
 BUILD_DIR := build
 USER_BUILD_DIR := $(BUILD_DIR)/user
-USER_PROGRAM_NAMES := basic prime second divzero kernel_access invalid_opcode
+USER_PROGRAM_NAMES := basic prime second filesystem divzero kernel_access invalid_opcode
 USER_ELFS := $(addprefix $(USER_BUILD_DIR)/,$(addsuffix .elf,$(USER_PROGRAM_NAMES)))
 DEPS_DIR := deps
 ISO_ROOT := $(BUILD_DIR)/iso_root
@@ -133,6 +133,7 @@ $(USER_BUILD_DIR)/prime.elf: tests/user/prime.c tests/user/linker.ld | $(USER_BU
 $(BUILD_DIR)/asm/tests/user_program.o: $(USER_BUILD_DIR)/basic.elf
 $(BUILD_DIR)/asm/tests/user_program_prime.o: $(USER_BUILD_DIR)/prime.elf
 $(BUILD_DIR)/asm/tests/user_program_second.o: $(USER_BUILD_DIR)/second.elf
+$(BUILD_DIR)/asm/tests/user_program_filesystem.o: $(USER_BUILD_DIR)/filesystem.elf
 $(BUILD_DIR)/asm/tests/user_program_divzero.o: $(USER_BUILD_DIR)/divzero.elf
 $(BUILD_DIR)/asm/tests/user_program_kernel_access.o: $(USER_BUILD_DIR)/kernel_access.elf
 $(BUILD_DIR)/asm/tests/user_program_invalid_opcode.o: $(USER_BUILD_DIR)/invalid_opcode.elf

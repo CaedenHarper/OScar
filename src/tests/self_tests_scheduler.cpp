@@ -118,7 +118,8 @@ void prepare_scheduler_test() {
         panic::halt("real ELF executable smoke test could not prepare its process");
     }
     if(!prepare_embedded_elf_thread(user_program_prime_start, user_program_prime_end) ||
-       !prepare_embedded_elf_thread(user_program_second_start, user_program_second_end)) {
+       !prepare_embedded_elf_thread(user_program_second_start, user_program_second_end) ||
+       !prepare_embedded_elf_thread(user_program_filesystem_start, user_program_filesystem_end)) {
         panic::halt("multiple ELF executable smoke tests could not prepare their processes");
     }
     if(!prepare_crash_test_thread(user_program_divzero_start, user_program_divzero_end) ||
