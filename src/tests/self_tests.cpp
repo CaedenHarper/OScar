@@ -60,6 +60,10 @@ void run_context() {
     interrupts::enable();
 }
 
+void run_keyboard_ps2() {
+    self_tests_detail::test_keyboard_ps2();
+}
+
 void run_scheduler() {
     self_tests_detail::prepare_scheduler_test();
 }

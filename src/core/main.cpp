@@ -78,6 +78,7 @@ extern "C" [[noreturn]] void kmain() {
 
     idt::initialize();
     interrupt_controller::initialize(g_hhdm_request.response->offset);
+    self_tests::run_keyboard_ps2();
     self_tests::run_timer();
     self_tests::run_context();
     self_tests::run_scheduler();

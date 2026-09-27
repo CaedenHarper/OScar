@@ -35,8 +35,8 @@ The source tree is organized as follows:
 - `src/arch/x86_64/`: CPU contexts, GDT/TSS, IDT setup, and exception/IRQ/syscall entry.
 - `src/core/`: the kernel entry point, fatal error handling, processes, kernel
   and user threads, scheduler, and system calls.
-- `src/drivers/`: x86 port I/O, serial output, timer/PIT support, and the
-  polling legacy VirtIO block driver.
+- `src/drivers/`: x86 port I/O, serial output, timer/PIT support, the
+  IRQ-driven PS/2 keyboard driver, and the polling legacy VirtIO block driver.
 - `src/filesystem/`: the generic VFS, read-only ext2 mounting, inode loading,
   path lookup, and regular-file reads through direct and indirect data blocks.
 - `src/exec/`: freestanding ELF64 validation and process image loading.
@@ -47,7 +47,7 @@ The source tree is organized as follows:
 - `src/storage/`: hardware-independent block-device protocol.
 - `src/tests/`: boot-time subsystem smoke tests; keep them out of `main.cpp`.
   `self_tests.cpp` coordinates the suite, while `self_tests_*.cpp` group
-  context, memory/process, scheduler, synchronization, and user-mode tests.
+  context, keyboard, memory/process, scheduler, synchronization, and user-mode tests.
   `self_tests_internal.hpp` contains private cross-test declarations.
 - `tests/user/`: source and linker script for successful, filesystem-read,
   computed-output, RAM-backed init, and intentional-crash user ELF smoke images. Malformed ELF metadata tests live in

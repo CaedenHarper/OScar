@@ -22,6 +22,9 @@ void run_timer();
  */
 void run_context();
 
+/** Verify that the optional PS/2 keyboard driver initializes and starts empty. */
+void run_keyboard_ps2();
+
 /**
  * Prepare cooperative round-robin scheduler smoke-test threads. The
  * scheduler must be initialized and interrupts must be enabled before this
