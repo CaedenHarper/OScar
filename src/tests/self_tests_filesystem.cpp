@@ -52,6 +52,31 @@ void test_filesystem() {
             panic::halt("filesystem smoke test read incorrect config contents");
         }
     }
+
+    ext2::Inode large = {};
+    alignas(16) uint8_t boundary_contents[64] = {};
+    if(ext2::lookup(&file_system, "/large.bin", &large) != ext2::Status::Success || large.directory ||
+       large.size != 300ULL * 1024ULL) {
+        panic::halt("filesystem smoke test could not find the large file fixture");
+    }
+    const uint64_t pointers_per_block = file_system.block_size / sizeof(uint32_t);
+    const uint64_t single_boundary = 12ULL * file_system.block_size;
+    const uint64_t double_boundary = (12ULL + pointers_per_block) * file_system.block_size;
+    const uint64_t boundary_offsets[] = {single_boundary - 32, double_boundary - 32};
+    for(const uint64_t offset : boundary_offsets) {
+        uint32_t boundary_bytes = 0;
+        if(ext2::read_file(
+               &file_system, &large, offset, sizeof(boundary_contents), boundary_contents, &boundary_bytes
+           ) != ext2::Status::Success ||
+           boundary_bytes != sizeof(boundary_contents)) {
+            panic::halt("filesystem smoke test could not cross an indirect block boundary");
+        }
+        for(const uint8_t byte : boundary_contents) {
+            if(byte != 0) {
+                panic::halt("filesystem smoke test read incorrect indirect-block data");
+            }
+        }
+    }
     serial::write("Read-only ext2 mount, lookup, and file-read smoke test passed.\n");
 }
 

@@ -14,7 +14,8 @@ threads cooperatively and from timer interrupts, supports tick-based waiting
 and waking, provides interrupt-safe spinlocks, wait queues, and blocking
 mutexes, exposes a block-device protocol with a polling legacy VirtIO block
 driver, mounts a read-only ext2 filesystem, resolves paths and reads regular
-files, prints diagnostics to QEMU's serial console, and idles.
+files through direct, single-indirect, and double-indirect data blocks,
+including sparse holes, prints diagnostics to QEMU's serial console, and idles.
 
 This is a kernel seed, not yet an operating system. It does not yet provide
 filesystem-backed executable loading, process-creation system calls, or
@@ -51,7 +52,9 @@ Generated files go into `build/`.
 `make run` creates and attaches the persistent `build/virtio-test.img` disk to
 QEMU. The image is ignored by Git and remains across emulator runs; `make
 clean` removes it with the other build products.
-The image is formatted as ext2 and populated with filesystem lookup fixtures;
+The image is formatted as ext2 and populated with filesystem lookup fixtures,
+including a generated 300 KiB file used to test reads across indirect-block
+boundaries;
 install `mke2fs` and `debugfs` in addition to the tools listed below.
 
 ## Recommended environment

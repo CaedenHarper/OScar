@@ -38,7 +38,7 @@ The source tree is organized as follows:
 - `src/drivers/`: x86 port I/O, serial output, timer/PIT support, and the
   polling legacy VirtIO block driver.
 - `src/filesystem/`: the generic VFS, read-only ext2 mounting, inode loading,
-  path lookup, and regular-file reads.
+  path lookup, and regular-file reads through direct and indirect data blocks.
 - `src/exec/`: freestanding ELF64 validation and process image loading.
 - `src/interrupts/`: interrupt-controller routing and CPU interrupt helpers.
 - `src/memory/`: physical pages, virtual-memory mappings, user-memory copying,
@@ -68,7 +68,9 @@ make test-exception
 also attaches the persistent, generated `build/virtio-test.img` disk used by
 the VirtIO block-driver smoke test; `make clean` removes that image.
 The image is formatted as ext2 and populated with lookup fixtures during its
-first build; `mke2fs` and `debugfs` are required.
+first build. The generated `large.bin` fixture crosses the single- and
+double-indirect data-block boundaries, so filesystem read changes should keep
+that smoke test passing. `mke2fs` and `debugfs` are required.
 `make test-exception` builds in a separate `build-exception/` directory,
 executes `ud2`, and should print an invalid-opcode diagnostic with register
 state before halting.

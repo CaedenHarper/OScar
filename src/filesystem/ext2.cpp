@@ -19,6 +19,15 @@ constexpr uint32_t kSuperblockOffset = 1024;
 constexpr uint32_t kSuperblockSize = 1024;
 constexpr uint32_t kDirectoryEntryHeaderSize = 8;
 constexpr uint32_t kDirectBlockCount = 12;
+constexpr uint32_t kIndirectBlockCount = 15;
+
+enum class DataBlockResult : uint8_t {
+    Success,
+    Hole,
+    Corrupt,
+    IoError,
+    Unsupported,
+};
 
 alignas(4096) uint8_t g_io_buffer[kBlockSizeMaximum];
 
@@ -96,12 +105,67 @@ bool read_inode(const FileSystem* file_system, uint32_t inode_number, Inode* ino
         return false;
     }
     inode->directory = (inode->mode & 0xf000U) == kDirectoryType;
+    if(!inode->directory) {
+        inode->size |= static_cast<uint64_t>(read_u32(raw_inode, 108)) << 32U;
+    }
     if(direct_blocks != nullptr) {
-        for(uint32_t index = 0; index < kDirectBlockCount; ++index) {
+        for(uint32_t index = 0; index < kIndirectBlockCount; ++index) {
             direct_blocks[index] = read_u32(raw_inode, 40 + index * sizeof(uint32_t));
         }
     }
     return true;
+}
+
+DataBlockResult get_data_block(
+    const FileSystem* file_system,
+    const uint32_t* inode_blocks,
+    uint64_t logical_block,
+    uint32_t* physical_block
+) {
+    if(file_system == nullptr || inode_blocks == nullptr || physical_block == nullptr) {
+        return DataBlockResult::Corrupt;
+    }
+    const uint64_t pointers_per_block = file_system->block_size / sizeof(uint32_t);
+    if(logical_block < kDirectBlockCount) {
+        *physical_block = inode_blocks[logical_block];
+    } else {
+        logical_block -= kDirectBlockCount;
+        if(logical_block < pointers_per_block) {
+            if(inode_blocks[12] == 0) {
+                return DataBlockResult::Hole;
+            }
+            if(!read_fs_block(file_system, inode_blocks[12])) {
+                return DataBlockResult::IoError;
+            }
+            *physical_block = read_u32(g_io_buffer, static_cast<uint32_t>(logical_block * sizeof(uint32_t)));
+        } else {
+            logical_block -= pointers_per_block;
+            const uint64_t double_capacity = pointers_per_block * pointers_per_block;
+            if(logical_block >= double_capacity) {
+                return DataBlockResult::Unsupported;
+            }
+            if(inode_blocks[13] == 0) {
+                return DataBlockResult::Hole;
+            }
+            const uint32_t first_index = static_cast<uint32_t>(logical_block / pointers_per_block);
+            const uint32_t second_index = static_cast<uint32_t>(logical_block % pointers_per_block);
+            if(!read_fs_block(file_system, inode_blocks[13])) {
+                return DataBlockResult::IoError;
+            }
+            const uint32_t indirect_block = read_u32(g_io_buffer, first_index * sizeof(uint32_t));
+            if(indirect_block == 0) {
+                return DataBlockResult::Hole;
+            }
+            if(!read_fs_block(file_system, indirect_block)) {
+                return DataBlockResult::IoError;
+            }
+            *physical_block = read_u32(g_io_buffer, second_index * sizeof(uint32_t));
+        }
+    }
+    if(*physical_block == 0) {
+        return DataBlockResult::Hole;
+    }
+    return *physical_block < file_system->block_count ? DataBlockResult::Success : DataBlockResult::Corrupt;
 }
 
 bool component_equals(const uint8_t* name, uint8_t name_length, const char* component, uint32_t component_length) {
@@ -123,16 +187,16 @@ Status find_child(
     uint32_t length,
     Inode* child
 ) {
-    uint32_t direct_blocks[kDirectBlockCount] = {};
+    uint32_t inode_blocks[kIndirectBlockCount] = {};
     Inode ignored = {};
-    if(!read_inode(file_system, directory.number, &ignored, direct_blocks)) {
+    if(!read_inode(file_system, directory.number, &ignored, inode_blocks)) {
         return Status::Corrupt;
     }
     for(uint32_t block_index = 0; block_index < kDirectBlockCount; ++block_index) {
-        if(direct_blocks[block_index] == 0) {
+        if(inode_blocks[block_index] == 0) {
             continue;
         }
-        if(!read_fs_block(file_system, direct_blocks[block_index])) {
+        if(!read_fs_block(file_system, inode_blocks[block_index])) {
             return Status::IoError;
         }
         uint32_t offset = 0;
@@ -322,9 +386,9 @@ Status read_file(
     const interrupts::State previous_state = synchronization::lock(&file_system->io_lock);
     const uint64_t available = inode->size - offset;
     const uint32_t requested = available < length ? static_cast<uint32_t>(available) : length;
-    uint32_t direct_blocks[kDirectBlockCount] = {};
+    uint32_t inode_blocks[kIndirectBlockCount] = {};
     Inode verified = {};
-    if(!read_inode(file_system, inode->number, &verified, direct_blocks)) {
+    if(!read_inode(file_system, inode->number, &verified, inode_blocks)) {
         synchronization::unlock(&file_system->io_lock, previous_state);
         return Status::Corrupt;
     }
@@ -333,22 +397,28 @@ Status read_file(
     uint64_t position = offset;
     while(*bytes_read < requested) {
         const uint64_t logical_block = position / file_system->block_size;
-        if(logical_block >= kDirectBlockCount) {
+        uint32_t physical_block = 0;
+        const DataBlockResult block_result = get_data_block(file_system, inode_blocks, logical_block, &physical_block);
+        if(block_result == DataBlockResult::Unsupported) {
             synchronization::unlock(&file_system->io_lock, previous_state);
             return Status::Unsupported;
         }
-        const uint32_t physical_block = direct_blocks[logical_block];
-        if(physical_block == 0 || !read_fs_block(file_system, physical_block)) {
-            const Status result = physical_block == 0 ? Status::Corrupt : Status::IoError;
+        if(block_result == DataBlockResult::Corrupt || block_result == DataBlockResult::IoError) {
+            const Status result = block_result == DataBlockResult::Corrupt ? Status::Corrupt : Status::IoError;
             synchronization::unlock(&file_system->io_lock, previous_state);
             return result;
+        }
+        if(block_result == DataBlockResult::Success && !read_fs_block(file_system, physical_block)) {
+            synchronization::unlock(&file_system->io_lock, previous_state);
+            return Status::IoError;
         }
         const uint32_t block_offset = static_cast<uint32_t>(position % file_system->block_size);
         const uint32_t remaining_in_block = file_system->block_size - block_offset;
         const uint32_t remaining_in_file = requested - *bytes_read;
         const uint32_t amount = remaining_in_block < remaining_in_file ? remaining_in_block : remaining_in_file;
         for(uint32_t index = 0; index < amount; ++index) {
-            destination[*bytes_read + index] = g_io_buffer[block_offset + index];
+            destination[*bytes_read + index] =
+                block_result == DataBlockResult::Hole ? 0 : g_io_buffer[block_offset + index];
         }
         *bytes_read += amount;
         position += amount;
