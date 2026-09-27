@@ -82,6 +82,11 @@ extern "C" [[noreturn]] void kmain() {
     self_tests::run_context();
     self_tests::run_scheduler();
 
+    serial::write("Exiting kernel startup.\n");
+    if(!self_tests::prepare_init()) {
+        panic::halt("could not prepare init process");
+    }
+
 #ifdef OSCAR_TEST_EXCEPTION
     serial::write("Triggering invalid-opcode exception...\n");
     asm volatile("ud2");

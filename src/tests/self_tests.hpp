@@ -29,4 +29,11 @@ void run_context();
  */
 void run_scheduler();
 
+/**
+ * Load and enqueue the RAM-backed init ELF after kernel smoke tests are prepared.
+ * The scheduler and ELF-loading prerequisites must be initialized first; scheduling
+ * begins later when scheduler::start() runs.
+ */
+bool prepare_init();
+
 } // namespace self_tests

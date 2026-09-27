@@ -50,7 +50,7 @@ The source tree is organized as follows:
   context, memory/process, scheduler, synchronization, and user-mode tests.
   `self_tests_internal.hpp` contains private cross-test declarations.
 - `tests/user/`: source and linker script for successful, filesystem-read,
-  computed-output, and intentional-crash user ELF smoke images. Malformed ELF metadata tests live in
+  computed-output, RAM-backed init, and intentional-crash user ELF smoke images. Malformed ELF metadata tests live in
   `src/tests/` because they exercise validation without loading an image.
 - `tests/filesystem/`: source files copied into the generated ext2 test image.
 

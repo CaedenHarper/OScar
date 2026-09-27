@@ -209,6 +209,17 @@ bool prepare_crash_test_thread(const uint8_t* image, const uint8_t* image_end) {
     return scheduler::enqueue(thread);
 }
 
+bool prepare_init_process() {
+    process::Process* process = nullptr;
+    kernel_thread::Thread* thread = nullptr;
+    const uint64_t image_size = static_cast<uint64_t>(user_program_init_end - user_program_init_start);
+    if(!loader::load(user_program_init_start, image_size, &process, &thread) || process == nullptr ||
+       thread == nullptr) {
+        return false;
+    }
+    return scheduler::enqueue(thread);
+}
+
 // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic, performance-no-int-to-ptr,
 //           clang-analyzer-core.FixedAddressDereference)
 

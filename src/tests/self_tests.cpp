@@ -64,4 +64,8 @@ void run_scheduler() {
     self_tests_detail::prepare_scheduler_test();
 }
 
+bool prepare_init() {
+    return self_tests_detail::prepare_init_process();
+}
+
 } // namespace self_tests

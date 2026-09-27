@@ -19,7 +19,8 @@ including sparse holes, prints diagnostics to QEMU's serial console, and idles.
 
 This is a kernel seed, not yet an operating system. It does not yet provide
 filesystem-backed executable loading, process-creation system calls, or
-dynamic linking.
+dynamic linking. The kernel now also loads a small RAM-backed C `init` ELF
+after boot-time smoke tests; it currently announces startup and exits.
 
 ## Repository layout
 
@@ -44,7 +45,7 @@ dynamic linking.
 
 Limine and its protocol header are downloaded into `deps/` on the first build.
 The build compiles the user ELF fixtures in `tests/user/`—including the basic,
-filesystem-read, computed-prime, and second-program success cases plus intentional-crash
+filesystem-read, computed-prime, second-program, and RAM-backed `init` success cases plus intentional-crash
 programs—and embeds them into the kernel smoke tests. The kernel also tests
 malformed ELF metadata directly before scheduling user processes.
 Generated files go into `build/`.
@@ -112,8 +113,9 @@ Timer preemption smoke test passed.
 Waiting-thread sleep smoke test passed.
 Timer interrupt smoke test passed.
 Synchronization primitive smoke test passed.
-Waiting-thread sleep smoke test passed.
-Kernel initialization complete; halting.
+Exiting kernel startup.
+init: user-space initialization started.
+init: exiting.
 ```
 
 The exact memory-map entry count and usable-page count may differ.

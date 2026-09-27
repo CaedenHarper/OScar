@@ -20,6 +20,8 @@ extern "C" const uint8_t user_program_kernel_access_start[];
 extern "C" const uint8_t user_program_kernel_access_end[];
 extern "C" const uint8_t user_program_invalid_opcode_start[];
 extern "C" const uint8_t user_program_invalid_opcode_end[];
+extern "C" const uint8_t user_program_init_start[];
+extern "C" const uint8_t user_program_init_end[];
 
 constexpr uint64_t kSmallAllocationSize = 37;
 constexpr uint64_t kCrossPageAllocationSize = virtual_memory::kPageSize + 1;
@@ -105,6 +107,7 @@ bool prepare_elf_test_thread();
 bool prepare_real_elf_test_thread();
 bool prepare_embedded_elf_thread(const uint8_t* image, const uint8_t* image_end);
 bool prepare_crash_test_thread(const uint8_t* image, const uint8_t* image_end);
+bool prepare_init_process();
 void prepare_scheduler_test();
 
 } // namespace self_tests_detail
