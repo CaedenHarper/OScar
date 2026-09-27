@@ -265,6 +265,57 @@ Status lookup(const FileSystem* file_system, const char* path, Inode* inode) {
     return Status::Success;
 }
 
+Status read_file(
+    const FileSystem* file_system,
+    const Inode* inode,
+    uint64_t offset,
+    uint32_t length,
+    void* buffer,
+    uint32_t* bytes_read
+) {
+    if(file_system == nullptr || !file_system->mounted || inode == nullptr || bytes_read == nullptr ||
+       (length != 0 && buffer == nullptr)) {
+        return Status::InvalidArgument;
+    }
+    *bytes_read = 0;
+    if(inode->directory) {
+        return Status::NotDirectory;
+    }
+    if(offset >= inode->size || length == 0) {
+        return Status::Success;
+    }
+    const uint64_t available = inode->size - offset;
+    const uint32_t requested = available < length ? static_cast<uint32_t>(available) : length;
+    uint32_t direct_blocks[kDirectBlockCount] = {};
+    Inode verified = {};
+    if(!read_inode(file_system, inode->number, &verified, direct_blocks)) {
+        return Status::Corrupt;
+    }
+
+    uint8_t* destination = static_cast<uint8_t*>(buffer);
+    uint64_t position = offset;
+    while(*bytes_read < requested) {
+        const uint64_t logical_block = position / file_system->block_size;
+        if(logical_block >= kDirectBlockCount) {
+            return Status::Unsupported;
+        }
+        const uint32_t physical_block = direct_blocks[logical_block];
+        if(physical_block == 0 || !read_fs_block(file_system, physical_block)) {
+            return physical_block == 0 ? Status::Corrupt : Status::IoError;
+        }
+        const uint32_t block_offset = static_cast<uint32_t>(position % file_system->block_size);
+        const uint32_t remaining_in_block = file_system->block_size - block_offset;
+        const uint32_t remaining_in_file = requested - *bytes_read;
+        const uint32_t amount = remaining_in_block < remaining_in_file ? remaining_in_block : remaining_in_file;
+        for(uint32_t index = 0; index < amount; ++index) {
+            destination[*bytes_read + index] = g_io_buffer[block_offset + index];
+        }
+        *bytes_read += amount;
+        position += amount;
+    }
+    return Status::Success;
+}
+
 } // namespace ext2
 
 // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-constant-array-index,

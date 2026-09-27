@@ -36,7 +36,8 @@ The source tree is organized as follows:
   and user threads, scheduler, and system calls.
 - `src/drivers/`: x86 port I/O, serial output, timer/PIT support, and the
   polling legacy VirtIO block driver.
-- `src/filesystem/`: read-only ext2 mounting, inode loading, and path lookup.
+- `src/filesystem/`: read-only ext2 mounting, inode loading, path lookup, and
+  regular-file reads.
 - `src/exec/`: freestanding ELF64 validation and process image loading.
 - `src/interrupts/`: interrupt-controller routing and CPU interrupt helpers.
 - `src/memory/`: physical pages, virtual-memory mappings, user-memory copying,

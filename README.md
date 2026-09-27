@@ -13,7 +13,8 @@ provides a kernel heap, creates and runs kernel-thread stacks, schedules kernel
 threads cooperatively and from timer interrupts, supports tick-based waiting
 and waking, provides interrupt-safe spinlocks, wait queues, and blocking
 mutexes, exposes a block-device protocol with a polling legacy VirtIO block
-driver, prints diagnostics to QEMU's serial console, and idles.
+driver, mounts a read-only ext2 filesystem, resolves paths and reads regular
+files, prints diagnostics to QEMU's serial console, and idles.
 
 This is a kernel seed, not yet an operating system. It does not yet provide
 filesystem-backed executable loading, process-creation system calls, or

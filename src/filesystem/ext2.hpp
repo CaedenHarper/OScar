@@ -51,4 +51,19 @@ bool mount(block_device::Device* device, FileSystem* file_system);
  */
 Status lookup(const FileSystem* file_system, const char* path, Inode* inode);
 
+/**
+ * Read bytes from a regular file inode at the supplied offset.
+ * The destination is a kernel buffer owned by the caller. Reads stop at EOF,
+ * return Success with zero bytes at EOF, and report Unsupported for files that
+ * require indirect block traversal until that support is implemented.
+ */
+Status read_file(
+    const FileSystem* file_system,
+    const Inode* inode,
+    uint64_t offset,
+    uint32_t length,
+    void* buffer,
+    uint32_t* bytes_read
+);
+
 } // namespace ext2
