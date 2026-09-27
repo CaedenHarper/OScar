@@ -53,8 +53,8 @@ Generated files go into `build/`.
 QEMU. The image is ignored by Git and remains across emulator runs; `make
 clean` removes it with the other build products.
 The image is formatted as ext2 and populated with filesystem lookup fixtures,
-including a generated 300 KiB file used to test reads across indirect-block
-boundaries;
+including a generated 300 KiB file for indirect-block reads and a directory
+with 300 entries for indirect-directory lookup tests;
 install `mke2fs` and `debugfs` in addition to the tools listed below.
 
 ## Recommended environment

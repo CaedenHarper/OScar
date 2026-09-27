@@ -21,12 +21,19 @@ void test_filesystem() {
     ext2::Inode hello = {};
     ext2::Inode config = {};
     ext2::Inode root = {};
+    ext2::Inode directory_tail = {};
     if(ext2::lookup(&file_system, "/hello.txt", &hello) != ext2::Status::Success || hello.directory ||
        hello.size == 0 || ext2::lookup(&file_system, "/etc/oscar/config.txt", &config) != ext2::Status::Success ||
        config.directory || config.size == 0 || ext2::lookup(&file_system, "/", &root) != ext2::Status::Success ||
        !root.directory || ext2::lookup(&file_system, "/missing", &root) != ext2::Status::NotFound ||
-       ext2::lookup(&file_system, "/hello.txt/more", &root) != ext2::Status::NotDirectory) {
+       ext2::lookup(&file_system, "/hello.txt/more", &root) != ext2::Status::NotDirectory ||
+       ext2::lookup(&file_system, "///etc//./oscar/config.txt", &root) != ext2::Status::Success ||
+       ext2::lookup(&file_system, "/many/file299", &directory_tail) != ext2::Status::Success ||
+       directory_tail.directory) {
         panic::halt("filesystem smoke test returned an incorrect inode lookup result");
+    }
+    if(ext2::get_inode(&file_system, file_system.inode_count + 1, &root) != ext2::Status::Corrupt) {
+        panic::halt("filesystem smoke test accepted an out-of-range inode");
     }
 
     constexpr char kExpectedHello[] = "Hello from the OScar filesystem.\n";
@@ -51,6 +58,22 @@ void test_filesystem() {
         if(config_contents[index] != kExpectedConfig[index]) {
             panic::halt("filesystem smoke test read incorrect config contents");
         }
+    }
+    if(ext2::lookup(&file_system, "/", &root) != ext2::Status::Success) {
+        panic::halt("filesystem smoke test could not reload the root inode");
+    }
+    uint32_t bytes_read = 0;
+    if(ext2::read_file(&file_system, &hello, hello.size, 1, hello_contents, &bytes_read) != ext2::Status::Success ||
+       bytes_read != 0 || ext2::read_file(&file_system, &hello, 0, 0, nullptr, &bytes_read) != ext2::Status::Success ||
+       ext2::read_file(&file_system, &hello, 0, 1, nullptr, &bytes_read) != ext2::Status::InvalidArgument ||
+       ext2::read_file(&file_system, &root, 0, 1, hello_contents, &bytes_read) != ext2::Status::NotDirectory) {
+        panic::halt("filesystem smoke test accepted an invalid read request");
+    }
+    ext2::Inode forged = hello;
+    forged.size = UINT64_MAX;
+    if(ext2::read_file(&file_system, &forged, hello.size, 1, hello_contents, &bytes_read) != ext2::Status::Success ||
+       bytes_read != 0) {
+        panic::halt("filesystem smoke test trusted stale inode metadata");
     }
 
     ext2::Inode large = {};
@@ -96,10 +119,18 @@ void test_vfs() {
        first_chunk[2] != 'l' || first_chunk[3] != 'l' || first_chunk[4] != 'o') {
         panic::halt("VFS smoke test read the wrong first chunk");
     }
-    if(vfs::seek(&file, 0) != vfs::Status::Success ||
+    if(vfs::seek(&file, file.node.size + 1) != vfs::Status::Success ||
+       vfs::read(&file, nullptr, 0, &bytes_read) != vfs::Status::Success || bytes_read != 0 ||
+       vfs::seek(&file, 0) != vfs::Status::Success ||
        vfs::read(&file, first_chunk, sizeof(first_chunk) - 1, &bytes_read) != vfs::Status::Success ||
        bytes_read != sizeof(first_chunk) - 1 || vfs::close(&file) != vfs::Status::Success || file.open) {
         panic::halt("VFS smoke test could not seek or close a file");
+    }
+    if(vfs::close(&file) != vfs::Status::InvalidArgument ||
+       vfs::open("/hello.txt", 0, &file) != vfs::Status::InvalidArgument ||
+       vfs::open("/hello.txt", 2, &file) != vfs::Status::InvalidArgument ||
+       vfs::resolve("///etc//./oscar/config.txt", &file.node) != vfs::Status::Success) {
+        panic::halt("VFS smoke test accepted an invalid handle or path request");
     }
 
     vfs::File directory = {};

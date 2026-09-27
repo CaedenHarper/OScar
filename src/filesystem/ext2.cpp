@@ -72,8 +72,7 @@ bool read_fs_block(const FileSystem* file_system, uint32_t block) {
 }
 
 bool valid_inode_number(const FileSystem* file_system, uint32_t inode_number) {
-    return file_system != nullptr && inode_number != 0 &&
-           inode_number <= file_system->group_count * file_system->inodes_per_group;
+    return file_system != nullptr && inode_number != 0 && inode_number <= file_system->inode_count;
 }
 
 bool read_inode(const FileSystem* file_system, uint32_t inode_number, Inode* inode, uint32_t* direct_blocks = nullptr) {
@@ -90,10 +89,10 @@ bool read_inode(const FileSystem* file_system, uint32_t inode_number, Inode* ino
     }
     const uint32_t inode_table = read_u32(g_io_buffer + descriptor_offset, 8);
     const uint64_t inode_offset = static_cast<uint64_t>(index) * file_system->inode_size;
-    const uint32_t table_block = inode_table + static_cast<uint32_t>(inode_offset / file_system->block_size);
+    const uint64_t table_block = static_cast<uint64_t>(inode_table) + inode_offset / file_system->block_size;
     const uint32_t table_offset = static_cast<uint32_t>(inode_offset % file_system->block_size);
     if(table_block >= file_system->block_count || table_offset + file_system->inode_size > file_system->block_size ||
-       !read_fs_block(file_system, table_block)) {
+       !read_fs_block(file_system, static_cast<uint32_t>(table_block))) {
         return false;
     }
 
@@ -192,19 +191,24 @@ Status find_child(
     if(!read_inode(file_system, directory.number, &ignored, inode_blocks)) {
         return Status::Corrupt;
     }
-    for(uint32_t block_index = 0; block_index < kDirectBlockCount; ++block_index) {
-        if(inode_blocks[block_index] == 0) {
-            continue;
+    const uint64_t block_count =
+        directory.size / file_system->block_size + (directory.size % file_system->block_size != 0 ? 1 : 0);
+    for(uint64_t block_index = 0; block_index < block_count; ++block_index) {
+        uint32_t physical_block = 0;
+        const DataBlockResult block_result = get_data_block(file_system, inode_blocks, block_index, &physical_block);
+        if(block_result == DataBlockResult::Unsupported) {
+            return Status::Unsupported;
         }
-        if(!read_fs_block(file_system, inode_blocks[block_index])) {
-            return Status::IoError;
+        if(block_result == DataBlockResult::Corrupt) {
+            return Status::Corrupt;
+        }
+        if(block_result != DataBlockResult::Success || !read_fs_block(file_system, physical_block)) {
+            return block_result == DataBlockResult::IoError ? Status::IoError : Status::Corrupt;
         }
         uint32_t offset = 0;
-        const uint32_t block_limit =
-            directory.size > static_cast<uint64_t>(block_index) * file_system->block_size
-                ? static_cast<uint32_t>(directory.size - static_cast<uint64_t>(block_index) * file_system->block_size)
-                : 0;
-        const uint32_t available = block_limit < file_system->block_size ? block_limit : file_system->block_size;
+        const uint64_t remaining = directory.size - block_index * file_system->block_size;
+        const uint32_t available =
+            remaining < file_system->block_size ? static_cast<uint32_t>(remaining) : file_system->block_size;
         while(offset + kDirectoryEntryHeaderSize <= available) {
             const uint32_t entry_inode = read_u32(g_io_buffer + offset, 0);
             const uint16_t entry_size = read_u16(g_io_buffer + offset, 4);
@@ -276,19 +280,24 @@ bool mount(block_device::Device* device, FileSystem* file_system) {
        (incompatible & ~kDirectoryEntryFileTypeFeature) != 0) {
         return false;
     }
-    const uint32_t group_count = (blocks_count - first_data_block + blocks_per_group - 1) / blocks_per_group;
-    const uint32_t inode_table_blocks = (inodes_per_group * inode_size + block_size - 1) / block_size;
-    if(first_data_block >= blocks_count || group_count == 0 || group_count > kMaximumGroups ||
-       inode_table_blocks == 0) {
+    if(first_data_block >= blocks_count) {
+        return false;
+    }
+    const uint64_t group_count =
+        (static_cast<uint64_t>(blocks_count) - first_data_block + blocks_per_group - 1) / blocks_per_group;
+    const uint64_t inode_table_blocks =
+        (static_cast<uint64_t>(inodes_per_group) * inode_size + block_size - 1) / block_size;
+    if(group_count == 0 || group_count > kMaximumGroups || inode_table_blocks == 0 || inode_table_blocks > UINT32_MAX) {
         return false;
     }
     file_system->device = device;
     file_system->block_count = blocks_count;
     file_system->block_size = block_size;
+    file_system->inode_count = inode_count;
     file_system->inodes_per_group = inodes_per_group;
     file_system->inode_size = inode_size;
-    file_system->group_count = group_count;
-    file_system->inode_table_blocks = inode_table_blocks;
+    file_system->group_count = static_cast<uint32_t>(group_count);
+    file_system->inode_table_blocks = static_cast<uint32_t>(inode_table_blocks);
     file_system->mounted = true;
     synchronization::initialize(&file_system->io_lock);
 
@@ -377,21 +386,23 @@ Status read_file(
         return Status::InvalidArgument;
     }
     *bytes_read = 0;
-    if(inode->directory) {
-        return Status::NotDirectory;
-    }
-    if(offset >= inode->size || length == 0) {
-        return Status::Success;
-    }
     const interrupts::State previous_state = synchronization::lock(&file_system->io_lock);
-    const uint64_t available = inode->size - offset;
-    const uint32_t requested = available < length ? static_cast<uint32_t>(available) : length;
     uint32_t inode_blocks[kIndirectBlockCount] = {};
     Inode verified = {};
     if(!read_inode(file_system, inode->number, &verified, inode_blocks)) {
         synchronization::unlock(&file_system->io_lock, previous_state);
         return Status::Corrupt;
     }
+    if(verified.directory) {
+        synchronization::unlock(&file_system->io_lock, previous_state);
+        return Status::NotDirectory;
+    }
+    if(offset >= verified.size || length == 0) {
+        synchronization::unlock(&file_system->io_lock, previous_state);
+        return Status::Success;
+    }
+    const uint64_t available = verified.size - offset;
+    const uint32_t requested = available < length ? static_cast<uint32_t>(available) : length;
 
     uint8_t* destination = static_cast<uint8_t*>(buffer);
     uint64_t position = offset;

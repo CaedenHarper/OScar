@@ -92,9 +92,14 @@ $(VIRTIO_DISK): $(FILESYSTEM_TEST_FILES) $(LARGE_FILESYSTEM_TEST_FILE) | $(BUILD
 	mke2fs -q -F -t ext2 -b 1024 $@
 	debugfs -w -R 'mkdir /etc' $@
 	debugfs -w -R 'mkdir /etc/oscar' $@
+	debugfs -w -R 'mkdir /many' $@
 	debugfs -w -R 'write tests/filesystem/hello.txt /hello.txt' $@
 	debugfs -w -R 'write tests/filesystem/config.txt /etc/oscar/config.txt' $@
 	debugfs -w -R 'write $(LARGE_FILESYSTEM_TEST_FILE) /large.bin' $@
+	index=0; while [ $$index -lt 300 ]; do \
+		debugfs -w -R "write tests/filesystem/hello.txt /many/file$$index" $@ >/dev/null || exit 1; \
+		index=$$((index + 1)); \
+	done
 
 $(LARGE_FILESYSTEM_TEST_FILE): | $(BUILD_DIR)
 	dd if=/dev/zero of=$@ bs=1024 count=300 status=none

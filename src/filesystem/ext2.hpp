@@ -29,6 +29,7 @@ struct FileSystem {
     block_device::Device* device;
     uint64_t block_count;
     uint32_t block_size;
+    uint32_t inode_count;
     uint32_t inodes_per_group;
     uint32_t inode_size;
     uint32_t group_count;
@@ -62,8 +63,8 @@ Status lookup(const FileSystem* file_system, const char* path, Inode* inode);
 /**
  * Read bytes from a regular file inode at the supplied offset.
  * The destination is a kernel buffer owned by the caller. Reads stop at EOF,
- * return Success with zero bytes at EOF, and report Unsupported for files that
- * require indirect block traversal until that support is implemented.
+ * return Success with zero bytes at EOF. Direct, single-indirect, and
+ * double-indirect data blocks are supported; larger files return Unsupported.
  */
 Status read_file(
     const FileSystem* file_system,

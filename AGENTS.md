@@ -69,8 +69,9 @@ also attaches the persistent, generated `build/virtio-test.img` disk used by
 the VirtIO block-driver smoke test; `make clean` removes that image.
 The image is formatted as ext2 and populated with lookup fixtures during its
 first build. The generated `large.bin` fixture crosses the single- and
-double-indirect data-block boundaries, so filesystem read changes should keep
-that smoke test passing. `mke2fs` and `debugfs` are required.
+double-indirect data-block boundaries, and `/many` contains 300 entries for
+indirect-directory lookup tests. Filesystem changes should keep those smoke
+tests passing. `mke2fs` and `debugfs` are required.
 `make test-exception` builds in a separate `build-exception/` directory,
 executes `ud2`, and should print an invalid-opcode diagnostic with register
 state before halting.

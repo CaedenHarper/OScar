@@ -103,7 +103,11 @@ Status resolve(const char* path, Node* node) {
     if(path == nullptr || node == nullptr || *path == '\0') {
         return Status::InvalidArgument;
     }
-    Node current = {2, 0, NodeType::Directory};
+    ext2::Inode root_inode = {};
+    if(ext2::get_inode(&g_root_filesystem, 2, &root_inode) != ext2::Status::Success || !root_inode.directory) {
+        return Status::IoError;
+    }
+    Node current = node_from_inode(root_inode);
     const char* remaining = path;
     char component[kMaximumPathComponentLength + 1];
     uint32_t component_length = 0;
