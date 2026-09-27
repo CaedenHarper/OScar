@@ -32,7 +32,7 @@ dynamic linking.
     ├── core/         Entry point, processes, threads, scheduler, and syscalls
     ├── drivers/      Port I/O, serial, timer, and VirtIO block support
     ├── exec/         ELF64 validation and executable loading
-    ├── filesystem/   Read-only ext2 mounting and inode/path lookup
+    ├── filesystem/   VFS, read-only ext2 mounting, and file reads
     ├── interrupts/   Interrupt routing and CPU interrupt helpers
     ├── memory/       Physical pages, virtual memory, and kernel heap
     ├── synchronization/ Spinlocks, wait queues, and mutexes

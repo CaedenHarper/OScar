@@ -1,6 +1,7 @@
 #pragma once
 
 #include "block_device.hpp"
+#include "spinlock.hpp"
 
 #include <stdint.h>
 
@@ -33,6 +34,7 @@ struct FileSystem {
     uint32_t group_count;
     uint32_t inode_table_blocks;
     bool mounted;
+    mutable synchronization::Spinlock io_lock;
 };
 
 /**
@@ -42,6 +44,12 @@ struct FileSystem {
  * the device is used. Returns false when the superblock or metadata is unsupported.
  */
 bool mount(block_device::Device* device, FileSystem* file_system);
+
+/** Load one inode by number from a mounted filesystem. */
+Status get_inode(const FileSystem* file_system, uint32_t inode_number, Inode* inode);
+
+/** Look up one child name within a directory inode. */
+Status lookup_child(const FileSystem* file_system, const Inode* directory, const char* name, Inode* inode);
 
 /**
  * Look up an absolute or root-relative path in a mounted filesystem.

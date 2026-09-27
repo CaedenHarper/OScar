@@ -2,6 +2,7 @@
 #include "panic.hpp"
 #include "self_tests_internal.hpp"
 #include "serial.hpp"
+#include "vfs.hpp"
 #include "virtio_block.hpp"
 
 #include <stdint.h>
@@ -52,6 +53,38 @@ void test_filesystem() {
         }
     }
     serial::write("Read-only ext2 mount, lookup, and file-read smoke test passed.\n");
+}
+
+void test_vfs() {
+    if(!vfs::mount_root(virtio_block::device()) || !vfs::is_mounted()) {
+        panic::halt("VFS smoke test could not mount the root filesystem");
+    }
+
+    vfs::File file = {};
+    if(vfs::open("/hello.txt", vfs::kOpenRead, &file) != vfs::Status::Success) {
+        panic::halt("VFS smoke test could not open a file");
+    }
+    char first_chunk[6] = {};
+    uint32_t bytes_read = 0;
+    if(vfs::read(&file, first_chunk, sizeof(first_chunk) - 1, &bytes_read) != vfs::Status::Success ||
+       bytes_read != sizeof(first_chunk) - 1 || first_chunk[0] != 'H' || first_chunk[1] != 'e' ||
+       first_chunk[2] != 'l' || first_chunk[3] != 'l' || first_chunk[4] != 'o') {
+        panic::halt("VFS smoke test read the wrong first chunk");
+    }
+    if(vfs::seek(&file, 0) != vfs::Status::Success ||
+       vfs::read(&file, first_chunk, sizeof(first_chunk) - 1, &bytes_read) != vfs::Status::Success ||
+       bytes_read != sizeof(first_chunk) - 1 || vfs::close(&file) != vfs::Status::Success || file.open) {
+        panic::halt("VFS smoke test could not seek or close a file");
+    }
+
+    vfs::File directory = {};
+    if(vfs::open("/", vfs::kOpenRead, &directory) != vfs::Status::Success ||
+       vfs::read(&directory, first_chunk, sizeof(first_chunk), &bytes_read) != vfs::Status::IsDirectory ||
+       vfs::close(&directory) != vfs::Status::Success ||
+       vfs::resolve("/missing", &directory.node) != vfs::Status::NotFound) {
+        panic::halt("VFS smoke test accepted an invalid operation");
+    }
+    serial::write("VFS mount, path, handle, read, seek, and close smoke test passed.\n");
 }
 
 } // namespace self_tests_detail
