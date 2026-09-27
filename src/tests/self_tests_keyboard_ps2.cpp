@@ -1,3 +1,4 @@
+#include "keyboard.hpp"
 #include "keyboard_ps2.hpp"
 #include "panic.hpp"
 #include "self_tests_internal.hpp"
@@ -11,8 +12,8 @@ void test_keyboard_ps2() {
         return;
     }
 
-    keyboard_ps2::KeyEvent event = {};
-    if(!keyboard_ps2::is_available() || keyboard_ps2::pending_events() != 0 || keyboard_ps2::poll(&event)) {
+    keyboard::Event event = {};
+    if(!keyboard::is_available() || keyboard::pending_events() != 0 || keyboard::poll(&event)) {
         panic::halt("PS/2 keyboard smoke test found unexpected initial input");
     }
     serial::write("PS/2 keyboard driver smoke test passed.\n");

@@ -1,11 +1,8 @@
 #include "keyboard_ps2.hpp"
 
 #include "interrupt_controller.hpp"
-#include "interrupts.hpp"
 #include "io.hpp"
-#include "scheduler.hpp"
-#include "spinlock.hpp"
-#include "wait_queue.hpp"
+#include "keyboard.hpp"
 
 #include <stdint.h>
 
@@ -24,7 +21,6 @@ constexpr uint8_t kControllerWriteCommandByte = 0x60;
 constexpr uint8_t kCommandByteTranslation = 1U << 6U;
 constexpr uint8_t kCommandByteFirstPortInterrupt = 1U << 0U;
 constexpr uint32_t kControllerPollLimit = 100000;
-constexpr uint32_t kEventCapacity = 128;
 constexpr uint8_t kExtendedScancode = 0xe0;
 constexpr uint8_t kReleaseMask = 0x80;
 constexpr uint8_t kLeftShift = 0x2a;
@@ -32,17 +28,11 @@ constexpr uint8_t kRightShift = 0x36;
 constexpr uint8_t kControl = 0x1d;
 constexpr uint8_t kAlt = 0x38;
 
-keyboard_ps2::KeyEvent g_events[kEventCapacity];
-uint32_t g_event_head = 0;
-uint32_t g_event_tail = 0;
-uint32_t g_event_count = 0;
 bool g_available = false;
 bool g_extended = false;
 bool g_shift = false;
 bool g_control = false;
 bool g_alt = false;
-synchronization::Spinlock g_event_lock = {};
-synchronization::WaitQueue g_waiters = {};
 
 bool wait_input_clear() {
     for(uint32_t attempt = 0; attempt < kControllerPollLimit; ++attempt) {
@@ -106,22 +96,6 @@ char translate_scancode(uint8_t scancode, bool shift) {
     return shift ? kShifted[scancode] : kUnshifted[scancode];
 }
 
-void queue_event(const keyboard_ps2::KeyEvent& event) {
-    const interrupts::State previous_state = synchronization::lock(&g_event_lock);
-    if(g_event_count == kEventCapacity) {
-        // Dropping the oldest event preserves fresh keyboard input and keeps the IRQ path
-        // bounded; a stalled reader must not prevent future key releases from arriving.
-        g_event_head = (g_event_head + 1) % kEventCapacity;
-        --g_event_count;
-    }
-    g_events[g_event_tail] = event;
-    g_event_tail = (g_event_tail + 1) % kEventCapacity;
-    ++g_event_count;
-    synchronization::unlock(&g_event_lock, previous_state);
-
-    (void)scheduler::wake_one(&g_waiters);
-}
-
 void decode_scancode(uint8_t raw_scancode) {
     if(raw_scancode == kExtendedScancode) {
         g_extended = true;
@@ -138,18 +112,22 @@ void decode_scancode(uint8_t raw_scancode) {
         g_alt = pressed;
     }
 
-    const uint8_t event_scancode =
-        g_extended ? static_cast<uint8_t>(scancode | kExtendedScancode | (pressed ? 0 : kReleaseMask)) : raw_scancode;
-    keyboard_ps2::KeyEvent event = {
-        .scancode = event_scancode,
-        .character = g_extended ? static_cast<char>(0) : translate_scancode(scancode, g_shift),
+    const char character = g_extended ? static_cast<char>(0) : translate_scancode(scancode, g_shift);
+    const keyboard::Key key = character == '\n'   ? keyboard::Key::Enter
+                              : character == '\b' ? keyboard::Key::Backspace
+                              : character == '\t' ? keyboard::Key::Tab
+                              : character == 0    ? keyboard::Key::Unknown
+                                                  : keyboard::Key::Character;
+    keyboard::Event event = {
+        .key = key,
+        .character = character,
         .pressed = pressed,
         .shift = g_shift,
         .control = g_control,
         .alt = g_alt,
     };
     g_extended = false;
-    queue_event(event);
+    keyboard::submit_event(event);
 }
 
 } // namespace
@@ -185,70 +163,15 @@ bool initialize() {
         (void)io::in8(kDataPort);
     }
 
-    synchronization::initialize(&g_event_lock);
-    synchronization::initialize(&g_waiters);
-    g_event_head = 0;
-    g_event_tail = 0;
-    g_event_count = 0;
+    if(!keyboard::initialize()) {
+        return false;
+    }
     g_extended = false;
     g_shift = false;
     g_control = false;
     g_alt = false;
     g_available = true;
     return true;
-}
-
-bool is_available() {
-    return g_available;
-}
-
-bool poll(KeyEvent* event) {
-    if(!g_available || event == nullptr) {
-        return false;
-    }
-    const interrupts::State previous_state = synchronization::lock(&g_event_lock);
-    if(g_event_count == 0) {
-        synchronization::unlock(&g_event_lock, previous_state);
-        return false;
-    }
-    *event = g_events[g_event_head];
-    g_event_head = (g_event_head + 1) % kEventCapacity;
-    --g_event_count;
-    synchronization::unlock(&g_event_lock, previous_state);
-    return true;
-}
-
-bool read(KeyEvent* event) {
-    if(!g_available || event == nullptr) {
-        return false;
-    }
-    for(;;) {
-        if(poll(event)) {
-            return true;
-        }
-        const interrupts::State previous_state = interrupts::save_and_disable();
-        if(poll(event)) {
-            interrupts::restore(previous_state);
-            return true;
-        }
-        // Keep interrupts disabled between releasing the queue lock and enqueueing the
-        // waiter, preventing a keyboard IRQ from arriving in the lost-wakeup window.
-        const bool blocked = scheduler::block_current(&g_waiters);
-        interrupts::restore(previous_state);
-        if(!blocked) {
-            return false;
-        }
-    }
-}
-
-uint32_t pending_events() {
-    if(!g_available) {
-        return 0;
-    }
-    const interrupts::State previous_state = synchronization::lock(&g_event_lock);
-    const uint32_t count = g_event_count;
-    synchronization::unlock(&g_event_lock, previous_state);
-    return count;
 }
 
 } // namespace keyboard_ps2
