@@ -40,6 +40,7 @@ The source tree is organized as follows:
 - `src/memory/`: physical pages, virtual-memory mappings, user-memory copying,
   and kernel heap.
 - `src/synchronization/`: spinlocks, wait queues, and blocking mutexes.
+- `src/storage/`: hardware-independent block-device protocol.
 - `src/tests/`: boot-time subsystem smoke tests; keep them out of `main.cpp`.
   `self_tests.cpp` coordinates the suite, while `self_tests_*.cpp` group
   context, memory/process, scheduler, synchronization, and user-mode tests.

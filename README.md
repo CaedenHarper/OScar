@@ -33,6 +33,7 @@ linking, or drivers beyond basic serial I/O.
     ├── interrupts/   Interrupt routing and CPU interrupt helpers
     ├── memory/       Physical pages, virtual memory, and kernel heap
     ├── synchronization/ Spinlocks, wait queues, and mutexes
+    ├── storage/      Hardware-independent block-device protocol
     └── tests/        Boot-time subsystem smoke tests
 ```
 

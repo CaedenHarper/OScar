@@ -14,6 +14,7 @@
 namespace self_tests {
 
 void run(uintptr_t hhdm_offset) {
+    self_tests_detail::test_block_device();
     self_tests_detail::test_spinlock();
     self_tests_detail::test_physical_memory();
     virtual_memory::initialize(hhdm_offset);
