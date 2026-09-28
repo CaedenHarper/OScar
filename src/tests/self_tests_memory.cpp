@@ -3,6 +3,7 @@
 #include "memory.hpp"
 #include "panic.hpp"
 #include "process.hpp"
+#include "process_internal.hpp"
 #include "self_tests_internal.hpp"
 #include "serial.hpp"
 #include "thread.hpp"
@@ -92,7 +93,11 @@ void test_process_structures() {
     if(first_process == nullptr || second_process == nullptr || process::id(first_process) == 0 ||
        process::id(first_process) == process::id(second_process) ||
        process::state(first_process) != process::State::New || process::thread_count(first_process) != 0 ||
-       process::address_space(first_process) == nullptr) {
+       process::address_space(first_process) == nullptr ||
+       process::descriptor_kind(first_process, process::kStandardInput) != process::DescriptorKind::StandardInput ||
+       process::descriptor_kind(first_process, process::kStandardOutput) != process::DescriptorKind::StandardOutput ||
+       process::descriptor_kind(first_process, process::kStandardError) != process::DescriptorKind::StandardError ||
+       process::descriptor_kind(first_process, process::kFirstFileDescriptor) != process::DescriptorKind::Invalid) {
         panic::halt("process smoke test could not create independent processes");
     }
 

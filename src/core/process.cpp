@@ -44,6 +44,9 @@ Process* create() {
     for(auto& descriptor : process->descriptors) {
         descriptor = {};
     }
+    process->descriptors[kStandardInput] = {.kind = DescriptorKind::StandardInput, .file = {}, .open = true};
+    process->descriptors[kStandardOutput] = {.kind = DescriptorKind::StandardOutput, .file = {}, .open = true};
+    process->descriptors[kStandardError] = {.kind = DescriptorKind::StandardError, .file = {}, .open = true};
     return process;
 }
 
@@ -149,7 +152,7 @@ int32_t allocate_file_descriptor(Process* process, const vfs::File* file) {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
         if(!process->descriptors[descriptor].open) {
             // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
-            process->descriptors[descriptor] = {.file = *file, .open = true};
+            process->descriptors[descriptor] = {.kind = DescriptorKind::File, .file = *file, .open = true};
             return static_cast<int32_t>(descriptor);
         }
     }
@@ -159,16 +162,36 @@ int32_t allocate_file_descriptor(Process* process, const vfs::File* file) {
 vfs::File* file_descriptor(Process* process, uint64_t descriptor) {
     if(process == nullptr || descriptor >= kMaximumFileDescriptors ||
        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
-       !process->descriptors[descriptor].open) {
+       !process->descriptors[descriptor].open ||
+       // Standard streams are not filesystem files; terminal handling will consume these kinds later.
+       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
+       process->descriptors[descriptor].kind != DescriptorKind::File) {
         return nullptr;
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
     return &process->descriptors[descriptor].file;
 }
 
+DescriptorKind descriptor_kind(const Process* process, uint64_t descriptor) {
+    if(process == nullptr || descriptor >= kMaximumFileDescriptors ||
+       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
+       !process->descriptors[descriptor].open) {
+        return DescriptorKind::Invalid;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
+    return process->descriptors[descriptor].kind;
+}
+
 bool close_file_descriptor(Process* process, uint64_t descriptor) {
-    auto* file = file_descriptor(process, descriptor);
-    if(file == nullptr || vfs::close(file) != vfs::Status::Success) {
+    if(process == nullptr || descriptor >= kMaximumFileDescriptors ||
+       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
+       !process->descriptors[descriptor].open) {
+        return false;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
+    if(process->descriptors[descriptor].kind == DescriptorKind::File &&
+       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
+       vfs::close(&process->descriptors[descriptor].file) != vfs::Status::Success) {
         return false;
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor was validated by helper
@@ -180,7 +203,7 @@ void close_file_descriptors(Process* process) {
     if(process == nullptr) {
         return;
     }
-    for(uint32_t descriptor = kFirstFileDescriptor; descriptor < kMaximumFileDescriptors; ++descriptor) {
+    for(uint32_t descriptor = 0; descriptor < kMaximumFileDescriptors; ++descriptor) {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
         if(process->descriptors[descriptor].open) {
             (void)close_file_descriptor(process, descriptor);
