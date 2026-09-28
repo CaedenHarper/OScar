@@ -87,14 +87,16 @@ help:
 $(BUILD_DIR):
 	mkdir -p $@
 
-$(VIRTIO_DISK): Makefile $(FILESYSTEM_TEST_FILES) $(LARGE_FILESYSTEM_TEST_FILE) | $(BUILD_DIR)
+$(VIRTIO_DISK): Makefile $(FILESYSTEM_TEST_FILES) $(LARGE_FILESYSTEM_TEST_FILE) $(USER_BUILD_DIR)/second.elf | $(BUILD_DIR)
 	truncate -s 8M $@
 	mke2fs -q -F -t ext2 -b 1024 $@
 	debugfs -w -R 'mkdir /etc' $@
 	debugfs -w -R 'mkdir /etc/oscar' $@
 	debugfs -w -R 'mkdir /many' $@
+	debugfs -w -R 'mkdir /bin' $@
 	debugfs -w -R 'write tests/filesystem/hello.txt /hello.txt' $@
 	debugfs -w -R 'write tests/filesystem/config.txt /etc/oscar/config.txt' $@
+	debugfs -w -R 'write $(USER_BUILD_DIR)/second.elf /bin/second.elf' $@
 	debugfs -w -R 'write $(LARGE_FILESYSTEM_TEST_FILE) /large.bin' $@
 	index=0; while [ $$index -lt 300 ]; do \
 		debugfs -w -R "write tests/filesystem/hello.txt /many/file$$index" $@ >/dev/null || exit 1; \

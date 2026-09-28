@@ -1,5 +1,7 @@
 #include "syscalls.hpp"
 
+#include "interrupts.hpp"
+#include "loader.hpp"
 #include "process.hpp"
 #include "process_internal.hpp"
 #include "scheduler.hpp"
@@ -22,6 +24,8 @@ constexpr uint64_t kOpen = 6;
 constexpr uint64_t kRead = 7;
 constexpr uint64_t kClose = 8;
 constexpr uint64_t kSeek = 9;
+constexpr uint64_t kSpawn = 10;
+constexpr uint64_t kWaitPid = 11;
 constexpr uint64_t kMaximumWriteLength = 4096;
 constexpr uint64_t kMaximumReadLength = 4096;
 constexpr uint64_t kMaximumPathLength = 255;
@@ -221,6 +225,84 @@ int64_t seek(const syscalls::Frame* frame) {
     return translate_vfs_status(vfs::seek(file, frame->rsi));
 }
 
+int64_t spawn(const syscalls::Frame* frame) {
+    auto* parent = current_process();
+    if(parent == nullptr) {
+        return kErrorInvalidArgument;
+    }
+
+    char path[kMaximumPathLength + 1];
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
+    if(!copy_path(frame->rdi, path)) {
+        return kErrorInvalidArgument;
+    }
+
+    process::Process* child = nullptr;
+    kernel_thread::Thread* thread = nullptr;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
+    if(!loader::load_path(path, parent, &child, &thread) || child == nullptr || thread == nullptr) {
+        return kErrorNotFound;
+    }
+
+    const interrupts::State previous_state = interrupts::save_and_disable();
+    const bool queued = scheduler::enqueue(thread);
+    interrupts::restore(previous_state);
+    if(!queued) {
+        (void)kernel_thread::destroy(thread);
+        (void)process::destroy(child);
+        return kErrorIo;
+    }
+    return static_cast<int64_t>(process::id(child));
+}
+
+int64_t wait_pid(const syscalls::Frame* frame) {
+    auto* parent = current_process();
+    if(parent == nullptr || frame->rdi == 0 ||
+       (frame->rsi != 0 && !user_memory::validate(frame->rsi, sizeof(int64_t), true))) {
+        return kErrorInvalidArgument;
+    }
+
+    for(;;) {
+        const interrupts::State previous_state = interrupts::save_and_disable();
+        auto* child = process::find_child_locked(parent, frame->rdi);
+        if(child == nullptr) {
+            interrupts::restore(previous_state);
+            return kErrorNotFound;
+        }
+
+        if(process::state(child) != process::State::Terminated) {
+            // The child lookup and enqueue are one interrupt-disabled transaction, so
+            // an exit cannot signal the parent between the check and the block.
+            const bool blocked = scheduler::block_current(&parent->child_waiters);
+            interrupts::restore(previous_state);
+            if(!blocked) {
+                return kErrorIo;
+            }
+            continue;
+        }
+
+        int64_t status = 0;
+        if(frame->rsi != 0) {
+            // The pointer was validated before entering the loop and interrupts are
+            // disabled, so status delivery cannot be separated from child reaping.
+            if(!user_memory::copy_to_user(frame->rsi, &child->exit_status, sizeof(status))) {
+                interrupts::restore(previous_state);
+                return kErrorInvalidArgument;
+            }
+        }
+        if(!process::reap_child_locked(parent, child, &status)) {
+            interrupts::restore(previous_state);
+            return kErrorIo;
+        }
+        const auto child_id = process::id(child);
+        interrupts::restore(previous_state);
+        if(!process::destroy(child)) {
+            return kErrorIo;
+        }
+        return static_cast<int64_t>(child_id);
+    }
+}
+
 } // namespace
 
 namespace syscalls {
@@ -235,7 +317,7 @@ extern "C" void handle(Frame* frame) {
             frame->rax = static_cast<uint64_t>(write(frame));
             return;
         case kExit:
-            scheduler::thread_exit(scheduler::current());
+            scheduler::thread_exit(scheduler::current(), 0);
         case kYield:
             scheduler::yield();
             frame->rax = 0;
@@ -261,6 +343,12 @@ extern "C" void handle(Frame* frame) {
             return;
         case kSeek:
             frame->rax = static_cast<uint64_t>(seek(frame));
+            return;
+        case kSpawn:
+            frame->rax = static_cast<uint64_t>(spawn(frame));
+            return;
+        case kWaitPid:
+            frame->rax = static_cast<uint64_t>(wait_pid(frame));
             return;
         default:
             frame->rax = static_cast<uint64_t>(kErrorUnknownCall);

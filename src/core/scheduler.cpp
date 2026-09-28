@@ -136,6 +136,17 @@ void reap_terminated_locked() {
     while(g_reap_head != nullptr) {
         auto* thread = g_reap_head;
         auto* process = thread->terminated_process;
+        if(process != nullptr && process::has_parent(process)) {
+            // Child process records belong to waitpid(), but their final thread stack
+            // can be reclaimed immediately because no scheduler queue references it.
+            g_reap_head = thread->reap_next;
+            thread->reap_next = nullptr;
+            thread->terminated_process = nullptr;
+            if(!kernel_thread::destroy(thread)) {
+                panic::halt("scheduler could not reap a terminated child thread");
+            }
+            continue;
+        }
         if(process != nullptr && !process::destroy(process)) {
             // A process can only remain unreapable while its address space is active. Leave
             // it queued so a later switch can retry without leaking the termination record.
@@ -409,7 +420,7 @@ void sleep(uint64_t ticks) {
     park();
 }
 
-[[noreturn]] void thread_exit(kernel_thread::Thread* thread) {
+[[noreturn]] void thread_exit(kernel_thread::Thread* thread, int64_t status) {
     if(!g_started || thread == nullptr || thread != g_current_thread) {
         park();
     }
@@ -419,10 +430,14 @@ void sleep(uint64_t ticks) {
     if(!process::detach_thread(thread)) {
         park();
     }
+    process::record_exit(terminated_process, status);
     // A terminated thread cannot remain on its own stack: its stack may be reclaimed
     // later, so transfer directly to another scheduler-owned context before parking.
     thread->state = kernel_thread::State::Terminated;
-    thread->terminated_process = terminated_process;
+    thread->terminated_process =
+        terminated_process != nullptr && process::state(terminated_process) == process::State::Terminated
+            ? terminated_process
+            : nullptr;
     thread->reap_next = g_reap_head;
     g_reap_head = thread;
     auto* next_thread = next_locked();

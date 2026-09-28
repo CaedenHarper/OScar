@@ -8,8 +8,8 @@ and QEMU provides the primary development and test environment. The kernel
 initializes COM1 serial output, reads the Limine memory map, manages physical
 pages and basic virtual-memory mappings, provides a kernel heap, installs the
 GDT/TSS, Interrupt Descriptor Table, and hardware timer interrupts, creates
-ring-3 user threads, handles an initial system-call ABI including read-only
-filesystem file operations, loads validated
+  ring-3 user threads, handles an initial system-call ABI including read-only
+  filesystem file operations plus `spawn`/`waitpid`, loads validated
 in-memory ELF64 executables, provides kernel synchronization primitives and
 process structures, runs boot-time smoke tests, reports exception register
 state, and halts.
@@ -40,7 +40,8 @@ The source tree is organized as follows:
   the COM1 receive-interrupt backend, and the polling legacy VirtIO block driver.
 - `src/filesystem/`: the generic VFS, read-only ext2 mounting, inode loading,
   path lookup, and regular-file reads through direct and indirect data blocks.
-- `src/exec/`: freestanding ELF64 validation and process image loading.
+- `src/exec/`: freestanding ELF64 validation and process image loading,
+  including filesystem-backed child creation.
 - `src/interrupts/`: interrupt-controller routing and CPU interrupt helpers.
 - `src/memory/`: physical pages, virtual-memory mappings, user-memory copying,
   and kernel heap.

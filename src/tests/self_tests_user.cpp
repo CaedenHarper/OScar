@@ -169,7 +169,7 @@ bool prepare_elf_test_thread() {
 
     process::Process* process = nullptr;
     kernel_thread::Thread* thread = nullptr;
-    if(!loader::load(image, sizeof(image), &process, &thread) || process == nullptr || thread == nullptr ||
+    if(!loader::load(image, sizeof(image), &process, &thread, nullptr) || process == nullptr || thread == nullptr ||
        !scheduler::enqueue(thread)) {
         return false;
     }
@@ -181,8 +181,8 @@ bool prepare_real_elf_test_thread() {
     process::Process* process = nullptr;
     kernel_thread::Thread* thread = nullptr;
     const uint64_t image_size = static_cast<uint64_t>(user_program_end - user_program_start);
-    if(!loader::load(user_program_start, image_size, &process, &thread) || process == nullptr || thread == nullptr ||
-       !scheduler::enqueue(thread)) {
+    if(!loader::load(user_program_start, image_size, &process, &thread, nullptr) || process == nullptr ||
+       thread == nullptr || !scheduler::enqueue(thread)) {
         return false;
     }
     serial::write("Real ELF process prepared.\n");
@@ -193,7 +193,7 @@ bool prepare_embedded_elf_thread(const uint8_t* image, const uint8_t* image_end)
     process::Process* process = nullptr;
     kernel_thread::Thread* thread = nullptr;
     const uint64_t image_size = static_cast<uint64_t>(image_end - image);
-    if(!loader::load(image, image_size, &process, &thread) || process == nullptr || thread == nullptr) {
+    if(!loader::load(image, image_size, &process, &thread, nullptr) || process == nullptr || thread == nullptr) {
         return false;
     }
     return scheduler::enqueue(thread);
@@ -203,7 +203,7 @@ bool prepare_crash_test_thread(const uint8_t* image, const uint8_t* image_end) {
     process::Process* process = nullptr;
     kernel_thread::Thread* thread = nullptr;
     const uint64_t image_size = static_cast<uint64_t>(image_end - image);
-    if(!loader::load(image, image_size, &process, &thread) || process == nullptr || thread == nullptr) {
+    if(!loader::load(image, image_size, &process, &thread, nullptr) || process == nullptr || thread == nullptr) {
         return false;
     }
     return scheduler::enqueue(thread);
@@ -213,7 +213,7 @@ bool prepare_init_process() {
     process::Process* process = nullptr;
     kernel_thread::Thread* thread = nullptr;
     const uint64_t image_size = static_cast<uint64_t>(user_program_init_end - user_program_init_start);
-    if(!loader::load(user_program_init_start, image_size, &process, &thread) || process == nullptr ||
+    if(!loader::load(user_program_init_start, image_size, &process, &thread, nullptr) || process == nullptr ||
        thread == nullptr) {
         return false;
     }

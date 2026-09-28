@@ -4,6 +4,7 @@
 #include "thread.hpp"
 #include "vfs.hpp"
 #include "virtual_memory.hpp"
+#include "wait_queue.hpp"
 
 #include <stdint.h>
 
@@ -37,10 +38,21 @@ struct Process {
     kernel_thread::Thread* thread_tail;
     uint32_t thread_count;
     FileDescriptor descriptors[kMaximumFileDescriptors];
+    Process* parent;
+    Process* child_head;
+    Process* child_tail;
+    Process* sibling_next;
+    synchronization::WaitQueue child_waiters;
+    int64_t exit_status;
 };
 
 bool attach_thread(Process* process, kernel_thread::Thread* thread);
 bool detach_thread(kernel_thread::Thread* thread);
+bool set_parent(Process* child, Process* parent);
+void record_exit(Process* process, int64_t status);
+Process* find_child_locked(Process* parent, ProcessId child_id);
+bool reap_child_locked(Process* parent, Process* child, int64_t* status);
+bool has_parent(const Process* process);
 
 int32_t allocate_file_descriptor(Process* process, const vfs::File* file);
 vfs::File* file_descriptor(Process* process, uint64_t descriptor);

@@ -6,6 +6,10 @@ namespace virtual_memory {
 struct AddressSpace;
 } // namespace virtual_memory
 
+namespace synchronization {
+struct WaitQueue;
+} // namespace synchronization
+
 namespace process {
 
 using ProcessId = uint64_t;
@@ -20,6 +24,9 @@ struct Process;
 
 /** Create a process with a private address space and no threads. */
 Process* create();
+
+/** Create a process and associate it with an existing parent for waitpid(). */
+Process* create(Process* parent);
 
 /**
  * Destroy a process after all of its threads have detached. The process address space
@@ -38,5 +45,8 @@ virtual_memory::AddressSpace* address_space(Process* process);
 
 /** Return the number of currently associated threads, or zero for a null process. */
 uint32_t thread_count(const Process* process);
+
+/** Return the process exit status, or zero for a null or still-running process. */
+int64_t exit_status(const Process* process);
 
 } // namespace process

@@ -97,6 +97,7 @@ constexpr const char* kExceptionNames[] = {
     "Security exception",
     "Reserved",
 };
+constexpr int64_t kUserExceptionStatusBase = 128;
 
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters) this function is private, low risk
 void set_gate(unsigned vector, uintptr_t address, uint8_t descriptor_privilege_level) {
@@ -168,7 +169,7 @@ extern "C" [[noreturn]] void idt_exception_handler(ExceptionFrame* frame) {
         // The exception frame belongs to the faulting thread's kernel stack. The scheduler
         // switches away without returning through the frame, so the bad user instruction
         // cannot be retried and the still-active stack is not freed prematurely.
-        scheduler::thread_exit(thread);
+        scheduler::thread_exit(thread, kUserExceptionStatusBase + static_cast<int64_t>(vector));
     }
 
     // A kernel fault cannot be isolated from the system: continuing could corrupt scheduler,

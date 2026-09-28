@@ -1,8 +1,11 @@
 #include "loader.hpp"
 
 #include "elf.hpp"
+#include "kernel_heap.hpp"
 #include "process.hpp"
+#include "process_internal.hpp"
 #include "thread.hpp"
+#include "vfs.hpp"
 #include "virtual_memory.hpp"
 
 #include <stdint.h>
@@ -12,6 +15,7 @@
 namespace {
 
 constexpr uintptr_t kUserStackTop = 0x00007fffffffe000ULL;
+constexpr uint64_t kMaximumExecutableSize = 4ULL * 1024ULL * 1024ULL;
 
 uint64_t segment_flags(const elf::ProgramHeader& segment) {
     uint64_t flags = virtual_memory::kNoExecute;
@@ -83,7 +87,8 @@ bool load(
     const void* image,
     uint64_t image_size,
     process::Process** output_process,
-    kernel_thread::Thread** output_thread
+    kernel_thread::Thread** output_thread,
+    process::Process* parent
 ) {
     if(output_process == nullptr || output_thread == nullptr || !elf::validate(image, image_size)) {
         return false;
@@ -104,9 +109,60 @@ bool load(
         return false;
     }
 
+    if(parent != nullptr && !process::set_parent(process, parent)) {
+        (void)kernel_thread::destroy(thread);
+        (void)process::destroy(process);
+        return false;
+    }
+
     *output_process = process;
     *output_thread = thread;
     return true;
+}
+
+bool load_path(
+    const char* path,
+    process::Process* parent,
+    process::Process** output_process,
+    kernel_thread::Thread** output_thread
+) {
+    if(path == nullptr || output_process == nullptr || output_thread == nullptr) {
+        return false;
+    }
+
+    vfs::File file = {};
+    if(vfs::open(path, vfs::kOpenRead, &file) != vfs::Status::Success || file.node.size == 0 ||
+       file.node.size > kMaximumExecutableSize) {
+        return false;
+    }
+
+    auto* image = static_cast<uint8_t*>(kernel_heap::allocate(file.node.size));
+    if(image == nullptr) {
+        (void)vfs::close(&file);
+        return false;
+    }
+
+    uint64_t copied = 0;
+    bool read_success = true;
+    while(copied < file.node.size) {
+        const auto request = static_cast<uint32_t>(file.node.size - copied);
+        uint32_t received = 0;
+        if(vfs::read(&file, image + copied, request, &received) != vfs::Status::Success || received == 0) {
+            read_success = false;
+            break;
+        }
+        copied += received;
+    }
+    (void)vfs::close(&file);
+
+    if(!read_success || copied != file.node.size) {
+        (void)kernel_heap::free(image);
+        return false;
+    }
+
+    const bool loaded = load(image, copied, output_process, output_thread, parent);
+    (void)kernel_heap::free(image);
+    return loaded;
 }
 
 } // namespace loader

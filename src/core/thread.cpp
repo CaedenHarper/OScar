@@ -34,7 +34,7 @@ void thread_bootstrap(void* argument) {
     // Scheduler-managed threads must exit through the scheduler so their stack is never
     // selected again. Standalone threads instead return to the context supplied by run().
     if(thread->scheduler_managed) {
-        scheduler::thread_exit(thread);
+        scheduler::thread_exit(thread, 0);
     }
 
     if(!process::detach_thread(thread)) {

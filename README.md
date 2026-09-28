@@ -6,7 +6,7 @@ a physical page allocator, manages kernel and process address-space structures a
 validates user memory ranges, installs an IDT, GDT/TSS, and PIT timer
 interrupts, creates ring-3 user threads with private kernel stacks, handles an
 initial `int 0x80` system-call ABI (`write`, `exit`, `yield`, `sleep`, `getpid`,
-and `getid`, plus read-only filesystem `open`, `read`, `seek`, and `close`),
+`getid`, `spawn`, and `waitpid`, plus read-only filesystem `open`, `read`, `seek`, and `close`),
 loads validated in-memory ELF64 executables with `PT_LOAD` segments, including
 zero-filled memory and an initial user stack,
 provides a kernel heap, creates and runs kernel-thread stacks, schedules kernel
@@ -20,9 +20,11 @@ hardware-independent keyboard event queue, serial receive interrupts, and a seri
 prints diagnostics to QEMU's serial console, and idles.
 
 This is a kernel seed, not yet an operating system. It does not yet provide
-filesystem-backed executable loading, process-creation system calls, or
-dynamic linking. The kernel now also loads a small RAM-backed C `init` ELF
-after boot-time smoke tests; it currently announces startup and exits.
+`fork`, dynamic linking, or a persistent writable filesystem. `spawn` loads a
+validated ELF from the mounted read-only filesystem, and `waitpid` waits for
+that exact child and returns its exit status. The kernel also loads a small
+RAM-backed C `init` ELF after boot-time smoke tests; it currently announces
+startup and exits.
 
 ## Repository layout
 

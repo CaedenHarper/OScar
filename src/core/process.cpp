@@ -3,10 +3,12 @@
 #include "interrupts.hpp"
 #include "kernel_heap.hpp"
 #include "process_internal.hpp"
+#include "scheduler.hpp"
 #include "thread.hpp"
 #include "thread_internal.hpp"
 #include "vfs.hpp"
 #include "virtual_memory.hpp"
+#include "wait_queue.hpp"
 
 #include <stdint.h>
 
@@ -21,6 +23,10 @@ ProcessId g_next_process_id = 1;
 } // namespace
 
 Process* create() {
+    return create(nullptr);
+}
+
+Process* create(Process* parent) {
     if(g_next_process_id == 0) {
         return nullptr;
     }
@@ -40,6 +46,12 @@ Process* create() {
     process->thread_head = nullptr;
     process->thread_tail = nullptr;
     process->thread_count = 0;
+    process->parent = nullptr;
+    process->child_head = nullptr;
+    process->child_tail = nullptr;
+    process->sibling_next = nullptr;
+    synchronization::initialize(&process->child_waiters);
+    process->exit_status = 0;
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
     for(auto& descriptor : process->descriptors) {
         descriptor = {};
@@ -47,11 +59,16 @@ Process* create() {
     process->descriptors[kStandardInput] = {.kind = DescriptorKind::StandardInput, .file = {}, .open = true};
     process->descriptors[kStandardOutput] = {.kind = DescriptorKind::StandardOutput, .file = {}, .open = true};
     process->descriptors[kStandardError] = {.kind = DescriptorKind::StandardError, .file = {}, .open = true};
+    if(parent != nullptr && !set_parent(process, parent)) {
+        (void)destroy(process);
+        return nullptr;
+    }
     return process;
 }
 
 bool destroy(Process* process) {
     if(process == nullptr || process->thread_count != 0 || process->state == State::Running ||
+       process->parent != nullptr || process->child_head != nullptr ||
        virtual_memory::is_active(&process->address_space)) {
         return false;
     }
@@ -142,6 +159,89 @@ virtual_memory::AddressSpace* address_space(Process* process) {
 
 uint32_t thread_count(const Process* process) {
     return process == nullptr ? 0 : process->thread_count;
+}
+
+int64_t exit_status(const Process* process) {
+    return process == nullptr ? 0 : process->exit_status;
+}
+
+bool set_parent(Process* child, Process* parent) {
+    if(child == nullptr || parent == nullptr || child == parent || child->parent != nullptr ||
+       child->state == State::Terminated) {
+        return false;
+    }
+
+    const interrupts::State previous_state = interrupts::save_and_disable();
+    child->parent = parent;
+    child->sibling_next = nullptr;
+    if(parent->child_tail == nullptr) {
+        parent->child_head = child;
+        parent->child_tail = child;
+    } else {
+        parent->child_tail->sibling_next = child;
+        parent->child_tail = child;
+    }
+    interrupts::restore(previous_state);
+    return true;
+}
+
+void record_exit(Process* process, int64_t status) {
+    if(process == nullptr || process->thread_count != 0) {
+        return;
+    }
+
+    process->exit_status = status;
+    process->state = State::Terminated;
+    if(process->parent != nullptr) {
+        // The terminating thread already holds interrupts disabled. Waking the parent
+        // here makes the exit notification atomic with the transition to Terminated.
+        (void)scheduler::wake_all(&process->parent->child_waiters);
+    }
+}
+
+Process* find_child_locked(Process* parent, ProcessId child_id) {
+    if(parent == nullptr) {
+        return nullptr;
+    }
+    for(auto* child = parent->child_head; child != nullptr; child = child->sibling_next) {
+        if(child->id == child_id) {
+            return child;
+        }
+    }
+    return nullptr;
+}
+
+bool reap_child_locked(Process* parent, Process* child, int64_t* status) {
+    if(parent == nullptr || child == nullptr || child->parent != parent || child->state != State::Terminated) {
+        return false;
+    }
+
+    Process* previous = nullptr;
+    for(auto* candidate = parent->child_head; candidate != nullptr; candidate = candidate->sibling_next) {
+        if(candidate != child) {
+            previous = candidate;
+            continue;
+        }
+        if(previous == nullptr) {
+            parent->child_head = candidate->sibling_next;
+        } else {
+            previous->sibling_next = candidate->sibling_next;
+        }
+        if(parent->child_tail == candidate) {
+            parent->child_tail = previous;
+        }
+        if(status != nullptr) {
+            *status = child->exit_status;
+        }
+        child->parent = nullptr;
+        child->sibling_next = nullptr;
+        return true;
+    }
+    return false;
+}
+
+bool has_parent(const Process* process) {
+    return process != nullptr && process->parent != nullptr;
 }
 
 int32_t allocate_file_descriptor(Process* process, const vfs::File* file) {

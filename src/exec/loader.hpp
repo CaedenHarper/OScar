@@ -21,6 +21,15 @@ bool load(
     const void* image,
     uint64_t image_size,
     process::Process** output_process,
+    kernel_thread::Thread** output_thread,
+    process::Process* parent
+);
+
+/** Load a read-only VFS executable into a new child process and initial user thread. */
+bool load_path(
+    const char* path,
+    process::Process* parent,
+    process::Process** output_process,
     kernel_thread::Thread** output_thread
 );
 

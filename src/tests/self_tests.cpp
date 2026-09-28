@@ -78,7 +78,7 @@ bool prepare_init() {
 
 bool prepare_terminal() {
     return self_tests_detail::prepare_embedded_elf_thread(
-        self_tests_detail::user_program_terminal_start, self_tests_detail::user_program_terminal_end
+        &self_tests_detail::user_program_terminal_start[0], &self_tests_detail::user_program_terminal_end[0]
     );
 }
 
