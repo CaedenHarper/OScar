@@ -25,6 +25,9 @@ void run_context();
 /** Verify that the optional PS/2 keyboard driver initializes and starts empty. */
 void run_keyboard_ps2();
 
+/** Verify that decoded keyboard events become a line-buffered terminal read. */
+void run_terminal();
+
 /**
  * Prepare cooperative round-robin scheduler smoke-test threads. The
  * scheduler must be initialized and interrupts must be enabled before this

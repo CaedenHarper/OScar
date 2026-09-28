@@ -3,6 +3,9 @@
 #include "panic.hpp"
 #include "self_tests_internal.hpp"
 #include "serial.hpp"
+#include "terminal.hpp"
+
+#include <stdint.h>
 
 namespace self_tests_detail {
 
@@ -17,6 +20,45 @@ void test_keyboard_ps2() {
         panic::halt("PS/2 keyboard smoke test found unexpected initial input");
     }
     serial::write("PS/2 keyboard driver smoke test passed.\n");
+}
+
+void test_terminal() {
+    if(!terminal::is_available()) {
+        panic::halt("terminal smoke test found an unavailable terminal");
+    }
+
+    keyboard::submit_event(
+        {.key = keyboard::Key::Character,
+         .character = 'o',
+         .pressed = true,
+         .shift = false,
+         .control = false,
+         .alt = false}
+    );
+    keyboard::submit_event(
+        {.key = keyboard::Key::Character,
+         .character = 'k',
+         .pressed = true,
+         .shift = false,
+         .control = false,
+         .alt = false}
+    );
+    keyboard::submit_event(
+        {.key = keyboard::Key::Enter,
+         .character = '\n',
+         .pressed = true,
+         .shift = false,
+         .control = false,
+         .alt = false}
+    );
+
+    char line[4] = {};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
+    const int64_t length = terminal::read(line, sizeof(line));
+    if(length != 3 || line[0] != 'o' || line[1] != 'k' || line[2] != '\n') {
+        panic::halt("terminal smoke test did not produce the expected input line");
+    }
+    serial::write("Terminal line-discipline smoke test passed.\n");
 }
 
 } // namespace self_tests_detail

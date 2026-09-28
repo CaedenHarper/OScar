@@ -97,6 +97,7 @@ void test_block_device();
 void test_filesystem();
 void test_vfs();
 void test_keyboard_ps2();
+void test_terminal();
 void test_spinlock();
 void waiting_test_entry(void* argument);
 void mutex_holder_entry(void* argument);

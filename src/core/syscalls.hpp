@@ -27,7 +27,7 @@ struct Frame {
     uint64_t ss;
 };
 
-/** Handle the initial int 0x80 system-call ABI and return a result in frame->rax. */
+/** Handle the int 0x80 ABI and return a result in frame->rax; read/write use fd, buffer, length. */
 extern "C" void handle(Frame* frame);
 
 } // namespace syscalls

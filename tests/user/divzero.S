@@ -3,8 +3,9 @@
 .type _start, @function
 _start:
     movl $0, %eax
-    leaq message(%rip), %rdi
-    movl $(message_end - message), %esi
+    movl $1, %edi
+    leaq message(%rip), %rsi
+    movl $(message_end - message), %edx
     int $0x80
     movl $1, %eax
     xorl %edx, %edx

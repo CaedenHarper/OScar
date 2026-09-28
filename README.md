@@ -16,7 +16,7 @@ mutexes, exposes a block-device protocol with a polling legacy VirtIO block
 driver, mounts a read-only ext2 filesystem, resolves paths and reads regular
 files through direct, single-indirect, and double-indirect data blocks,
 including sparse holes, initializes an IRQ-driven PS/2 keyboard driver behind a
-hardware-independent keyboard event queue,
+hardware-independent keyboard event queue and a serial-backed kernel terminal,
 prints diagnostics to QEMU's serial console, and idles.
 
 This is a kernel seed, not yet an operating system. It does not yet provide
@@ -34,7 +34,7 @@ after boot-time smoke tests; it currently announces startup and exits.
 └── src/
     ├── arch/x86_64/  CPU contexts, GDT/TSS, IDT, and entry stubs
     ├── core/         Entry point, processes, threads, scheduler, and syscalls
-    ├── drivers/      Port I/O, serial, timer, keyboard input, PS/2, and VirtIO block support
+    ├── drivers/      Port I/O, serial, timer, keyboard input, terminal, PS/2, and VirtIO block support
     ├── exec/         ELF64 validation and executable loading
     ├── filesystem/   VFS, read-only ext2 mounting, and file reads
     ├── interrupts/   Interrupt routing and CPU interrupt helpers

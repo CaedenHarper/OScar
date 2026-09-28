@@ -3,7 +3,7 @@
 #include "process.hpp"
 #include "process_internal.hpp"
 #include "scheduler.hpp"
-#include "serial.hpp"
+#include "terminal.hpp"
 #include "thread.hpp"
 #include "user_memory.hpp"
 #include "vfs.hpp"
@@ -78,20 +78,26 @@ bool copy_path(uintptr_t user_path, char* path) {
 }
 
 int64_t write(const syscalls::Frame* frame) {
-    if(frame->rsi > kMaximumWriteLength) {
+    auto* owner = current_process();
+    if(owner == nullptr || frame->rdx > kMaximumWriteLength) {
         return kErrorInvalidArgument;
+    }
+    const process::DescriptorKind kind = process::descriptor_kind(owner, frame->rdi);
+    if(kind != process::DescriptorKind::StandardOutput && kind != process::DescriptorKind::StandardError) {
+        return kind == process::DescriptorKind::File ? kErrorReadOnly : kErrorBadDescriptor;
     }
 
     constexpr uint64_t kBufferSize = 128;
     char buffer[kBufferSize];
     uint64_t copied = 0;
-    while(copied < frame->rsi) {
-        const uint64_t chunk = frame->rsi - copied > kBufferSize ? kBufferSize : frame->rsi - copied;
-        if(!user_memory::copy_from_user(static_cast<void*>(buffer), frame->rdi + copied, chunk)) {
+    while(copied < frame->rdx) {
+        const uint64_t chunk = frame->rdx - copied > kBufferSize ? kBufferSize : frame->rdx - copied;
+        if(!user_memory::copy_from_user(static_cast<void*>(buffer), frame->rsi + copied, chunk)) {
             return kErrorInvalidArgument;
         }
-        for(uint64_t index = 0; index < chunk; ++index) {
-            serial::putc(buffer[index]); // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
+        if(terminal::write(buffer, chunk) != static_cast<int64_t>(chunk)) {
+            return copied == 0 ? kErrorIo : static_cast<int64_t>(copied);
         }
         copied += chunk;
     }
@@ -133,14 +139,23 @@ int64_t open(const syscalls::Frame* frame) {
     return descriptor;
 }
 
-int64_t read(const syscalls::Frame* frame) {
-    auto* owner = current_process();
-    if(owner == nullptr || process::file_descriptor(owner, frame->rdi) == nullptr) {
-        return kErrorBadDescriptor;
+int64_t read_terminal(const syscalls::Frame* frame) {
+    constexpr uint64_t kTerminalBufferSize = 128;
+    char buffer[kTerminalBufferSize];
+    const uint64_t requested = frame->rdx < kTerminalBufferSize ? frame->rdx : kTerminalBufferSize;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
+    const int64_t received = terminal::read(buffer, requested);
+    if(received <= 0) {
+        return received;
     }
-    if(frame->rdx > kMaximumReadLength || (frame->rdx != 0 && !user_memory::validate(frame->rsi, frame->rdx, true))) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
+    if(!user_memory::copy_to_user(frame->rsi, buffer, static_cast<uint64_t>(received))) {
         return kErrorInvalidArgument;
     }
+    return received;
+}
+
+int64_t read_file(const syscalls::Frame* frame, process::Process* owner) {
     auto* file = process::file_descriptor(owner, frame->rdi);
     uint8_t buffer[kReadBufferSize];
     uint32_t total = 0;
@@ -166,6 +181,27 @@ int64_t read(const syscalls::Frame* frame) {
         }
     }
     return total;
+}
+
+int64_t read(const syscalls::Frame* frame) {
+    auto* owner = current_process();
+    if(owner == nullptr) {
+        return kErrorBadDescriptor;
+    }
+    if(frame->rdx > kMaximumReadLength || (frame->rdx != 0 && !user_memory::validate(frame->rsi, frame->rdx, true))) {
+        return kErrorInvalidArgument;
+    }
+    switch(process::descriptor_kind(owner, frame->rdi)) {
+        case process::DescriptorKind::StandardInput:
+            return read_terminal(frame);
+        case process::DescriptorKind::File:
+            return read_file(frame, owner);
+        case process::DescriptorKind::Invalid:
+        case process::DescriptorKind::StandardOutput:
+        case process::DescriptorKind::StandardError:
+            return kErrorBadDescriptor;
+    }
+    return kErrorBadDescriptor;
 }
 
 int64_t close(const syscalls::Frame* frame) {

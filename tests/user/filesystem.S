@@ -20,8 +20,9 @@ _start:
     movq %rax, %r13
 
     movl $0, %eax
-    leaq buffer(%rip), %rdi
-    movq %r13, %rsi
+    movl $1, %edi
+    leaq buffer(%rip), %rsi
+    movq %r13, %rdx
     int $0x80
 
     movl $9, %eax
@@ -48,8 +49,9 @@ _start:
     int $0x80
 .Lfail:
     movl $0, %eax
-    leaq failure(%rip), %rdi
-    movl $(failure_end - failure), %esi
+    movl $1, %edi
+    leaq failure(%rip), %rsi
+    movl $(failure_end - failure), %edx
     int $0x80
     movl $1, %eax
     int $0x80

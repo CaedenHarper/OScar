@@ -44,7 +44,7 @@ static void append_number(uint32_t value) {
 
 static uint64_t write_output(const char* buffer, uint64_t length) {
     uint64_t number = 0;
-    __asm__ volatile("int $0x80" : "+a"(number) : "D"(buffer), "S"(length) : "rcx", "r11", "memory");
+    __asm__ volatile("int $0x80" : "+a"(number) : "D"((uint64_t)1), "S"(buffer), "d"(length) : "rcx", "r11", "memory");
     return number;
 }
 

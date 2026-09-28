@@ -36,8 +36,8 @@ The source tree is organized as follows:
 - `src/core/`: the kernel entry point, fatal error handling, processes, kernel
   and user threads, scheduler, and system calls.
 - `src/drivers/`: x86 port I/O, serial output, timer/PIT support, the generic
-  keyboard event layer, the IRQ-driven PS/2 backend, and the polling legacy
-  VirtIO block driver.
+  keyboard event layer, the serial-backed terminal, the IRQ-driven PS/2 backend,
+  and the polling legacy VirtIO block driver.
 - `src/filesystem/`: the generic VFS, read-only ext2 mounting, inode loading,
   path lookup, and regular-file reads through direct and indirect data blocks.
 - `src/exec/`: freestanding ELF64 validation and process image loading.

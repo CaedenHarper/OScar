@@ -6,6 +6,7 @@
 #include "scheduler.hpp"
 #include "self_tests.hpp"
 #include "serial.hpp"
+#include "terminal.hpp"
 
 #include <limine.h>
 #include <stdint.h>
@@ -79,6 +80,10 @@ extern "C" [[noreturn]] void kmain() {
     idt::initialize();
     interrupt_controller::initialize(g_hhdm_request.response->offset);
     self_tests::run_keyboard_ps2();
+    if(!terminal::initialize()) {
+        panic::halt("could not initialize the kernel terminal");
+    }
+    self_tests::run_terminal();
     self_tests::run_timer();
     self_tests::run_context();
     self_tests::run_scheduler();

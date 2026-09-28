@@ -9,7 +9,7 @@ static uint64_t write_text(const char* text) {
         ++length;
     }
     uint64_t call = 0;
-    __asm__ volatile("int $0x80" : "+a"(call) : "D"(text), "S"(length) : "rcx", "r11", "memory");
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"((uint64_t)1), "S"(text), "d"(length) : "rcx", "r11", "memory");
     return call;
 }
 
