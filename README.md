@@ -8,6 +8,7 @@ interrupts, creates ring-3 user threads with private kernel stacks, handles an
 initial `int 0x80` system-call ABI (`write`, `exit`, `yield`, `sleep`, `getpid`,
 `getid`, `spawn`, and `waitpid`, plus filesystem `open`, `create`, `read`, `write`,
 `seek`, `close`, `mkdir`, `unlink`, and `rmdir`),
+`chdir`, `getcwd`, `stat`, and `readdir`,
 loads validated in-memory ELF64 executables with `PT_LOAD` segments, including
 zero-filled memory and an initial user stack,
 provides a kernel heap, creates and runs kernel-thread stacks, schedules kernel
@@ -23,9 +24,9 @@ prints diagnostics to QEMU's serial console, and idles.
 This is a kernel seed, not yet an operating system. C user programs can use
 the public freestanding API in `user/include/oscar/syscalls.h`; its library
 implementation hides the raw `int 0x80` ABI. It does not yet provide
-`fork`, dynamic linking, working directories, or rename support. The filesystem
-now supports regular-file creation, `mkdir`, `unlink`, and empty-directory
-removal. `spawn` loads a validated ELF from the mounted filesystem, and `waitpid` waits for
+`fork`, dynamic linking, or rename support. The filesystem now supports regular-file
+creation, `mkdir`, `unlink`, empty-directory removal, working-directory navigation,
+metadata lookup, and directory enumeration. `spawn` loads a validated ELF from the mounted filesystem, and `waitpid` waits for
 that exact child and returns its exit status. The kernel also loads a small
 RAM-backed C `init` ELF after boot-time smoke tests; it currently announces
 startup and exits.

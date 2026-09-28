@@ -56,6 +56,8 @@ Process* create(Process* parent) {
     for(auto& descriptor : process->descriptors) {
         descriptor = {};
     }
+    process->working_directory[0] = '/';
+    process->working_directory[1] = '\0';
     process->descriptors[kStandardInput] = {.kind = DescriptorKind::StandardInput, .file = {}, .open = true};
     process->descriptors[kStandardOutput] = {.kind = DescriptorKind::StandardOutput, .file = {}, .open = true};
     process->descriptors[kStandardError] = {.kind = DescriptorKind::StandardError, .file = {}, .open = true};

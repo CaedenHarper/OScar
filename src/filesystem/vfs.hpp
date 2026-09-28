@@ -26,6 +26,8 @@ enum class NodeType : uint8_t {
     Directory,
 };
 
+constexpr uint32_t kMaximumNameLength = 255;
+
 constexpr uint32_t kOpenRead = 1;
 constexpr uint32_t kOpenWrite = 2;
 constexpr uint32_t kOpenReadWrite = kOpenRead | kOpenWrite;
@@ -34,6 +36,11 @@ struct Node {
     uint64_t identifier;
     uint64_t size;
     NodeType type;
+};
+
+struct DirectoryEntry {
+    char name[kMaximumNameLength + 1];
+    Node node;
 };
 
 struct File {
@@ -51,6 +58,9 @@ bool is_mounted();
 
 /** Resolve a path through the mounted root filesystem without opening it. */
 Status resolve(const char* path, Node* node);
+
+/** Enumerate one non-dot entry from a directory path by zero-based index. */
+Status read_directory(const char* path, uint32_t index, DirectoryEntry* entry);
 
 /** Open a path for reading into caller-owned file-handle storage. */
 Status open(const char* path, uint32_t flags, File* file);

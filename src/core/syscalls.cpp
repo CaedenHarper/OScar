@@ -30,9 +30,15 @@ constexpr uint64_t kCreate = 12;
 constexpr uint64_t kMkdir = 13;
 constexpr uint64_t kUnlink = 14;
 constexpr uint64_t kRmdir = 15;
+constexpr uint64_t kChdir = 16;
+constexpr uint64_t kGetcwd = 17;
+constexpr uint64_t kStat = 18;
+constexpr uint64_t kReaddir = 19;
 constexpr uint64_t kMaximumWriteLength = 4096;
 constexpr uint64_t kMaximumReadLength = 4096;
-constexpr uint64_t kMaximumPathLength = 255;
+constexpr uint64_t kMaximumPathLength = 511;
+constexpr uint64_t kMaximumNameLength = 255;
+constexpr uint64_t kMaximumPathComponents = 256;
 constexpr uint64_t kReadBufferSize = 128;
 constexpr int64_t kErrorInvalidArgument = -1;
 constexpr int64_t kErrorUnknownCall = -2;
@@ -44,6 +50,21 @@ constexpr int64_t kErrorReadOnly = -7;
 constexpr int64_t kErrorExists = -8;
 constexpr int64_t kErrorNotEmpty = -9;
 constexpr int64_t kErrorNoSpace = -10;
+constexpr int64_t kErrorBufferTooSmall = -11;
+
+struct UserStat {
+    uint64_t size;
+    uint32_t type;
+    uint32_t reserved;
+};
+
+struct UserDirectoryEntry {
+    uint64_t identifier;
+    uint64_t size;
+    uint32_t type;
+    uint32_t name_length;
+    char name[kMaximumNameLength + 1];
+};
 
 process::Process* current_process() {
     auto* thread = scheduler::current();
@@ -92,6 +113,81 @@ bool copy_path(uintptr_t user_path, char* path) {
         }
     }
     return false;
+}
+
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-constant-array-index,
+//             cppcoreguidelines-avoid-magic-numbers, readability-function-cognitive-complexity,
+//             readability-math-missing-parentheses)
+bool normalize_process_path(const process::Process* owner, const char* input, char* output) {
+    if(owner == nullptr || input == nullptr || output == nullptr || *input == '\0') {
+        return false;
+    }
+    char combined[(kMaximumPathLength * 2) + 2];
+    uint32_t combined_length = 0;
+    if(input[0] != '/') {
+        while(owner->working_directory[combined_length] != '\0') {
+            combined[combined_length] = owner->working_directory[combined_length];
+            ++combined_length;
+        }
+        if(combined_length > 1) {
+            combined[combined_length++] = '/';
+        }
+    }
+    for(uint32_t index = 0; input[index] != '\0'; ++index) {
+        if(combined_length >= sizeof(combined) - 1) {
+            return false;
+        }
+        combined[combined_length++] = input[index];
+    }
+    combined[combined_length] = '\0';
+
+    uint16_t component_starts[kMaximumPathComponents];
+    uint32_t component_count = 0;
+    uint32_t output_length = 1;
+    output[0] = '/';
+    for(uint32_t index = 0; index < combined_length;) {
+        while(index < combined_length && combined[index] == '/') {
+            ++index;
+        }
+        if(index == combined_length) {
+            break;
+        }
+        const uint32_t component_start = index;
+        while(index < combined_length && combined[index] != '/') {
+            ++index;
+        }
+        const uint32_t component_length = index - component_start;
+        if(component_length == 1 && combined[component_start] == '.') {
+            continue;
+        }
+        if(component_length == 2 && combined[component_start] == '.' && combined[component_start + 1] == '.') {
+            if(component_count != 0) {
+                output_length = component_starts[--component_count];
+            }
+            continue;
+        }
+        if(component_length > kMaximumNameLength || component_count >= kMaximumPathComponents ||
+           output_length + component_length + (output_length > 1 ? 1U : 0U) > kMaximumPathLength) {
+            return false;
+        }
+        component_starts[component_count++] = static_cast<uint16_t>(output_length);
+        if(output_length > 1) {
+            output[output_length++] = '/';
+        }
+        for(uint32_t character = 0; character < component_length; ++character) {
+            output[output_length++] = combined[component_start + character];
+        }
+    }
+    output[output_length] = '\0';
+    return true;
+}
+// NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-constant-array-index,
+//           cppcoreguidelines-avoid-magic-numbers, readability-function-cognitive-complexity,
+//           readability-math-missing-parentheses)
+
+bool copy_process_path(const syscalls::Frame* frame, const process::Process* owner, char* path) {
+    char input[kMaximumPathLength + 1];
+    return owner != nullptr && copy_path(frame->rdi, &input[0]) && normalize_process_path(owner, &input[0], path);
 }
 
 int64_t write_file_descriptor(const syscalls::Frame* frame, process::Process* owner) {
@@ -171,7 +267,7 @@ int64_t open(const syscalls::Frame* frame) {
     }
     char path[kMaximumPathLength + 1];
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
-    if(!copy_path(frame->rdi, path)) {
+    if(!copy_process_path(frame, owner, path)) {
         return kErrorInvalidArgument;
     }
     vfs::File file = {};
@@ -191,7 +287,7 @@ int64_t open(const syscalls::Frame* frame) {
 int64_t create_file(const syscalls::Frame* frame) {
     auto* owner = current_process();
     char path[kMaximumPathLength + 1];
-    if(owner == nullptr || !copy_path(frame->rdi, &path[0])) {
+    if(owner == nullptr || !copy_process_path(frame, owner, &path[0])) {
         return kErrorInvalidArgument;
     }
     vfs::Node node = {};
@@ -203,11 +299,104 @@ using PathOperation = vfs::Status (*)(const char* path);
 int64_t path_operation(const syscalls::Frame* frame, PathOperation operation) {
     auto* owner = current_process();
     char path[kMaximumPathLength + 1];
-    if(owner == nullptr || operation == nullptr || !copy_path(frame->rdi, &path[0])) {
+    if(owner == nullptr || operation == nullptr || !copy_process_path(frame, owner, &path[0])) {
         return kErrorInvalidArgument;
     }
     return translate_vfs_status(operation(&path[0]));
 }
+
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-constant-array-index,
+//             cppcoreguidelines-pro-bounds-array-to-pointer-decay, cppcoreguidelines-pro-type-member-init)
+int64_t change_directory(const syscalls::Frame* frame) {
+    auto* owner = current_process();
+    char path[kMaximumPathLength + 1];
+    if(owner == nullptr || !copy_process_path(frame, owner, &path[0])) {
+        return kErrorInvalidArgument;
+    }
+    vfs::Node node = {};
+    const vfs::Status result = vfs::resolve(&path[0], &node);
+    if(result != vfs::Status::Success) {
+        return translate_vfs_status(result);
+    }
+    if(node.type != vfs::NodeType::Directory) {
+        return kErrorIsDirectory;
+    }
+    for(uint32_t index = 0; path[index] != '\0'; ++index) {
+        owner->working_directory[index] = path[index];
+    }
+    uint32_t length = 0;
+    while(path[length] != '\0') {
+        ++length;
+    }
+    owner->working_directory[length] = '\0';
+    return 0;
+}
+
+int64_t get_working_directory(const syscalls::Frame* frame) {
+    auto* owner = current_process();
+    if(owner == nullptr || frame->rdi == 0 || frame->rsi == 0) {
+        return kErrorInvalidArgument;
+    }
+    uint32_t length = 0;
+    while(owner->working_directory[length] != '\0') {
+        ++length;
+    }
+    if(frame->rsi <= length || !user_memory::validate(frame->rdi, length + 1, true) ||
+       !user_memory::copy_to_user(frame->rdi, owner->working_directory, length + 1)) {
+        return kErrorBufferTooSmall;
+    }
+    return length;
+}
+
+int64_t stat_path(const syscalls::Frame* frame) {
+    auto* owner = current_process();
+    char path[kMaximumPathLength + 1];
+    if(owner == nullptr || frame->rsi == 0 || !copy_process_path(frame, owner, &path[0]) ||
+       !user_memory::validate(frame->rsi, sizeof(UserStat), true)) {
+        return kErrorInvalidArgument;
+    }
+    vfs::Node node = {};
+    const vfs::Status result = vfs::resolve(&path[0], &node);
+    if(result != vfs::Status::Success) {
+        return translate_vfs_status(result);
+    }
+    UserStat stat = {
+        .size = node.size,
+        .type = node.type == vfs::NodeType::Directory ? 1U : 0U,
+        .reserved = 0,
+    };
+    return user_memory::copy_to_user(frame->rsi, &stat, sizeof(stat)) ? 0 : kErrorInvalidArgument;
+}
+
+int64_t read_directory(const syscalls::Frame* frame) {
+    auto* owner = current_process();
+    char path[kMaximumPathLength + 1];
+    if(owner == nullptr || frame->rdx == 0 || !copy_process_path(frame, owner, &path[0]) ||
+       !user_memory::validate(frame->rdx, sizeof(UserDirectoryEntry), true)) {
+        return kErrorInvalidArgument;
+    }
+    vfs::DirectoryEntry entry;
+    const vfs::Status result = vfs::read_directory(&path[0], static_cast<uint32_t>(frame->rsi), &entry);
+    if(result != vfs::Status::Success) {
+        return translate_vfs_status(result);
+    }
+    UserDirectoryEntry user_entry;
+    user_entry.identifier = entry.node.identifier;
+    user_entry.size = entry.node.size;
+    user_entry.type = entry.node.type == vfs::NodeType::Directory ? 1U : 0U;
+    user_entry.name_length = 0;
+    for(char& character : user_entry.name) {
+        character = '\0';
+    }
+    while(user_entry.name_length < sizeof(entry.name) && entry.name[user_entry.name_length] != '\0') {
+        user_entry.name[user_entry.name_length] = entry.name[user_entry.name_length];
+        ++user_entry.name_length;
+    }
+    user_entry.name[user_entry.name_length] = '\0';
+    return user_memory::copy_to_user(frame->rdx, &user_entry, sizeof(user_entry)) ? 0 : kErrorInvalidArgument;
+}
+// NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-constant-array-index,
+//           cppcoreguidelines-pro-bounds-array-to-pointer-decay, cppcoreguidelines-pro-type-member-init)
 
 int64_t read_terminal(const syscalls::Frame* frame) {
     constexpr uint64_t kTerminalBufferSize = 128;
@@ -299,7 +488,7 @@ int64_t spawn(const syscalls::Frame* frame) {
 
     char path[kMaximumPathLength + 1];
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
-    if(!copy_path(frame->rdi, path)) {
+    if(!copy_process_path(frame, parent, path)) {
         return kErrorInvalidArgument;
     }
 
@@ -427,6 +616,18 @@ extern "C" void handle(Frame* frame) {
             return;
         case kRmdir:
             frame->rax = static_cast<uint64_t>(path_operation(frame, vfs::rmdir));
+            return;
+        case kChdir:
+            frame->rax = static_cast<uint64_t>(change_directory(frame));
+            return;
+        case kGetcwd:
+            frame->rax = static_cast<uint64_t>(get_working_directory(frame));
+            return;
+        case kStat:
+            frame->rax = static_cast<uint64_t>(stat_path(frame));
+            return;
+        case kReaddir:
+            frame->rax = static_cast<uint64_t>(read_directory(frame));
             return;
         default:
             frame->rax = static_cast<uint64_t>(kErrorUnknownCall);

@@ -18,6 +18,10 @@ enum {
     kMkdirSystemCall = 13,
     kUnlinkSystemCall = 14,
     kRmdirSystemCall = 15,
+    kChdirSystemCall = 16,
+    kGetcwdSystemCall = 17,
+    kStatSystemCall = 18,
+    kReaddirSystemCall = 19,
 };
 
 int64_t oscar_write(int64_t descriptor, const void* buffer, uint64_t length) {
@@ -86,6 +90,31 @@ int64_t oscar_unlink(const char* path) {
 int64_t oscar_rmdir(const char* path) {
     uint64_t call = kRmdirSystemCall;
     __asm__ volatile("int $0x80" : "+a"(call) : "D"(path) : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+int64_t oscar_chdir(const char* path) {
+    uint64_t call = kChdirSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"(path) : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+// NOLINTNEXTLINE(readability-non-const-parameter) the kernel writes the working directory into buffer.
+int64_t oscar_getcwd(char* buffer, uint64_t length) {
+    uint64_t call = kGetcwdSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"(buffer), "S"(length) : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+int64_t oscar_stat(const char* path, struct oscar_stat* status) {
+    uint64_t call = kStatSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"(path), "S"(status) : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+int64_t oscar_readdir(const char* path, uint64_t index, struct oscar_dirent* entry) {
+    uint64_t call = kReaddirSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"(path), "S"(index), "d"(entry) : "rcx", "r11", "memory");
     return (int64_t)call;
 }
 

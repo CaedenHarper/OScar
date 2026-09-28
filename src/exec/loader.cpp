@@ -102,6 +102,18 @@ bool load(
         return false;
     }
 
+    if(parent != nullptr) {
+        // A spawned program starts in the caller's directory; otherwise a shell
+        // could successfully change directory but every child would resolve paths
+        // from the kernel's root instead.
+        uint32_t index = 0;
+        while(parent->working_directory[index] != '\0') {
+            process->working_directory[index] = parent->working_directory[index];
+            ++index;
+        }
+        process->working_directory[index] = '\0';
+    }
+
     const auto* header = static_cast<const elf::Header*>(image);
     auto* thread = kernel_thread::create_user(process, header->entry, kUserStackTop);
     if(thread == nullptr) {

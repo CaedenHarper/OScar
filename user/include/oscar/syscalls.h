@@ -18,6 +18,38 @@ int64_t oscar_unlink(const char* path);
 int64_t oscar_rmdir(const char* path);
 
 enum {
+    OSCAR_NODE_REGULAR = 0,
+    OSCAR_NODE_DIRECTORY = 1,
+    OSCAR_MAX_NAME_LENGTH = 255,
+};
+
+struct oscar_stat {
+    uint64_t size;
+    uint32_t type;
+    uint32_t reserved;
+};
+
+struct oscar_dirent {
+    uint64_t identifier;
+    uint64_t size;
+    uint32_t type;
+    uint32_t name_length;
+    char name[OSCAR_MAX_NAME_LENGTH + 1];
+};
+
+/** Change the calling process's working directory. */
+int64_t oscar_chdir(const char* path);
+
+/** Copy the working directory into buffer and return its length without the terminator. */
+int64_t oscar_getcwd(char* buffer, uint64_t length);
+
+/** Read metadata for a path into caller-owned storage. */
+int64_t oscar_stat(const char* path, struct oscar_stat* status);
+
+/** Read one non-dot directory entry by zero-based index. */
+int64_t oscar_readdir(const char* path, uint64_t index, struct oscar_dirent* entry);
+
+enum {
     OSCAR_OPEN_READ = 1,
     OSCAR_OPEN_WRITE = 2,
 };

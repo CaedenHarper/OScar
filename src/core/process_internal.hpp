@@ -15,6 +15,7 @@ constexpr uint32_t kFirstFileDescriptor = 3;
 constexpr uint32_t kStandardInput = 0;
 constexpr uint32_t kStandardOutput = 1;
 constexpr uint32_t kStandardError = 2;
+constexpr uint32_t kMaximumWorkingDirectoryLength = 511;
 
 enum class DescriptorKind : uint8_t {
     Invalid,
@@ -38,6 +39,7 @@ struct Process {
     kernel_thread::Thread* thread_tail;
     uint32_t thread_count;
     FileDescriptor descriptors[kMaximumFileDescriptors];
+    char working_directory[kMaximumWorkingDirectoryLength + 1];
     Process* parent;
     Process* child_head;
     Process* child_tail;

@@ -9,7 +9,8 @@ initializes COM1 serial output, reads the Limine memory map, manages physical
 pages and basic virtual-memory mappings, provides a kernel heap, installs the
 GDT/TSS, Interrupt Descriptor Table, and hardware timer interrupts, creates
   ring-3 user threads, handles an initial system-call ABI including writable
-  regular-file and basic directory operations plus `spawn`/`waitpid`, loads validated
+  regular-file and basic directory operations, working directories, metadata and
+  enumeration plus `spawn`/`waitpid`, loads validated
 in-memory ELF64 executables, provides kernel synchronization primitives and
 process structures, runs boot-time smoke tests, reports exception register
 state, and halts.
@@ -83,6 +84,8 @@ handles reject writes. `mke2fs` and `debugfs` are required.
 The mutation test additionally creates and removes regular files and nested
 directories, rejects duplicate names and non-empty directory removal, and
 cleans up its entries for repeatable persistent-image runs.
+The user terminal fixture also exercises relative paths, `chdir`, `getcwd`,
+metadata lookup, and directory enumeration before entering its input loop.
 `make test-exception` builds in a separate `build-exception/` directory,
 executes `ud2`, and should print an invalid-opcode diagnostic with register
 state before halting.

@@ -181,6 +181,40 @@ Status resolve(const char* path, Node* node) {
     return Status::Success;
 }
 
+Status read_directory(const char* path, uint32_t index, DirectoryEntry* entry) {
+    if(!g_mounted || path == nullptr || entry == nullptr) {
+        return g_mounted ? Status::InvalidArgument : Status::NotMounted;
+    }
+    Node directory = {};
+    const Status resolve_status = resolve(path, &directory);
+    if(resolve_status != Status::Success) {
+        return resolve_status;
+    }
+    if(directory.type != NodeType::Directory) {
+        return Status::NotDirectory;
+    }
+    ext2::Inode directory_inode = {};
+    if(ext2::get_inode(&g_root_filesystem, static_cast<uint32_t>(directory.identifier), &directory_inode) !=
+       ext2::Status::Success) {
+        return Status::IoError;
+    }
+    char name[256];
+    ext2::Inode child = {};
+    const ext2::Status read_status =
+        ext2::read_directory(&g_root_filesystem, &directory_inode, index, &name[0], sizeof(name), &child);
+    if(read_status != ext2::Status::Success) {
+        return translate_status(read_status);
+    }
+    for(uint32_t character = 0; character < sizeof(name); ++character) {
+        entry->name[character] = name[character];
+        if(name[character] == '\0') {
+            break;
+        }
+    }
+    entry->node = node_from_inode(child);
+    return Status::Success;
+}
+
 Status open(const char* path, uint32_t flags, File* file) {
     if(file == nullptr || (flags & ~kOpenReadWrite) != 0 || (flags & kOpenReadWrite) == 0) {
         return Status::InvalidArgument;

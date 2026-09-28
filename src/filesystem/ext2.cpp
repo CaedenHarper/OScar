@@ -1143,6 +1143,88 @@ Status lookup_child(const FileSystem* file_system, const Inode* directory, const
     return result;
 }
 
+Status read_directory(
+    const FileSystem* file_system,
+    const Inode* directory,
+    uint32_t index,
+    char* name,
+    uint32_t name_capacity,
+    Inode* inode
+) {
+    if(file_system == nullptr || !file_system->mounted || directory == nullptr || !directory->directory ||
+       name == nullptr || name_capacity < 256 || inode == nullptr) {
+        return Status::InvalidArgument;
+    }
+
+    const interrupts::State previous_state = synchronization::lock(&file_system->io_lock);
+    Inode current = {};
+    uint32_t blocks[kIndirectBlockCount] = {};
+    if(!read_inode(file_system, directory->number, &current, blocks) || !current.directory) {
+        synchronization::unlock(&file_system->io_lock, previous_state);
+        return Status::Corrupt;
+    }
+
+    uint32_t remaining_index = index;
+    const uint32_t block_count = directory_block_count(file_system, current);
+    for(uint32_t block_index = 0; block_index < block_count; ++block_index) {
+        uint32_t physical_block = 0;
+        const DataBlockResult block_result = get_data_block(file_system, blocks, block_index, &physical_block);
+        if(block_result == DataBlockResult::Unsupported) {
+            synchronization::unlock(&file_system->io_lock, previous_state);
+            return Status::Unsupported;
+        }
+        if(block_result == DataBlockResult::Corrupt ||
+           (block_result == DataBlockResult::Success && !read_fs_block(file_system, physical_block))) {
+            synchronization::unlock(&file_system->io_lock, previous_state);
+            return Status::Corrupt;
+        }
+        if(block_result == DataBlockResult::IoError) {
+            synchronization::unlock(&file_system->io_lock, previous_state);
+            return Status::IoError;
+        }
+        const uint64_t offset_in_directory = static_cast<uint64_t>(block_index) * file_system->block_size;
+        const uint32_t available = current.size - offset_in_directory < file_system->block_size
+                                       ? static_cast<uint32_t>(current.size - offset_in_directory)
+                                       : file_system->block_size;
+        uint32_t offset = 0;
+        while(offset + kDirectoryEntryHeaderSize <= available) {
+            const uint32_t entry_inode = read_u32(g_io_buffer + offset, 0);
+            const uint16_t entry_size = read_u16(g_io_buffer + offset, 4);
+            const uint8_t entry_name_length = g_io_buffer[offset + 6];
+            if(entry_size < kDirectoryEntryHeaderSize || entry_size % 4 != 0 || entry_size > available - offset ||
+               entry_name_length > entry_size - kDirectoryEntryHeaderSize) {
+                synchronization::unlock(&file_system->io_lock, previous_state);
+                return Status::Corrupt;
+            }
+            const uint8_t* entry_name = g_io_buffer + offset + kDirectoryEntryHeaderSize;
+            const bool is_dot = entry_name_length == 1 && entry_name[0] == '.';
+            const bool is_dot_dot = entry_name_length == 2 && entry_name[0] == '.' && entry_name[1] == '.';
+            if(entry_inode != 0 && !is_dot && !is_dot_dot) {
+                if(remaining_index == 0) {
+                    for(uint32_t character = 0; character < entry_name_length; ++character) {
+                        name[character] = static_cast<char>(entry_name[character]);
+                    }
+                    name[entry_name_length] = '\0';
+                    if(!read_inode(file_system, entry_inode, inode)) {
+                        synchronization::unlock(&file_system->io_lock, previous_state);
+                        return Status::Corrupt;
+                    }
+                    synchronization::unlock(&file_system->io_lock, previous_state);
+                    return Status::Success;
+                }
+                --remaining_index;
+            }
+            offset += entry_size;
+        }
+        if(offset != available && available != 0) {
+            synchronization::unlock(&file_system->io_lock, previous_state);
+            return Status::Corrupt;
+        }
+    }
+    synchronization::unlock(&file_system->io_lock, previous_state);
+    return Status::NotFound;
+}
+
 Status read_file(
     const FileSystem* file_system,
     const Inode* inode,

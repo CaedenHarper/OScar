@@ -65,6 +65,16 @@ Status get_inode(const FileSystem* file_system, uint32_t inode_number, Inode* in
 /** Look up one child name within a directory inode. */
 Status lookup_child(const FileSystem* file_system, const Inode* directory, const char* name, Inode* inode);
 
+/** Read the index-th non-dot entry from a directory inode, or NotFound at end. */
+Status read_directory(
+    const FileSystem* file_system,
+    const Inode* directory,
+    uint32_t index,
+    char* name,
+    uint32_t name_capacity,
+    Inode* inode
+);
+
 /**
  * Look up an absolute or root-relative path in a mounted filesystem.
  * Components are separated by '/', repeated separators are accepted, and '.' is
