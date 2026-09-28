@@ -93,9 +93,6 @@ extern "C" [[noreturn]] void kmain() {
     if(!self_tests::prepare_init()) {
         panic::halt("could not prepare init process");
     }
-    if(!self_tests::prepare_terminal()) {
-        panic::halt("could not prepare terminal process");
-    }
 
 #ifdef OSCAR_TEST_EXCEPTION
     serial::write("Triggering invalid-opcode exception...\n");

@@ -36,16 +36,10 @@ void run_terminal();
 void run_scheduler();
 
 /**
- * Load and enqueue the RAM-backed init ELF after kernel smoke tests are prepared.
- * The scheduler and ELF-loading prerequisites must be initialized first; scheduling
- * begins later when scheduler::start() runs.
+ * Load and enqueue `/sbin/init` from the mounted filesystem after kernel smoke tests
+ * are prepared. The scheduler and ELF-loading prerequisites must be initialized first;
+ * scheduling begins later when scheduler::start() runs.
  */
 bool prepare_init();
-
-/**
- * Load and enqueue the interactive terminal ELF after boot-time smoke tests complete.
- * The scheduler and ELF-loading prerequisites must be initialized first.
- */
-bool prepare_terminal();
 
 } // namespace self_tests

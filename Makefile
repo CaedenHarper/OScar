@@ -15,7 +15,10 @@ FILESYSTEM_TEST_FILES := tests/filesystem/hello.txt tests/filesystem/config.txt 
 CPP_SOURCES := $(wildcard src/*.cpp src/*/*.cpp src/*/*/*.cpp)
 ASM_SOURCES := $(wildcard src/*.S src/*/*.S src/*/*/*.S)
 LINT_CPP_FILES := $(shell find src -name '*.cpp' -o -name '*.hpp')
-LINT_USER_C_FILES := $(shell find tests/user -name '*.c') $(shell find user -name '*.c' -o -name '*.h')
+LINT_USER_C_FILES := $(shell find tests/user -name '*.c') $(shell find user -name '*.c')
+LINT_TEST_C_FILES := $(shell find tests/user -name '*.c')
+LINT_USER_LIB_C_FILES := $(shell find user -name '*.c')
+LINT_USER_HEADERS := $(shell find user -name '*.h')
 OBJECTS := $(patsubst src/%.cpp,$(BUILD_DIR)/%.o,$(CPP_SOURCES)) \
 	$(patsubst src/%.S,$(BUILD_DIR)/asm/%.o,$(ASM_SOURCES))
 
@@ -72,8 +75,10 @@ test-exception:
 
 lint:
 	bear --output compile_commands.json -- $(MAKE) clean all
-	clang-format --dry-run --Werror $(LINT_CPP_FILES) $(LINT_USER_C_FILES)
-	clang-tidy $(LINT_CPP_FILES) $(LINT_USER_C_FILES) --config-file=.clang-tidy --warnings-as-errors="*"
+	clang-format --dry-run --Werror $(LINT_CPP_FILES) $(LINT_USER_C_FILES) $(LINT_USER_HEADERS)
+	clang-tidy $(LINT_CPP_FILES) --config-file=.clang-tidy --warnings-as-errors="*"
+	clang-tidy --extra-arg-before=-x --extra-arg-before=c $(LINT_TEST_C_FILES) --config-file=.clang-tidy --warnings-as-errors="*"
+	clang-tidy $(LINT_USER_LIB_C_FILES) --config-file=.clang-tidy --warnings-as-errors="*"
 
 help:
 	@echo "make          Build the kernel ELF"
@@ -87,17 +92,21 @@ help:
 $(BUILD_DIR):
 	mkdir -p $@
 
-$(VIRTIO_DISK): Makefile $(FILESYSTEM_TEST_FILES) $(LARGE_FILESYSTEM_TEST_FILE) $(USER_BUILD_DIR)/second.elf | $(BUILD_DIR)
+$(VIRTIO_DISK): Makefile $(FILESYSTEM_TEST_FILES) $(LARGE_FILESYSTEM_TEST_FILE) \
+	$(USER_BUILD_DIR)/second.elf $(USER_BUILD_DIR)/init.elf $(USER_BUILD_DIR)/terminal.elf | $(BUILD_DIR)
 	truncate -s 8M $@
 	mke2fs -q -F -t ext2 -b 1024 $@
 	debugfs -w -R 'mkdir /etc' $@
 	debugfs -w -R 'mkdir /etc/oscar' $@
 	debugfs -w -R 'mkdir /many' $@
 	debugfs -w -R 'mkdir /bin' $@
+	debugfs -w -R 'mkdir /sbin' $@
 	debugfs -w -R 'write tests/filesystem/hello.txt /hello.txt' $@
 	debugfs -w -R 'write tests/filesystem/config.txt /etc/oscar/config.txt' $@
 	debugfs -w -R 'write tests/filesystem/writable.txt /writable.txt' $@
 	debugfs -w -R 'write $(USER_BUILD_DIR)/second.elf /bin/second.elf' $@
+	debugfs -w -R 'write $(USER_BUILD_DIR)/terminal.elf /bin/terminal' $@
+	debugfs -w -R 'write $(USER_BUILD_DIR)/init.elf /sbin/init' $@
 	debugfs -w -R 'write $(LARGE_FILESYSTEM_TEST_FILE) /large.bin' $@
 	index=0; while [ $$index -lt 300 ]; do \
 		debugfs -w -R "write tests/filesystem/hello.txt /many/file$$index" $@ >/dev/null || exit 1; \
@@ -151,9 +160,6 @@ $(BUILD_DIR)/asm/tests/user_program_filesystem.o: $(USER_BUILD_DIR)/filesystem.e
 $(BUILD_DIR)/asm/tests/user_program_divzero.o: $(USER_BUILD_DIR)/divzero.elf
 $(BUILD_DIR)/asm/tests/user_program_kernel_access.o: $(USER_BUILD_DIR)/kernel_access.elf
 $(BUILD_DIR)/asm/tests/user_program_invalid_opcode.o: $(USER_BUILD_DIR)/invalid_opcode.elf
-$(BUILD_DIR)/asm/tests/user_program_init.o: $(USER_BUILD_DIR)/init.elf
-$(BUILD_DIR)/asm/tests/user_program_terminal.o: $(USER_BUILD_DIR)/terminal.elf
-
 $(KERNEL): $(OBJECTS) linker.ld
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(OBJECTS) -o $@
 

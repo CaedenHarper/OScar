@@ -1,7 +1,10 @@
 #include <oscar/syscalls.h>
 #include <stdint.h>
 
-// NOLINTBEGIN(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
+// NOLINTBEGIN(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
+//             cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+//             cppcoreguidelines-pro-bounds-constant-array-index,
+//             cppcoreguidelines-pro-type-member-init)
 
 enum {
     kLineCapacity = 128,
@@ -69,4 +72,7 @@ void _start(void) {
     }
 }
 
-// NOLINTEND(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
+// NOLINTEND(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
+//           cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+//           cppcoreguidelines-pro-bounds-constant-array-index,
+//           cppcoreguidelines-pro-type-member-init)

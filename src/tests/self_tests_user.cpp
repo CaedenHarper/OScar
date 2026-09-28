@@ -212,9 +212,7 @@ bool prepare_crash_test_thread(const uint8_t* image, const uint8_t* image_end) {
 bool prepare_init_process() {
     process::Process* process = nullptr;
     kernel_thread::Thread* thread = nullptr;
-    const uint64_t image_size = static_cast<uint64_t>(user_program_init_end - user_program_init_start);
-    if(!loader::load(user_program_init_start, image_size, &process, &thread, nullptr) || process == nullptr ||
-       thread == nullptr) {
+    if(!loader::load_path("/sbin/init", nullptr, &process, &thread) || process == nullptr || thread == nullptr) {
         return false;
     }
     return scheduler::enqueue(thread);

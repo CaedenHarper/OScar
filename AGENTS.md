@@ -54,7 +54,7 @@ The source tree is organized as follows:
   context, keyboard, memory/process, scheduler, synchronization, and user-mode tests.
   `self_tests_internal.hpp` contains private cross-test declarations.
 - `tests/user/`: source and linker script for successful, filesystem-read,
-  computed-output, interactive-terminal, RAM-backed init, and intentional-crash user ELF smoke images. Malformed ELF metadata tests live in
+  computed-output, interactive-terminal, filesystem-backed init, and intentional-crash user ELF smoke images. Init and terminal are mounted from the generated ext2 image; the other test images are embedded in the kernel smoke tests. Malformed ELF metadata tests live in
   `src/tests/` because they exercise validation without loading an image.
 - `user/include/oscar/`: public C headers for the user-space syscall API.
 - `user/lib/`: freestanding C implementations of the user-space syscall wrappers.
@@ -106,8 +106,10 @@ Run the available C++ formatting and lint checks from the repository root:
 
 ```sh
 bear --output compile_commands.json -- make clean all
-clang-format --dry-run --Werror $(find src -name '*.cpp' -o -name '*.hpp') $(find tests/user -name '*.c')
-clang-tidy $(find src -name '*.cpp' -o -name '*.hpp') $(find tests/user -name '*.c') --config-file=.clang-tidy --warnings-as-errors="*"
+clang-format --dry-run --Werror $(find src -name '*.cpp' -o -name '*.hpp') $(find tests/user -name '*.c') $(find user -name '*.c' -o -name '*.h')
+clang-tidy $(find src -name '*.cpp' -o -name '*.hpp') --config-file=.clang-tidy --warnings-as-errors="*"
+clang-tidy --extra-arg-before=-x --extra-arg-before=c $(find tests/user -name '*.c') --config-file=.clang-tidy --warnings-as-errors="*"
+clang-tidy $(find user -name '*.c') --config-file=.clang-tidy --warnings-as-errors="*"
 ```
 
 The repository-local `make lint` target runs the same three commands and also
