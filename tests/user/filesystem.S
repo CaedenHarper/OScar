@@ -53,6 +53,30 @@ _start:
     testq %rax, %rax
     js .Lfail
 
+    movl $12, %eax
+    leaq created_path(%rip), %rdi
+    int $0x80
+    testq %rax, %rax
+    js .Lfail
+
+    movl $14, %eax
+    leaq created_path(%rip), %rdi
+    int $0x80
+    testq %rax, %rax
+    js .Lfail
+
+    movl $13, %eax
+    leaq created_directory(%rip), %rdi
+    int $0x80
+    testq %rax, %rax
+    js .Lfail
+
+    movl $15, %eax
+    leaq created_directory(%rip), %rdi
+    int $0x80
+    testq %rax, %rax
+    js .Lfail
+
     movl $1, %eax
     int $0x80
 .Lhalt:
@@ -76,6 +100,10 @@ _start:
 .section .rodata
 path:
     .asciz "/writable.txt"
+created_path:
+    .asciz "/syscall-created.txt"
+created_directory:
+    .asciz "/syscall-directory"
 write_data:
     .ascii "User syscall write test.\n"
 write_data_end:

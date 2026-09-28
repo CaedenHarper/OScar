@@ -221,6 +221,86 @@ bool allocate_block(const FileSystem* file_system, uint32_t* block) {
     return false;
 }
 
+bool free_bitmap_entry(const FileSystem* file_system, uint32_t bitmap_block, uint32_t bit) {
+    if(file_system == nullptr || bit >= file_system->block_size * 8U || !read_fs_block(file_system, bitmap_block)) {
+        return false;
+    }
+    const uint32_t byte = bit / 8U;
+    const uint8_t mask = static_cast<uint8_t>(1U << (bit % 8U));
+    if((g_io_buffer[byte] & mask) == 0) {
+        return false;
+    }
+    g_io_buffer[byte] = static_cast<uint8_t>(g_io_buffer[byte] & ~mask);
+    return write_fs_block(file_system, bitmap_block);
+}
+
+bool free_block(const FileSystem* file_system, uint32_t block) {
+    if(file_system == nullptr || block < file_system->first_data_block || block >= file_system->block_count) {
+        return false;
+    }
+    const uint32_t relative = block - file_system->first_data_block;
+    const uint32_t group = relative / file_system->blocks_per_group;
+    const uint32_t bit = relative % file_system->blocks_per_group;
+    uint32_t block_bitmap = 0;
+    uint32_t inode_bitmap = 0;
+    uint16_t free_blocks = 0;
+    uint16_t free_inodes = 0;
+    if(!group_descriptor(file_system, group, &block_bitmap, &inode_bitmap, &free_blocks, &free_inodes) ||
+       !free_bitmap_entry(file_system, block_bitmap, bit) || !update_group_counts(file_system, group, 1, 0) ||
+       !update_superblock_counts(file_system, 1, 0)) {
+        return false;
+    }
+    return true;
+}
+
+bool allocate_inode(const FileSystem* file_system, uint32_t* inode_number) {
+    if(file_system == nullptr || inode_number == nullptr) {
+        return false;
+    }
+    for(uint32_t group = 0; group < file_system->group_count; ++group) {
+        uint32_t block_bitmap = 0;
+        uint32_t inode_bitmap = 0;
+        uint16_t free_blocks = 0;
+        uint16_t free_inodes = 0;
+        if(!group_descriptor(file_system, group, &block_bitmap, &inode_bitmap, &free_blocks, &free_inodes) ||
+           free_inodes == 0) {
+            continue;
+        }
+        const uint64_t first_inode = static_cast<uint64_t>(group) * file_system->inodes_per_group + 1;
+        const uint32_t remaining = first_inode > file_system->inode_count
+                                       ? 0
+                                       : static_cast<uint32_t>(file_system->inode_count - first_inode + 1);
+        const uint32_t limit = remaining < file_system->inodes_per_group ? remaining : file_system->inodes_per_group;
+        uint32_t bit = 0;
+        if(limit == 0 || !allocate_bitmap_entry(file_system, inode_bitmap, limit, &bit) ||
+           !update_group_counts(file_system, group, 0, -1) || !update_superblock_counts(file_system, 0, -1)) {
+            continue;
+        }
+        *inode_number = static_cast<uint32_t>(first_inode + bit);
+        return true;
+    }
+    return false;
+}
+
+bool free_inode_number(const FileSystem* file_system, uint32_t inode_number) {
+    if(!valid_inode_number(file_system, inode_number)) {
+        return false;
+    }
+    const uint32_t relative = inode_number - 1;
+    const uint32_t group = relative / file_system->inodes_per_group;
+    const uint32_t bit = relative % file_system->inodes_per_group;
+    uint32_t block_bitmap = 0;
+    uint32_t inode_bitmap = 0;
+    uint16_t free_blocks = 0;
+    uint16_t free_inodes = 0;
+    if(!group_descriptor(file_system, group, &block_bitmap, &inode_bitmap, &free_blocks, &free_inodes) ||
+       !free_bitmap_entry(file_system, inode_bitmap, bit) || !update_group_counts(file_system, group, 0, 1) ||
+       !update_superblock_counts(file_system, 0, 1)) {
+        return false;
+    }
+    return true;
+}
+
 bool inode_location(
     const FileSystem* file_system,
     uint32_t inode_number,
@@ -262,11 +342,25 @@ bool write_inode(const FileSystem* file_system, const Inode& inode) {
     }
     write_u16(g_io_buffer + table_offset, 0, inode.mode);
     write_u32(g_io_buffer + table_offset, 4, static_cast<uint32_t>(inode.size));
+    write_u16(g_io_buffer + table_offset, 26, inode.links);
     write_u32(g_io_buffer + table_offset, 28, inode.sectors);
     for(uint32_t index = 0; index < kIndirectBlockCount; ++index) {
         write_u32(g_io_buffer + table_offset, 40 + index * sizeof(uint32_t), inode.blocks[index]);
     }
     write_u32(g_io_buffer + table_offset, 108, static_cast<uint32_t>(inode.size >> 32U));
+    return write_fs_block(file_system, table_block);
+}
+
+bool clear_inode(const FileSystem* file_system, uint32_t inode_number) {
+    uint32_t table_block = 0;
+    uint32_t table_offset = 0;
+    if(!inode_location(file_system, inode_number, &table_block, &table_offset) ||
+       !read_fs_block(file_system, table_block)) {
+        return false;
+    }
+    for(uint32_t index = 0; index < file_system->inode_size; ++index) {
+        g_io_buffer[table_offset + index] = 0;
+    }
     return write_fs_block(file_system, table_block);
 }
 
@@ -306,6 +400,7 @@ bool read_inode(const FileSystem* file_system, uint32_t inode_number, Inode* ino
     inode->number = inode_number;
     inode->mode = read_u16(raw_inode, 0);
     inode->size = read_u32(raw_inode, 4);
+    inode->links = read_u16(raw_inode, 26);
     inode->sectors = read_u32(raw_inode, 28);
     if((inode->mode & kDirectoryType) == 0 && (inode->mode & 0xf000U) == 0) {
         return false;
@@ -537,6 +632,370 @@ Status find_child(
         }
     }
     return Status::NotFound;
+}
+
+struct DirectoryEntryLocation {
+    uint32_t block;
+    uint32_t offset;
+    uint16_t size;
+    uint32_t inode;
+};
+
+uint32_t directory_block_count(const FileSystem* file_system, const Inode& directory) {
+    return static_cast<uint32_t>(
+        directory.size / file_system->block_size + (directory.size % file_system->block_size != 0 ? 1 : 0)
+    );
+}
+
+bool valid_name(const char* name, uint32_t* length) {
+    if(name == nullptr || length == nullptr || *name == '\0' || (name[0] == '.' && name[1] == '\0') ||
+       (name[0] == '.' && name[1] == '.' && name[2] == '\0')) {
+        return false;
+    }
+    uint32_t count = 0;
+    while(name[count] != '\0') {
+        if(name[count] == '/' || count == UINT8_MAX) {
+            return false;
+        }
+        ++count;
+    }
+    *length = count;
+    return true;
+}
+
+bool read_directory_block(
+    const FileSystem* file_system,
+    const Inode& directory,
+    uint32_t logical_block,
+    uint32_t* physical_block
+) {
+    uint32_t blocks[kIndirectBlockCount] = {};
+    Inode verified = {};
+    if(!read_inode(file_system, directory.number, &verified, blocks)) {
+        return false;
+    }
+    const DataBlockResult result = get_data_block(file_system, blocks, logical_block, physical_block);
+    return result == DataBlockResult::Success && read_fs_block(file_system, *physical_block);
+}
+
+bool find_directory_entry(
+    const FileSystem* file_system,
+    const Inode& directory,
+    const char* name,
+    uint32_t name_length,
+    DirectoryEntryLocation* location
+) {
+    const uint32_t block_count = directory_block_count(file_system, directory);
+    for(uint32_t logical_block = 0; logical_block < block_count; ++logical_block) {
+        uint32_t physical_block = 0;
+        if(!read_directory_block(file_system, directory, logical_block, &physical_block)) {
+            return false;
+        }
+        uint32_t offset = 0;
+        while(offset < file_system->block_size) {
+            const uint32_t entry_inode = read_u32(g_io_buffer + offset, 0);
+            const uint16_t entry_size = read_u16(g_io_buffer + offset, 4);
+            const uint8_t entry_name_length = g_io_buffer[offset + 6];
+            if(entry_size < kDirectoryEntryHeaderSize || entry_size % 4 != 0 ||
+               entry_size > file_system->block_size - offset ||
+               entry_name_length > entry_size - kDirectoryEntryHeaderSize) {
+                return false;
+            }
+            if(entry_inode != 0 &&
+               component_equals(
+                   g_io_buffer + offset + kDirectoryEntryHeaderSize, entry_name_length, name, name_length
+               )) {
+                *location = {physical_block, offset, entry_size, entry_inode};
+                return true;
+            }
+            offset += entry_size;
+        }
+    }
+    return false;
+}
+
+bool directory_empty(const FileSystem* file_system, const Inode& directory) {
+    const uint32_t block_count = directory_block_count(file_system, directory);
+    for(uint32_t logical_block = 0; logical_block < block_count; ++logical_block) {
+        uint32_t physical_block = 0;
+        if(!read_directory_block(file_system, directory, logical_block, &physical_block)) {
+            return false;
+        }
+        uint32_t offset = 0;
+        while(offset < file_system->block_size) {
+            const uint32_t entry_inode = read_u32(g_io_buffer + offset, 0);
+            const uint16_t entry_size = read_u16(g_io_buffer + offset, 4);
+            const uint8_t entry_name_length = g_io_buffer[offset + 6];
+            if(entry_size < kDirectoryEntryHeaderSize || entry_size % 4 != 0 ||
+               entry_size > file_system->block_size - offset ||
+               entry_name_length > entry_size - kDirectoryEntryHeaderSize) {
+                return false;
+            }
+            const uint8_t* entry_name = g_io_buffer + offset + kDirectoryEntryHeaderSize;
+            const bool special = (entry_name_length == 1 && entry_name[0] == '.') ||
+                                 (entry_name_length == 2 && entry_name[0] == '.' && entry_name[1] == '.');
+            if(entry_inode != 0 && !special) {
+                return false;
+            }
+            offset += entry_size;
+        }
+    }
+    return true;
+}
+
+void write_directory_entry(
+    uint32_t offset,
+    uint32_t inode,
+    uint16_t size,
+    const char* name,
+    uint32_t name_length,
+    uint8_t type
+) {
+    write_u32(g_io_buffer + offset, 0, inode);
+    write_u16(g_io_buffer + offset, 4, size);
+    g_io_buffer[offset + 6] = static_cast<uint8_t>(name_length);
+    g_io_buffer[offset + 7] = type;
+    for(uint32_t index = 0; index < name_length; ++index) {
+        g_io_buffer[offset + kDirectoryEntryHeaderSize + index] = static_cast<uint8_t>(name[index]);
+    }
+}
+
+bool insert_directory_entry(
+    const FileSystem* file_system,
+    Inode* directory,
+    uint32_t child_inode,
+    const char* name,
+    uint32_t name_length,
+    uint8_t type
+) {
+    const uint16_t required = static_cast<uint16_t>((kDirectoryEntryHeaderSize + name_length + 3U) & ~3U);
+    const uint32_t block_count = directory_block_count(file_system, *directory);
+    for(uint32_t logical_block = 0; logical_block < block_count; ++logical_block) {
+        uint32_t physical_block = 0;
+        if(!read_directory_block(file_system, *directory, logical_block, &physical_block)) {
+            return false;
+        }
+        uint32_t offset = 0;
+        while(offset < file_system->block_size) {
+            const uint32_t entry_inode = read_u32(g_io_buffer + offset, 0);
+            const uint16_t entry_size = read_u16(g_io_buffer + offset, 4);
+            const uint8_t entry_name_length = g_io_buffer[offset + 6];
+            if(entry_size < kDirectoryEntryHeaderSize || entry_size % 4 != 0 ||
+               entry_size > file_system->block_size - offset ||
+               entry_name_length > entry_size - kDirectoryEntryHeaderSize) {
+                return false;
+            }
+            if(entry_inode == 0 && entry_size >= required) {
+                write_directory_entry(offset, child_inode, entry_size, name, name_length, type);
+                return write_fs_block(file_system, physical_block);
+            }
+            const uint16_t used = static_cast<uint16_t>((kDirectoryEntryHeaderSize + entry_name_length + 3U) & ~3U);
+            if(entry_inode != 0 && entry_size >= used + required) {
+                write_u16(g_io_buffer + offset, 4, used);
+                write_directory_entry(offset + used, child_inode, entry_size - used, name, name_length, type);
+                return write_fs_block(file_system, physical_block);
+            }
+            offset += entry_size;
+        }
+    }
+
+    if(directory->size % file_system->block_size != 0) {
+        return false;
+    }
+    uint32_t* blocks = directory->blocks;
+    const uint32_t logical_block = directory_block_count(file_system, *directory);
+    uint32_t sectors_added = 0;
+    if(!allocate_data_block(file_system, blocks, logical_block, &sectors_added)) {
+        return false;
+    }
+    uint32_t physical_block = 0;
+    if(get_data_block(file_system, blocks, logical_block, &physical_block) != DataBlockResult::Success ||
+       !zero_block(file_system, physical_block)) {
+        return false;
+    }
+    write_directory_entry(0, child_inode, static_cast<uint16_t>(file_system->block_size), name, name_length, type);
+    if(!write_fs_block(file_system, physical_block)) {
+        return false;
+    }
+    directory->size += file_system->block_size;
+    directory->sectors += sectors_added;
+    return true;
+}
+
+bool free_inode_blocks(const FileSystem* file_system, const Inode& inode) {
+    const uint32_t pointer_count = file_system->block_size / sizeof(uint32_t);
+    uint32_t pointers[kBlockSizeMaximum / sizeof(uint32_t)];
+    for(uint32_t index = 0; index < kDirectBlockCount; ++index) {
+        if(inode.blocks[index] != 0 && !free_block(file_system, inode.blocks[index])) {
+            return false;
+        }
+    }
+    if(inode.blocks[12] != 0) {
+        if(!read_fs_block(file_system, inode.blocks[12])) {
+            return false;
+        }
+        for(uint32_t index = 0; index < pointer_count; ++index) {
+            pointers[index] = read_u32(g_io_buffer, index * sizeof(uint32_t));
+        }
+        for(uint32_t index = 0; index < pointer_count; ++index) {
+            if(pointers[index] != 0 && !free_block(file_system, pointers[index])) {
+                return false;
+            }
+        }
+        if(!free_block(file_system, inode.blocks[12])) {
+            return false;
+        }
+    }
+    if(inode.blocks[13] != 0) {
+        if(!read_fs_block(file_system, inode.blocks[13])) {
+            return false;
+        }
+        for(uint32_t index = 0; index < pointer_count; ++index) {
+            pointers[index] = read_u32(g_io_buffer, index * sizeof(uint32_t));
+        }
+        for(uint32_t index = 0; index < pointer_count; ++index) {
+            if(pointers[index] == 0) {
+                continue;
+            }
+            if(!read_fs_block(file_system, pointers[index])) {
+                return false;
+            }
+            for(uint32_t second = 0; second < pointer_count; ++second) {
+                const uint32_t data_block = read_u32(g_io_buffer, second * sizeof(uint32_t));
+                if(data_block != 0 && !free_block(file_system, data_block)) {
+                    return false;
+                }
+            }
+            if(!free_block(file_system, pointers[index])) {
+                return false;
+            }
+        }
+        if(!free_block(file_system, inode.blocks[13])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool destroy_inode(const FileSystem* file_system, const Inode& inode) {
+    return free_inode_blocks(file_system, inode) && clear_inode(file_system, inode.number) &&
+           free_inode_number(file_system, inode.number);
+}
+
+Status create_entry_locked(
+    const FileSystem* file_system,
+    const Inode& parent,
+    const char* name,
+    bool directory,
+    Inode* created
+) {
+    uint32_t name_length = 0;
+    Inode current_parent = {};
+    if(!read_inode(file_system, parent.number, &current_parent, current_parent.blocks) || !current_parent.directory ||
+       !valid_name(name, &name_length) || name_length > UINT8_MAX) {
+        return Status::InvalidArgument;
+    }
+    Inode existing = {};
+    const Status lookup_status = find_child(file_system, current_parent, name, name_length, &existing);
+    if(lookup_status == Status::Success) {
+        return Status::Exists;
+    }
+    if(lookup_status != Status::NotFound) {
+        return lookup_status;
+    }
+    uint32_t inode_number = 0;
+    if(!allocate_inode(file_system, &inode_number)) {
+        return Status::NoSpace;
+    }
+    Inode child = {};
+    child.number = inode_number;
+    child.mode = static_cast<uint16_t>((directory ? kDirectoryType : 0x8000U) | (directory ? 0755U : 0644U));
+    child.links = directory ? 2 : 1;
+    if(directory) {
+        uint32_t sectors_added = 0;
+        if(!allocate_data_block(file_system, child.blocks, 0, &sectors_added)) {
+            free_inode_number(file_system, inode_number);
+            return Status::NoSpace;
+        }
+        child.size = file_system->block_size;
+        child.sectors = sectors_added;
+        uint32_t physical_block = 0;
+        if(get_data_block(file_system, child.blocks, 0, &physical_block) != DataBlockResult::Success ||
+           !zero_block(file_system, physical_block)) {
+            free_inode_blocks(file_system, child);
+            free_inode_number(file_system, inode_number);
+            return Status::IoError;
+        }
+        write_directory_entry(0, child.number, 12, ".", 1, 2);
+        write_directory_entry(
+            12, current_parent.number, static_cast<uint16_t>(file_system->block_size - 12), "..", 2, 2
+        );
+        if(!write_fs_block(file_system, physical_block)) {
+            free_inode_blocks(file_system, child);
+            free_inode_number(file_system, inode_number);
+            return Status::IoError;
+        }
+    }
+    if(!write_inode(file_system, child)) {
+        destroy_inode(file_system, child);
+        return Status::IoError;
+    }
+    Inode updated_parent = current_parent;
+    if(!insert_directory_entry(file_system, &updated_parent, child.number, name, name_length, directory ? 2 : 1)) {
+        destroy_inode(file_system, child);
+        return Status::NoSpace;
+    }
+    if(directory) {
+        ++updated_parent.links;
+    }
+    if(!write_inode(file_system, updated_parent)) {
+        return Status::IoError;
+    }
+    if(created != nullptr) {
+        *created = child;
+    }
+    return Status::Success;
+}
+
+Status remove_entry_locked(const FileSystem* file_system, const Inode& parent, const char* name, bool directory) {
+    uint32_t name_length = 0;
+    Inode current_parent = {};
+    if(!read_inode(file_system, parent.number, &current_parent, current_parent.blocks) || !current_parent.directory ||
+       !valid_name(name, &name_length)) {
+        return Status::InvalidArgument;
+    }
+    DirectoryEntryLocation location = {};
+    if(!find_directory_entry(file_system, current_parent, name, name_length, &location)) {
+        return Status::NotFound;
+    }
+    Inode child = {};
+    if(!read_inode(file_system, location.inode, &child)) {
+        return Status::Corrupt;
+    }
+    if(child.directory != directory) {
+        return directory ? Status::NotDirectory : Status::IsDirectory;
+    }
+    if(directory && !directory_empty(file_system, child)) {
+        return Status::NotEmpty;
+    }
+    if((directory && child.links != 2) || (!directory && child.links != 1)) {
+        return Status::Unsupported;
+    }
+    if(!read_fs_block(file_system, location.block)) {
+        return Status::IoError;
+    }
+    write_u32(g_io_buffer + location.offset, 0, 0);
+    if(!write_fs_block(file_system, location.block)) {
+        return Status::IoError;
+    }
+    Inode updated_parent = current_parent;
+    if(directory && updated_parent.links > 0) {
+        --updated_parent.links;
+    }
+    if(!write_inode(file_system, updated_parent) || !destroy_inode(file_system, child)) {
+        return Status::IoError;
+    }
+    return Status::Success;
 }
 
 bool next_component(const char** path, const char** component, uint32_t* length) {
@@ -852,6 +1311,51 @@ Status write_file(
     }
     synchronization::unlock(&file_system->io_lock, previous_state);
     return Status::Success;
+}
+
+Status create(const FileSystem* file_system, const Inode* parent, const char* name, bool directory, Inode* inode) {
+    if(file_system == nullptr || !file_system->mounted || parent == nullptr || name == nullptr) {
+        return Status::InvalidArgument;
+    }
+    const interrupts::State previous_state = synchronization::lock(&file_system->io_lock);
+    const Status result = create_entry_locked(file_system, *parent, name, directory, inode);
+    const block_device::Status flush_status = block_device::flush(file_system->device);
+    synchronization::unlock(&file_system->io_lock, previous_state);
+    if(result == Status::Success && flush_status != block_device::Status::Success &&
+       flush_status != block_device::Status::Unsupported) {
+        return Status::IoError;
+    }
+    return result;
+}
+
+Status unlink(const FileSystem* file_system, const Inode* parent, const char* name) {
+    if(file_system == nullptr || !file_system->mounted || parent == nullptr || name == nullptr) {
+        return Status::InvalidArgument;
+    }
+    const interrupts::State previous_state = synchronization::lock(&file_system->io_lock);
+    const Status result = remove_entry_locked(file_system, *parent, name, false);
+    const block_device::Status flush_status = block_device::flush(file_system->device);
+    synchronization::unlock(&file_system->io_lock, previous_state);
+    if(result == Status::Success && flush_status != block_device::Status::Success &&
+       flush_status != block_device::Status::Unsupported) {
+        return Status::IoError;
+    }
+    return result;
+}
+
+Status remove_directory(const FileSystem* file_system, const Inode* parent, const char* name) {
+    if(file_system == nullptr || !file_system->mounted || parent == nullptr || name == nullptr) {
+        return Status::InvalidArgument;
+    }
+    const interrupts::State previous_state = synchronization::lock(&file_system->io_lock);
+    const Status result = remove_entry_locked(file_system, *parent, name, true);
+    const block_device::Status flush_status = block_device::flush(file_system->device);
+    synchronization::unlock(&file_system->io_lock, previous_state);
+    if(result == Status::Success && flush_status != block_device::Status::Success &&
+       flush_status != block_device::Status::Unsupported) {
+        return Status::IoError;
+    }
+    return result;
 }
 
 } // namespace ext2

@@ -12,6 +12,7 @@ namespace vfs {
 namespace {
 
 constexpr uint32_t kMaximumPathComponentLength = 255;
+constexpr uint32_t kMaximumPathLength = 511;
 
 ext2::FileSystem g_root_filesystem = {};
 bool g_mounted = false;
@@ -22,8 +23,16 @@ Status translate_status(ext2::Status status) {
             return Status::Success;
         case ext2::Status::NotFound:
             return Status::NotFound;
+        case ext2::Status::Exists:
+            return Status::Exists;
         case ext2::Status::NotDirectory:
             return Status::NotDirectory;
+        case ext2::Status::IsDirectory:
+            return Status::IsDirectory;
+        case ext2::Status::NotEmpty:
+            return Status::NotEmpty;
+        case ext2::Status::NoSpace:
+            return Status::NoSpace;
         case ext2::Status::IoError:
             return Status::IoError;
         case ext2::Status::Unsupported:
@@ -34,6 +43,48 @@ Status translate_status(ext2::Status status) {
             return Status::IoError;
     }
     return Status::IoError;
+}
+
+bool split_parent(const char* path, char* parent, char* name) {
+    if(path == nullptr || parent == nullptr || name == nullptr || *path != '/') {
+        return false;
+    }
+    uint32_t length = 0;
+    while(path[length] != '\0') {
+        if(length == kMaximumPathLength) {
+            return false;
+        }
+        ++length;
+    }
+    if(length < 2 || path[length - 1] == '/') {
+        return false;
+    }
+    uint32_t slash = length;
+    while(slash > 0 && path[slash - 1] != '/') {
+        --slash;
+    }
+    const uint32_t name_length = length - slash;
+    if(name_length == 0 || name_length > kMaximumPathComponentLength) {
+        return false;
+    }
+    for(uint32_t index = 0; index < name_length; ++index) {
+        name[index] = path[slash + index];
+    }
+    name[name_length] = '\0';
+    if(slash == 1) {
+        parent[0] = '/';
+        parent[1] = '\0';
+        return true;
+    }
+    const uint32_t parent_length = slash - 1;
+    if(parent_length == 0 || parent_length > kMaximumPathLength) {
+        return false;
+    }
+    for(uint32_t index = 0; index < parent_length; ++index) {
+        parent[index] = path[index];
+    }
+    parent[parent_length] = '\0';
+    return true;
 }
 
 Node node_from_inode(const ext2::Inode& inode) {
@@ -185,6 +236,105 @@ Status write(File* file, const void* buffer, uint32_t length, uint32_t* bytes_wr
         file->node.size = file->offset > file->node.size ? file->offset : file->node.size;
     }
     return translate_status(result);
+}
+
+Status create(const char* path, Node* node) {
+    if(!g_mounted || node == nullptr) {
+        return g_mounted ? Status::InvalidArgument : Status::NotMounted;
+    }
+    char parent_path[kMaximumPathLength + 1];
+    char name[kMaximumPathComponentLength + 1];
+    if(!split_parent(path, parent_path, name)) {
+        return Status::InvalidArgument;
+    }
+    Node parent_node = {};
+    const Status parent_status = resolve(parent_path, &parent_node);
+    if(parent_status != Status::Success) {
+        return parent_status;
+    }
+    if(parent_node.type != NodeType::Directory) {
+        return Status::NotDirectory;
+    }
+    ext2::Inode parent = {};
+    if(ext2::get_inode(&g_root_filesystem, static_cast<uint32_t>(parent_node.identifier), &parent) !=
+       ext2::Status::Success) {
+        return Status::IoError;
+    }
+    ext2::Inode created = {};
+    const Status result = translate_status(ext2::create(&g_root_filesystem, &parent, name, false, &created));
+    if(result == Status::Success) {
+        *node = node_from_inode(created);
+    }
+    return result;
+}
+
+Status mkdir(const char* path) {
+    if(!g_mounted) {
+        return Status::NotMounted;
+    }
+    char parent_path[kMaximumPathLength + 1];
+    char name[kMaximumPathComponentLength + 1];
+    if(!split_parent(path, parent_path, name)) {
+        return Status::InvalidArgument;
+    }
+    Node parent_node = {};
+    const Status parent_status = resolve(parent_path, &parent_node);
+    if(parent_status != Status::Success) {
+        return parent_status;
+    }
+    if(parent_node.type != NodeType::Directory) {
+        return Status::NotDirectory;
+    }
+    ext2::Inode parent = {};
+    if(ext2::get_inode(&g_root_filesystem, static_cast<uint32_t>(parent_node.identifier), &parent) !=
+       ext2::Status::Success) {
+        return Status::IoError;
+    }
+    return translate_status(ext2::create(&g_root_filesystem, &parent, name, true, nullptr));
+}
+
+Status unlink(const char* path) {
+    if(!g_mounted) {
+        return Status::NotMounted;
+    }
+    char parent_path[kMaximumPathLength + 1];
+    char name[kMaximumPathComponentLength + 1];
+    if(!split_parent(path, parent_path, name)) {
+        return Status::InvalidArgument;
+    }
+    Node parent_node = {};
+    const Status parent_status = resolve(parent_path, &parent_node);
+    if(parent_status != Status::Success) {
+        return parent_status;
+    }
+    ext2::Inode parent = {};
+    if(ext2::get_inode(&g_root_filesystem, static_cast<uint32_t>(parent_node.identifier), &parent) !=
+       ext2::Status::Success) {
+        return Status::IoError;
+    }
+    return translate_status(ext2::unlink(&g_root_filesystem, &parent, name));
+}
+
+Status rmdir(const char* path) {
+    if(!g_mounted) {
+        return Status::NotMounted;
+    }
+    char parent_path[kMaximumPathLength + 1];
+    char name[kMaximumPathComponentLength + 1];
+    if(!split_parent(path, parent_path, name)) {
+        return Status::InvalidArgument;
+    }
+    Node parent_node = {};
+    const Status parent_status = resolve(parent_path, &parent_node);
+    if(parent_status != Status::Success) {
+        return parent_status;
+    }
+    ext2::Inode parent = {};
+    if(ext2::get_inode(&g_root_filesystem, static_cast<uint32_t>(parent_node.identifier), &parent) !=
+       ext2::Status::Success) {
+        return Status::IoError;
+    }
+    return translate_status(ext2::remove_directory(&g_root_filesystem, &parent, name));
 }
 
 Status seek(File* file, uint64_t offset) {

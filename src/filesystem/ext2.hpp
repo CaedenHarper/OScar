@@ -12,7 +12,11 @@ enum class Status : uint8_t {
     InvalidArgument,
     NotMounted,
     NotFound,
+    Exists,
     NotDirectory,
+    IsDirectory,
+    NotEmpty,
+    NoSpace,
     Corrupt,
     IoError,
     Unsupported,
@@ -25,6 +29,7 @@ struct Inode {
     uint16_t mode;
     uint64_t size;
     uint32_t sectors;
+    uint16_t links;
     uint32_t blocks[kInodeBlockPointerCount];
     bool directory;
 };
@@ -46,7 +51,8 @@ struct FileSystem {
 
 /**
  * Mount an ext2 filesystem from the complete block device. Regular-file writes
- * are synchronous; directory mutation is not yet supported.
+ * are synchronous. Directory mutation is supported for regular files and
+ * directories without hard links.
  * The block-device protocol and physical-memory allocator must be initialized first.
  * The filesystem does not take ownership of device and must remain mounted while
  * the device is used. Returns false when the superblock or metadata is unsupported.
@@ -95,5 +101,14 @@ Status write_file(
     const void* buffer,
     uint32_t* bytes_written
 );
+
+/** Create a regular file or directory entry below a directory inode. */
+Status create(const FileSystem* file_system, const Inode* parent, const char* name, bool directory, Inode* inode);
+
+/** Remove a regular file entry below a directory inode. */
+Status unlink(const FileSystem* file_system, const Inode* parent, const char* name);
+
+/** Remove an empty directory entry below a directory inode. */
+Status remove_directory(const FileSystem* file_system, const Inode* parent, const char* name);
 
 } // namespace ext2

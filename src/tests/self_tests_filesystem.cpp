@@ -232,6 +232,58 @@ void test_writable_filesystem() {
     serial::write("Writable filesystem write, readback, indirect-block, and persistence smoke test passed.\n");
 }
 
+void test_filesystem_mutation() {
+    // Clean up names left by an interrupted prior boot so the persistent test
+    // image can be reused without turning an old partial run into a false
+    // duplicate-entry failure.
+    (void)vfs::unlink("/mutation.txt");
+    (void)vfs::unlink("/mutation-dir/nested.txt");
+    (void)vfs::rmdir("/mutation-dir");
+
+    vfs::Node created = {};
+    const vfs::Status create_status = vfs::create("/mutation.txt", &created);
+    const vfs::Status duplicate_status = vfs::create("/mutation.txt", &created);
+    const vfs::Status mkdir_status = vfs::mkdir("/mutation-dir");
+    const vfs::Status duplicate_mkdir_status = vfs::mkdir("/mutation-dir");
+    if(create_status != vfs::Status::Success || created.type != vfs::NodeType::Regular ||
+       duplicate_status != vfs::Status::Exists || mkdir_status != vfs::Status::Success ||
+       duplicate_mkdir_status != vfs::Status::Exists) {
+        panic::halt("filesystem mutation smoke test could not create entries");
+    }
+
+    vfs::File file = {};
+    constexpr char kMutationData[] = "created and persisted";
+    char readback[sizeof(kMutationData)] = {};
+    uint32_t transferred = 0;
+    if(vfs::open("/mutation.txt", vfs::kOpenReadWrite, &file) != vfs::Status::Success ||
+       vfs::write(&file, kMutationData, sizeof(kMutationData) - 1, &transferred) != vfs::Status::Success ||
+       transferred != sizeof(kMutationData) - 1 || vfs::seek(&file, 0) != vfs::Status::Success ||
+       vfs::read(&file, readback, sizeof(readback) - 1, &transferred) != vfs::Status::Success ||
+       transferred != sizeof(kMutationData) - 1 || vfs::close(&file) != vfs::Status::Success) {
+        panic::halt("filesystem mutation smoke test could not read a created file");
+    }
+    for(uint32_t index = 0; index < sizeof(kMutationData) - 1; ++index) {
+        if(readback[index] != kMutationData[index]) {
+            panic::halt("filesystem mutation smoke test read corrupted created data");
+        }
+    }
+
+    const vfs::Status nested_create_status = vfs::create("/mutation-dir/nested.txt", &created);
+    const vfs::Status nonempty_remove_status = vfs::rmdir("/mutation-dir");
+    const vfs::Status nested_remove_status = vfs::unlink("/mutation-dir/nested.txt");
+    const vfs::Status directory_remove_status = vfs::rmdir("/mutation-dir");
+    const vfs::Status file_remove_status = vfs::unlink("/mutation.txt");
+    const vfs::Status file_lookup_status = vfs::resolve("/mutation.txt", &created);
+    const vfs::Status directory_lookup_status = vfs::resolve("/mutation-dir", &created);
+    if(nested_create_status != vfs::Status::Success || nonempty_remove_status != vfs::Status::NotEmpty ||
+       nested_remove_status != vfs::Status::Success || directory_remove_status != vfs::Status::Success ||
+       file_remove_status != vfs::Status::Success || file_lookup_status != vfs::Status::NotFound ||
+       directory_lookup_status != vfs::Status::NotFound) {
+        panic::halt("filesystem mutation smoke test could not remove entries safely");
+    }
+    serial::write("Filesystem create, mkdir, unlink, rmdir, and metadata-reuse smoke test passed.\n");
+}
+
 } // namespace self_tests_detail
 
 // NOLINTEND(cppcoreguidelines-pro-bounds-array-to-pointer-decay, cppcoreguidelines-pro-bounds-constant-array-index,

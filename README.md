@@ -6,7 +6,8 @@ a physical page allocator, manages kernel and process address-space structures a
 validates user memory ranges, installs an IDT, GDT/TSS, and PIT timer
 interrupts, creates ring-3 user threads with private kernel stacks, handles an
 initial `int 0x80` system-call ABI (`write`, `exit`, `yield`, `sleep`, `getpid`,
-`getid`, `spawn`, and `waitpid`, plus filesystem `open`, `read`, `write`, `seek`, and `close`),
+`getid`, `spawn`, and `waitpid`, plus filesystem `open`, `create`, `read`, `write`,
+`seek`, `close`, `mkdir`, `unlink`, and `rmdir`),
 loads validated in-memory ELF64 executables with `PT_LOAD` segments, including
 zero-filled memory and an initial user stack,
 provides a kernel heap, creates and runs kernel-thread stacks, schedules kernel
@@ -22,8 +23,9 @@ prints diagnostics to QEMU's serial console, and idles.
 This is a kernel seed, not yet an operating system. C user programs can use
 the public freestanding API in `user/include/oscar/syscalls.h`; its library
 implementation hides the raw `int 0x80` ABI. It does not yet provide
-`fork`, dynamic linking, directory mutation, or a general-purpose file-creation
-API. `spawn` loads a validated ELF from the mounted filesystem, and `waitpid` waits for
+`fork`, dynamic linking, working directories, or rename support. The filesystem
+now supports regular-file creation, `mkdir`, `unlink`, and empty-directory
+removal. `spawn` loads a validated ELF from the mounted filesystem, and `waitpid` waits for
 that exact child and returns its exit status. The kernel also loads a small
 RAM-backed C `init` ELF after boot-time smoke tests; it currently announces
 startup and exits.
@@ -41,7 +43,7 @@ startup and exits.
     ├── core/         Entry point, processes, threads, scheduler, and syscalls
     ├── drivers/      Port I/O, serial, timer, keyboard input, terminal, PS/2, and VirtIO block support
     ├── exec/         ELF64 validation and executable loading
-    ├── filesystem/   VFS, ext2 mounting, path lookup, and regular-file I/O
+    ├── filesystem/   VFS, ext2 mounting, path lookup, regular-file I/O, and mutation
     ├── interrupts/   Interrupt routing and CPU interrupt helpers
     ├── memory/       Physical pages, virtual memory, and kernel heap
     ├── synchronization/ Spinlocks, wait queues, and mutexes

@@ -14,6 +14,10 @@ enum {
     kSeekSystemCall = 9,
     kSpawnSystemCall = 10,
     kWaitPidSystemCall = 11,
+    kCreateSystemCall = 12,
+    kMkdirSystemCall = 13,
+    kUnlinkSystemCall = 14,
+    kRmdirSystemCall = 15,
 };
 
 int64_t oscar_write(int64_t descriptor, const void* buffer, uint64_t length) {
@@ -58,6 +62,30 @@ int64_t oscar_getid(void) {
 int64_t oscar_open(const char* path, uint32_t flags) {
     uint64_t call = kOpenSystemCall;
     __asm__ volatile("int $0x80" : "+a"(call) : "D"(path), "S"((uint64_t)flags) : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+int64_t oscar_create(const char* path) {
+    uint64_t call = kCreateSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"(path) : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+int64_t oscar_mkdir(const char* path) {
+    uint64_t call = kMkdirSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"(path) : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+int64_t oscar_unlink(const char* path) {
+    uint64_t call = kUnlinkSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"(path) : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+int64_t oscar_rmdir(const char* path) {
+    uint64_t call = kRmdirSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"(path) : "rcx", "r11", "memory");
     return (int64_t)call;
 }
 

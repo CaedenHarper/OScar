@@ -11,7 +11,10 @@ enum class Status : uint8_t {
     InvalidArgument,
     NotMounted,
     NotFound,
+    Exists,
     NotDirectory,
+    NotEmpty,
+    NoSpace,
     IsDirectory,
     IoError,
     Unsupported,
@@ -57,6 +60,18 @@ Status read(File* file, void* buffer, uint32_t length, uint32_t* bytes_read);
 
 /** Write to an open writable regular file and advance its current offset; directory writes are rejected. */
 Status write(File* file, const void* buffer, uint32_t length, uint32_t* bytes_written);
+
+/** Create a regular file at path and return it as an open node-like handle. */
+Status create(const char* path, Node* node);
+
+/** Create a directory at path. */
+Status mkdir(const char* path);
+
+/** Remove a regular file at path. */
+Status unlink(const char* path);
+
+/** Remove an empty directory at path. */
+Status rmdir(const char* path);
 
 /** Set the current offset of an open file. */
 Status seek(File* file, uint64_t offset);

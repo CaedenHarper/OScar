@@ -26,6 +26,10 @@ constexpr uint64_t kClose = 8;
 constexpr uint64_t kSeek = 9;
 constexpr uint64_t kSpawn = 10;
 constexpr uint64_t kWaitPid = 11;
+constexpr uint64_t kCreate = 12;
+constexpr uint64_t kMkdir = 13;
+constexpr uint64_t kUnlink = 14;
+constexpr uint64_t kRmdir = 15;
 constexpr uint64_t kMaximumWriteLength = 4096;
 constexpr uint64_t kMaximumReadLength = 4096;
 constexpr uint64_t kMaximumPathLength = 255;
@@ -37,6 +41,9 @@ constexpr int64_t kErrorBadDescriptor = -4;
 constexpr int64_t kErrorIsDirectory = -5;
 constexpr int64_t kErrorIo = -6;
 constexpr int64_t kErrorReadOnly = -7;
+constexpr int64_t kErrorExists = -8;
+constexpr int64_t kErrorNotEmpty = -9;
+constexpr int64_t kErrorNoSpace = -10;
 
 process::Process* current_process() {
     auto* thread = scheduler::current();
@@ -52,6 +59,12 @@ int64_t translate_vfs_status(vfs::Status status) {
         case vfs::Status::IsDirectory:
         case vfs::Status::NotDirectory:
             return kErrorIsDirectory;
+        case vfs::Status::Exists:
+            return kErrorExists;
+        case vfs::Status::NotEmpty:
+            return kErrorNotEmpty;
+        case vfs::Status::NoSpace:
+            return kErrorNoSpace;
         case vfs::Status::IoError:
             return kErrorIo;
         case vfs::Status::ReadOnly:
@@ -173,6 +186,27 @@ int64_t open(const syscalls::Frame* frame) {
         return kErrorIo;
     }
     return descriptor;
+}
+
+int64_t create_file(const syscalls::Frame* frame) {
+    auto* owner = current_process();
+    char path[kMaximumPathLength + 1];
+    if(owner == nullptr || !copy_path(frame->rdi, &path[0])) {
+        return kErrorInvalidArgument;
+    }
+    vfs::Node node = {};
+    return translate_vfs_status(vfs::create(&path[0], &node));
+}
+
+using PathOperation = vfs::Status (*)(const char* path);
+
+int64_t path_operation(const syscalls::Frame* frame, PathOperation operation) {
+    auto* owner = current_process();
+    char path[kMaximumPathLength + 1];
+    if(owner == nullptr || operation == nullptr || !copy_path(frame->rdi, &path[0])) {
+        return kErrorInvalidArgument;
+    }
+    return translate_vfs_status(operation(&path[0]));
 }
 
 int64_t read_terminal(const syscalls::Frame* frame) {
@@ -381,6 +415,18 @@ extern "C" void handle(Frame* frame) {
             return;
         case kWaitPid:
             frame->rax = static_cast<uint64_t>(wait_pid(frame));
+            return;
+        case kCreate:
+            frame->rax = static_cast<uint64_t>(create_file(frame));
+            return;
+        case kMkdir:
+            frame->rax = static_cast<uint64_t>(path_operation(frame, vfs::mkdir));
+            return;
+        case kUnlink:
+            frame->rax = static_cast<uint64_t>(path_operation(frame, vfs::unlink));
+            return;
+        case kRmdir:
+            frame->rax = static_cast<uint64_t>(path_operation(frame, vfs::rmdir));
             return;
         default:
             frame->rax = static_cast<uint64_t>(kErrorUnknownCall);
