@@ -15,7 +15,7 @@ FILESYSTEM_TEST_FILES := tests/filesystem/hello.txt tests/filesystem/config.txt
 CPP_SOURCES := $(wildcard src/*.cpp src/*/*.cpp src/*/*/*.cpp)
 ASM_SOURCES := $(wildcard src/*.S src/*/*.S src/*/*/*.S)
 LINT_CPP_FILES := $(shell find src -name '*.cpp' -o -name '*.hpp')
-LINT_USER_C_FILES := $(shell find tests/user -name '*.c')
+LINT_USER_C_FILES := $(shell find tests/user -name '*.c') $(shell find user -name '*.c' -o -name '*.h')
 OBJECTS := $(patsubst src/%.cpp,$(BUILD_DIR)/%.o,$(CPP_SOURCES)) \
 	$(patsubst src/%.S,$(BUILD_DIR)/asm/%.o,$(ASM_SOURCES))
 
@@ -138,17 +138,10 @@ $(USER_BUILD_DIR)/%.elf: tests/user/%.S tests/user/linker.ld | $(USER_BUILD_DIR)
 	$(CXX) -target x86_64-unknown-none-elf -ffreestanding -fno-pie -mno-red-zone -c $< -o $(USER_BUILD_DIR)/$*.o
 	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/$*.o -o $@
 
-$(USER_BUILD_DIR)/prime.elf: tests/user/prime.c tests/user/linker.ld | $(USER_BUILD_DIR)
-	$(CXX) -x c -target x86_64-unknown-none-elf -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c $< -o $(USER_BUILD_DIR)/prime.o
-	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/prime.o -o $@
-
-$(USER_BUILD_DIR)/init.elf: tests/user/init.c tests/user/linker.ld | $(USER_BUILD_DIR)
-	$(CXX) -x c -target x86_64-unknown-none-elf -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c $< -o $(USER_BUILD_DIR)/init.o
-	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/init.o -o $@
-
-$(USER_BUILD_DIR)/terminal.elf: tests/user/terminal.c tests/user/linker.ld | $(USER_BUILD_DIR)
-	$(CXX) -x c -target x86_64-unknown-none-elf -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c $< -o $(USER_BUILD_DIR)/terminal.o
-	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/terminal.o -o $@
+$(USER_BUILD_DIR)/%.elf: tests/user/%.c user/include/oscar/syscalls.h user/lib/syscalls.c tests/user/linker.ld | $(USER_BUILD_DIR)
+	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c tests/user/$*.c -o $(USER_BUILD_DIR)/$*.o
+	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/syscalls.c -o $(USER_BUILD_DIR)/$*.syscalls.o
+	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/$*.o $(USER_BUILD_DIR)/$*.syscalls.o -o $@
 
 $(BUILD_DIR)/asm/tests/user_program.o: $(USER_BUILD_DIR)/basic.elf
 $(BUILD_DIR)/asm/tests/user_program_prime.o: $(USER_BUILD_DIR)/prime.elf

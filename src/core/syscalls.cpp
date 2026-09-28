@@ -317,7 +317,7 @@ extern "C" void handle(Frame* frame) {
             frame->rax = static_cast<uint64_t>(write(frame));
             return;
         case kExit:
-            scheduler::thread_exit(scheduler::current(), 0);
+            scheduler::thread_exit(scheduler::current(), static_cast<int64_t>(frame->rdi));
         case kYield:
             scheduler::yield();
             frame->rax = 0;

@@ -1,3 +1,4 @@
+#include <oscar/syscalls.h>
 #include <stdint.h>
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables, cppcoreguidelines-avoid-magic-numbers,
@@ -43,17 +44,11 @@ static void append_number(uint32_t value) {
 }
 
 static uint64_t write_output(const char* buffer, uint64_t length) {
-    uint64_t number = 0;
-    __asm__ volatile("int $0x80" : "+a"(number) : "D"((uint64_t)1), "S"(buffer), "d"(length) : "rcx", "r11", "memory");
-    return number;
+    return (uint64_t)oscar_write(1, buffer, length);
 }
 
 __attribute__((noreturn)) static void exit_program(void) {
-    uint64_t number = 1;
-    __asm__ volatile("int $0x80" : "+a"(number) : : "rcx", "r11", "memory");
-    for(;;) {
-        __asm__ volatile("pause");
-    }
+    oscar_exit(0);
 }
 
 void _start(void) {

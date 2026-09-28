@@ -1,3 +1,4 @@
+#include <oscar/syscalls.h>
 #include <stdint.h>
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables, bugprone-reserved-identifier,
@@ -8,17 +9,11 @@ static uint64_t write_text(const char* text) {
     while(text[length] != '\0') {
         ++length;
     }
-    uint64_t call = 0;
-    __asm__ volatile("int $0x80" : "+a"(call) : "D"((uint64_t)1), "S"(text), "d"(length) : "rcx", "r11", "memory");
-    return call;
+    return (uint64_t)oscar_write(1, text, length);
 }
 
 __attribute__((noreturn)) static void exit_process(void) {
-    uint64_t call = 1;
-    __asm__ volatile("int $0x80" : "+a"(call) : : "rcx", "r11", "memory");
-    for(;;) {
-        __asm__ volatile("pause");
-    }
+    oscar_exit(0);
 }
 
 void _start(void) {

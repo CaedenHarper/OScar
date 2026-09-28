@@ -54,6 +54,8 @@ The source tree is organized as follows:
 - `tests/user/`: source and linker script for successful, filesystem-read,
   computed-output, interactive-terminal, RAM-backed init, and intentional-crash user ELF smoke images. Malformed ELF metadata tests live in
   `src/tests/` because they exercise validation without loading an image.
+- `user/include/oscar/`: public C headers for the user-space syscall API.
+- `user/lib/`: freestanding C implementations of the user-space syscall wrappers.
 - `tests/filesystem/`: source files copied into the generated ext2 test image.
 
 ## Build and test
@@ -99,9 +101,9 @@ clang-tidy $(find src -name '*.cpp' -o -name '*.hpp') $(find tests/user -name '*
 ```
 
 The repository-local `make lint` target runs the same three commands and also
-formats and lints freestanding C user-test sources under `tests/user/`. User
-assembly fixtures are compiled and embedded by the build but are not inputs to
-the C/C++ format or clang-tidy checks.
+formats and lints freestanding C user-test sources under `tests/user/` and the
+public syscall library under `user/`. User assembly fixtures are compiled and
+embedded by the build but are not inputs to the C/C++ format or clang-tidy checks.
 
 These checks must pass. When a check reports a diagnostic, first determine
 whether it identifies a real defect. Fix real defects in the code. When a

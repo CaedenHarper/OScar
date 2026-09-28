@@ -19,7 +19,9 @@ including sparse holes, initializes an IRQ-driven PS/2 keyboard driver behind a
 hardware-independent keyboard event queue, serial receive interrupts, and a serial-backed kernel terminal,
 prints diagnostics to QEMU's serial console, and idles.
 
-This is a kernel seed, not yet an operating system. It does not yet provide
+This is a kernel seed, not yet an operating system. C user programs can use
+the public freestanding API in `user/include/oscar/syscalls.h`; its library
+implementation hides the raw `int 0x80` ABI. It does not yet provide
 `fork`, dynamic linking, or a persistent writable filesystem. `spawn` loads a
 validated ELF from the mounted read-only filesystem, and `waitpid` waits for
 that exact child and returns its exit status. The kernel also loads a small
@@ -33,6 +35,7 @@ startup and exits.
 ├── Makefile          Builds the ELF, bootable ISO, and QEMU targets
 ├── linker.ld         Places the kernel in the x86-64 higher half
 ├── limine.conf       Limine boot entry
+├── user/              Public C syscall headers and freestanding wrappers
 └── src/
     ├── arch/x86_64/  CPU contexts, GDT/TSS, IDT, and entry stubs
     ├── core/         Entry point, processes, threads, scheduler, and syscalls

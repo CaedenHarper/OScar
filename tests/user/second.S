@@ -8,6 +8,7 @@ _start:
     movl $(message_end - message), %edx
     int $0x80
     movl $1, %eax
+    xorl %edi, %edi
     int $0x80
 .Lhalt:
     jmp .Lhalt

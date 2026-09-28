@@ -1,0 +1,97 @@
+#include <oscar/syscalls.h>
+#include <stdint.h>
+
+enum {
+    kWriteSystemCall = 0,
+    kExitSystemCall = 1,
+    kYieldSystemCall = 2,
+    kSleepSystemCall = 3,
+    kGetPidSystemCall = 4,
+    kGetIdSystemCall = 5,
+    kOpenSystemCall = 6,
+    kReadSystemCall = 7,
+    kCloseSystemCall = 8,
+    kSeekSystemCall = 9,
+    kSpawnSystemCall = 10,
+    kWaitPidSystemCall = 11,
+};
+
+int64_t oscar_write(int64_t descriptor, const void* buffer, uint64_t length) {
+    uint64_t call = kWriteSystemCall;
+    __asm__ volatile("int $0x80"
+                     : "+a"(call)
+                     : "D"((uint64_t)descriptor), "S"(buffer), "d"(length)
+                     : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+__attribute__((noreturn)) void oscar_exit(int64_t status) {
+    uint64_t call = kExitSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"((uint64_t)status) : "rcx", "r11", "memory");
+    for(;;) {
+        __asm__ volatile("pause");
+    }
+}
+
+void oscar_yield(void) {
+    uint64_t call = kYieldSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : : "rcx", "r11", "memory");
+}
+
+void oscar_sleep(uint64_t ticks) {
+    uint64_t call = kSleepSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"(ticks) : "rcx", "r11", "memory");
+}
+
+int64_t oscar_getpid(void) {
+    uint64_t call = kGetPidSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+int64_t oscar_getid(void) {
+    uint64_t call = kGetIdSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+int64_t oscar_open(const char* path) {
+    uint64_t call = kOpenSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"(path), "S"((uint64_t)1) : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+int64_t oscar_read(int64_t descriptor, void* buffer, uint64_t length) {
+    uint64_t call = kReadSystemCall;
+    __asm__ volatile("int $0x80"
+                     : "+a"(call)
+                     : "D"((uint64_t)descriptor), "S"(buffer), "d"(length)
+                     : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters) descriptor and offset use distinct signedness by ABI convention
+int64_t oscar_seek(int64_t descriptor, uint64_t offset) {
+    uint64_t call = kSeekSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"((uint64_t)descriptor), "S"(offset) : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+int64_t oscar_close(int64_t descriptor) {
+    uint64_t call = kCloseSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"((uint64_t)descriptor) : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+int64_t oscar_spawn(const char* path) {
+    uint64_t call = kSpawnSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"(path) : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+// NOLINTNEXTLINE(readability-non-const-parameter) the syscall writes the child status
+int64_t oscar_waitpid(uint64_t process_id, int64_t* status) {
+    uint64_t call = kWaitPidSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"(process_id), "S"(status) : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
