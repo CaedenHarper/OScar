@@ -19,7 +19,7 @@ constexpr uint8_t kSlaveVectorOffset = 40;
 constexpr uint8_t kMasterCascadeBit = 0x04;
 constexpr uint8_t kSlaveCascadeIdentity = 0x02;
 constexpr uint8_t kEndOfInterrupt = 0x20;
-constexpr uint8_t kTimerAndKeyboardIrqMask = 0xfc;
+constexpr uint8_t kTimerKeyboardAndSerialIrqMask = 0xec;
 constexpr uint8_t kAllIrqsMasked = 0xff;
 constexpr uint16_t kIoWaitPort = 0x80;
 constexpr uint8_t kIoWaitValue = 0;
@@ -34,6 +34,7 @@ constexpr uint8_t kIoApicTimerGsiOverride = 2;
 constexpr uint8_t kIoApicRedirectionStride = 2;
 constexpr uint8_t kTimerVector = 32;
 constexpr uint8_t kKeyboardVector = 33;
+constexpr uint8_t kSerialVector = 36;
 constexpr uint32_t kInvalidMmioValue = 0xffffffff;
 constexpr unsigned kLapicIdShift = 24U;
 constexpr uint32_t kApicBaseMsr = 0x1b;
@@ -135,7 +136,7 @@ void initialize(uintptr_t hhdm_offset) {
     io::out8(kSlaveDataPort, kMode8086);
     io_wait();
 
-    io::out8(kMasterDataPort, kTimerAndKeyboardIrqMask);
+    io::out8(kMasterDataPort, kTimerKeyboardAndSerialIrqMask);
     io::out8(kSlaveDataPort, kAllIrqsMasked);
 
     const uint64_t apic_base_msr = read_msr(kApicBaseMsr);
@@ -162,6 +163,8 @@ void initialize(uintptr_t hhdm_offset) {
         ioapic_write(kIoApicTimerRedirectionLow + 1, lapic_id << kLapicIdShift);
         ioapic_write(kIoApicTimerRedirectionLow + 2, kKeyboardVector);
         ioapic_write(kIoApicTimerRedirectionLow + 3, lapic_id << kLapicIdShift);
+        ioapic_write(kIoApicTimerRedirectionLow + (4 * kIoApicRedirectionStride), kSerialVector);
+        ioapic_write(kIoApicTimerRedirectionLow + (4 * kIoApicRedirectionStride) + 1, lapic_id << kLapicIdShift);
         const uint8_t override_redirection =
             kIoApicTimerRedirectionLow + (kIoApicTimerGsiOverride * kIoApicRedirectionStride);
         ioapic_write(override_redirection, kTimerVector);

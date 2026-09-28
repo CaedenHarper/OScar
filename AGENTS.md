@@ -37,7 +37,7 @@ The source tree is organized as follows:
   and user threads, scheduler, and system calls.
 - `src/drivers/`: x86 port I/O, serial output, timer/PIT support, the generic
   keyboard event layer, the serial-backed terminal, the IRQ-driven PS/2 backend,
-  and the polling legacy VirtIO block driver.
+  the COM1 receive-interrupt backend, and the polling legacy VirtIO block driver.
 - `src/filesystem/`: the generic VFS, read-only ext2 mounting, inode loading,
   path lookup, and regular-file reads through direct and indirect data blocks.
 - `src/exec/`: freestanding ELF64 validation and process image loading.
@@ -51,7 +51,7 @@ The source tree is organized as follows:
   context, keyboard, memory/process, scheduler, synchronization, and user-mode tests.
   `self_tests_internal.hpp` contains private cross-test declarations.
 - `tests/user/`: source and linker script for successful, filesystem-read,
-  computed-output, RAM-backed init, and intentional-crash user ELF smoke images. Malformed ELF metadata tests live in
+  computed-output, interactive-terminal, RAM-backed init, and intentional-crash user ELF smoke images. Malformed ELF metadata tests live in
   `src/tests/` because they exercise validation without loading an image.
 - `tests/filesystem/`: source files copied into the generated ext2 test image.
 

@@ -192,6 +192,8 @@ void initialize() {
     set_gate(kTimerVector, irq_stub_table[0], 0);
     constexpr unsigned kKeyboardVector = 33;
     set_gate(kKeyboardVector, irq_stub_table[1], 0);
+    constexpr unsigned kSerialVector = 36;
+    set_gate(kSerialVector, irq_stub_table[4], 0);
 
     // Only the syscall vector is callable from ring 3; all hardware and exception gates
     // remain ring-0-only so user code cannot synthesize privileged interrupt paths.

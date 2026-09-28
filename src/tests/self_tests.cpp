@@ -76,4 +76,10 @@ bool prepare_init() {
     return self_tests_detail::prepare_init_process();
 }
 
+bool prepare_terminal() {
+    return self_tests_detail::prepare_embedded_elf_thread(
+        self_tests_detail::user_program_terminal_start, self_tests_detail::user_program_terminal_end
+    );
+}
+
 } // namespace self_tests

@@ -22,6 +22,8 @@ extern "C" const uint8_t user_program_invalid_opcode_start[];
 extern "C" const uint8_t user_program_invalid_opcode_end[];
 extern "C" const uint8_t user_program_init_start[];
 extern "C" const uint8_t user_program_init_end[];
+extern "C" const uint8_t user_program_terminal_start[];
+extern "C" const uint8_t user_program_terminal_end[];
 
 constexpr uint64_t kSmallAllocationSize = 37;
 constexpr uint64_t kCrossPageAllocationSize = virtual_memory::kPageSize + 1;

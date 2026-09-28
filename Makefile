@@ -3,7 +3,7 @@ SHELL := /bin/sh
 
 BUILD_DIR := build
 USER_BUILD_DIR := $(BUILD_DIR)/user
-USER_PROGRAM_NAMES := basic prime second filesystem divzero kernel_access invalid_opcode init
+USER_PROGRAM_NAMES := basic prime second filesystem divzero kernel_access invalid_opcode init terminal
 USER_ELFS := $(addprefix $(USER_BUILD_DIR)/,$(addsuffix .elf,$(USER_PROGRAM_NAMES)))
 DEPS_DIR := deps
 ISO_ROOT := $(BUILD_DIR)/iso_root
@@ -144,6 +144,10 @@ $(USER_BUILD_DIR)/init.elf: tests/user/init.c tests/user/linker.ld | $(USER_BUIL
 	$(CXX) -x c -target x86_64-unknown-none-elf -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c $< -o $(USER_BUILD_DIR)/init.o
 	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/init.o -o $@
 
+$(USER_BUILD_DIR)/terminal.elf: tests/user/terminal.c tests/user/linker.ld | $(USER_BUILD_DIR)
+	$(CXX) -x c -target x86_64-unknown-none-elf -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c $< -o $(USER_BUILD_DIR)/terminal.o
+	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/terminal.o -o $@
+
 $(BUILD_DIR)/asm/tests/user_program.o: $(USER_BUILD_DIR)/basic.elf
 $(BUILD_DIR)/asm/tests/user_program_prime.o: $(USER_BUILD_DIR)/prime.elf
 $(BUILD_DIR)/asm/tests/user_program_second.o: $(USER_BUILD_DIR)/second.elf
@@ -152,6 +156,7 @@ $(BUILD_DIR)/asm/tests/user_program_divzero.o: $(USER_BUILD_DIR)/divzero.elf
 $(BUILD_DIR)/asm/tests/user_program_kernel_access.o: $(USER_BUILD_DIR)/kernel_access.elf
 $(BUILD_DIR)/asm/tests/user_program_invalid_opcode.o: $(USER_BUILD_DIR)/invalid_opcode.elf
 $(BUILD_DIR)/asm/tests/user_program_init.o: $(USER_BUILD_DIR)/init.elf
+$(BUILD_DIR)/asm/tests/user_program_terminal.o: $(USER_BUILD_DIR)/terminal.elf
 
 $(KERNEL): $(OBJECTS) linker.ld
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(OBJECTS) -o $@

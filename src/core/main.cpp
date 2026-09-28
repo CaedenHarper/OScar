@@ -83,6 +83,7 @@ extern "C" [[noreturn]] void kmain() {
     if(!terminal::initialize()) {
         panic::halt("could not initialize the kernel terminal");
     }
+    serial::enable_input_interrupts();
     self_tests::run_terminal();
     self_tests::run_timer();
     self_tests::run_context();
@@ -91,6 +92,9 @@ extern "C" [[noreturn]] void kmain() {
     serial::write("Exiting kernel startup.\n");
     if(!self_tests::prepare_init()) {
         panic::halt("could not prepare init process");
+    }
+    if(!self_tests::prepare_terminal()) {
+        panic::halt("could not prepare terminal process");
     }
 
 #ifdef OSCAR_TEST_EXCEPTION

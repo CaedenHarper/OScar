@@ -42,4 +42,10 @@ void run_scheduler();
  */
 bool prepare_init();
 
+/**
+ * Load and enqueue the interactive terminal ELF after boot-time smoke tests complete.
+ * The scheduler and ELF-loading prerequisites must be initialized first.
+ */
+bool prepare_terminal();
+
 } // namespace self_tests

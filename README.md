@@ -16,7 +16,7 @@ mutexes, exposes a block-device protocol with a polling legacy VirtIO block
 driver, mounts a read-only ext2 filesystem, resolves paths and reads regular
 files through direct, single-indirect, and double-indirect data blocks,
 including sparse holes, initializes an IRQ-driven PS/2 keyboard driver behind a
-hardware-independent keyboard event queue and a serial-backed kernel terminal,
+hardware-independent keyboard event queue, serial receive interrupts, and a serial-backed kernel terminal,
 prints diagnostics to QEMU's serial console, and idles.
 
 This is a kernel seed, not yet an operating system. It does not yet provide
@@ -47,7 +47,7 @@ after boot-time smoke tests; it currently announces startup and exits.
 
 Limine and its protocol header are downloaded into `deps/` on the first build.
 The build compiles the user ELF fixtures in `tests/user/`—including the basic,
-filesystem-read, computed-prime, second-program, and RAM-backed `init` success cases plus intentional-crash
+filesystem-read, computed-prime, second-program, interactive terminal, and RAM-backed `init` success cases plus intentional-crash
 programs—and embeds them into the kernel smoke tests. The kernel also tests
 malformed ELF metadata directly before scheduling user processes.
 Generated files go into `build/`.

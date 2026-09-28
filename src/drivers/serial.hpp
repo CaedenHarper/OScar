@@ -10,6 +10,12 @@ namespace serial {
  */
 void initialize();
 
+/**
+ * Enable COM1 receive interrupts after the IDT and interrupt controller are ready.
+ * Must be called after initialize() and before interrupts are enabled.
+ */
+void enable_input_interrupts();
+
 /*
  * Write one character to COM1. Newlines are emitted as CR-LF.
  */

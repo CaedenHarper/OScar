@@ -2,6 +2,7 @@
 
 .extern timer_irq_handler
 .extern keyboard_ps2_irq_handler
+.extern serial_irq_handler
 .extern scheduler_interrupt_exit
 
 .global irq0
@@ -81,10 +82,51 @@ irq1:
     iretq
 .size irq1, .-irq1
 
+.global irq4
+.type irq4, @function
+irq4:
+    cld
+    pushq %rax
+    pushq %rcx
+    pushq %rdx
+    pushq %rbx
+    pushq %rbp
+    pushq %rsi
+    pushq %rdi
+    pushq %r8
+    pushq %r9
+    pushq %r10
+    pushq %r11
+    pushq %r12
+    pushq %r13
+    pushq %r14
+    pushq %r15
+    call serial_irq_handler
+    popq %r15
+    popq %r14
+    popq %r13
+    popq %r12
+    popq %r11
+    popq %r10
+    popq %r9
+    popq %r8
+    popq %rdi
+    popq %rsi
+    popq %rbp
+    popq %rbx
+    popq %rdx
+    popq %rcx
+    popq %rax
+    iretq
+.size irq4, .-irq4
+
 .section .rodata
 .global irq_stub_table
 .type irq_stub_table, @object
 irq_stub_table:
     .quad irq0
     .quad irq1
+    .quad 0
+    .quad 0
+    .quad irq4
 .size irq_stub_table, .-irq_stub_table
