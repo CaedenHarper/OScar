@@ -284,6 +284,99 @@ void test_filesystem_mutation() {
     serial::write("Filesystem create, mkdir, unlink, rmdir, and metadata-reuse smoke test passed.\n");
 }
 
+void make_indexed_path(char* path, const char* prefix, uint32_t index) {
+    uint32_t position = 0;
+    while(prefix[position] != '\0') {
+        path[position] = prefix[position];
+        ++position;
+    }
+    path[position++] = '0' + static_cast<char>((index / 10) % 10);
+    path[position++] = '0' + static_cast<char>(index % 10);
+    path[position] = '\0';
+}
+
+void test_filesystem_edge_cases() {
+    constexpr uint32_t kDirectoryStressCount = 80;
+    constexpr uint32_t kLargeFileSize = 280 * 1024;
+    static uint8_t large_file[kLargeFileSize];
+    for(uint32_t index = 0; index < kLargeFileSize; ++index) {
+        large_file[index] = static_cast<uint8_t>((index * 19U + 3U) & 0xffU);
+    }
+
+    char path[64];
+    vfs::Node node = {};
+    for(uint32_t index = 0; index < kDirectoryStressCount; ++index) {
+        make_indexed_path(path, "/stress-file-", index);
+        (void)vfs::unlink(path);
+        if(vfs::create(path, &node) != vfs::Status::Success || node.type != vfs::NodeType::Regular) {
+            panic::halt("filesystem edge-case test could not grow a directory");
+        }
+        vfs::File file = {};
+        const uint8_t value = static_cast<uint8_t>(index);
+        uint32_t transferred = 0;
+        if(vfs::open(path, vfs::kOpenReadWrite, &file) != vfs::Status::Success ||
+           vfs::write(&file, &value, sizeof(value), &transferred) != vfs::Status::Success ||
+           transferred != sizeof(value) || vfs::close(&file) != vfs::Status::Success) {
+            panic::halt("filesystem edge-case test could not write a stress file");
+        }
+    }
+    for(uint32_t index = 0; index < kDirectoryStressCount; ++index) {
+        make_indexed_path(path, "/stress-file-", index);
+        if(vfs::resolve(path, &node) != vfs::Status::Success || vfs::unlink(path) != vfs::Status::Success) {
+            panic::halt("filesystem edge-case test could not resolve and remove stress files");
+        }
+    }
+
+    char long_path[258];
+    long_path[0] = '/';
+    for(uint32_t index = 1; index <= 255; ++index) {
+        long_path[index] = 'x';
+    }
+    long_path[256] = '\0';
+    (void)vfs::unlink(long_path);
+    if(vfs::create(long_path, &node) != vfs::Status::Success || vfs::create(long_path, &node) != vfs::Status::Exists ||
+       vfs::unlink(long_path) != vfs::Status::Success) {
+        panic::halt("filesystem edge-case test rejected a maximum-length name");
+    }
+    long_path[256] = 'x';
+    long_path[257] = '\0';
+    if(vfs::create(long_path, &node) != vfs::Status::InvalidArgument ||
+       vfs::create("/missing-parent/file", &node) != vfs::Status::NotFound ||
+       vfs::create("/hello.txt/child", &node) != vfs::Status::NotDirectory ||
+       vfs::create("/", &node) != vfs::Status::InvalidArgument) {
+        panic::halt("filesystem edge-case test accepted an invalid path");
+    }
+
+    // Remove leftovers from an interrupted boot so this persistent-image test remains repeatable.
+    (void)vfs::unlink("/type-check-dir/file");
+    (void)vfs::rmdir("/type-check-dir");
+    (void)vfs::unlink("/large-delete.bin");
+    if(vfs::mkdir("/type-check-dir") != vfs::Status::Success ||
+       vfs::unlink("/type-check-dir") != vfs::Status::IsDirectory ||
+       vfs::rmdir("/hello.txt") != vfs::Status::NotDirectory ||
+       vfs::create("/type-check-dir/file", &node) != vfs::Status::Success ||
+       vfs::rmdir("/type-check-dir") != vfs::Status::NotEmpty ||
+       vfs::unlink("/type-check-dir/file") != vfs::Status::Success ||
+       vfs::rmdir("/type-check-dir") != vfs::Status::Success) {
+        panic::halt("filesystem edge-case test accepted an invalid entry type operation");
+    }
+
+    if(vfs::create("/large-delete.bin", &node) != vfs::Status::Success) {
+        panic::halt("filesystem edge-case test could not create an indirect-block file");
+    }
+    vfs::File large = {};
+    uint32_t transferred = 0;
+    if(vfs::open("/large-delete.bin", vfs::kOpenReadWrite, &large) != vfs::Status::Success ||
+       vfs::write(&large, large_file, kLargeFileSize, &transferred) != vfs::Status::Success ||
+       transferred != kLargeFileSize || vfs::close(&large) != vfs::Status::Success ||
+       vfs::unlink("/large-delete.bin") != vfs::Status::Success ||
+       vfs::resolve("/large-delete.bin", &node) != vfs::Status::NotFound) {
+        panic::halt("filesystem edge-case test could not free indirect-block data");
+    }
+
+    serial::write("Filesystem directory-growth, path-validation, type-check, and block-reuse tests passed.\n");
+}
+
 } // namespace self_tests_detail
 
 // NOLINTEND(cppcoreguidelines-pro-bounds-array-to-pointer-decay, cppcoreguidelines-pro-bounds-constant-array-index,

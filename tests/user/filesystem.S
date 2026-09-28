@@ -2,6 +2,18 @@
 .global _start
 .type _start, @function
 _start:
+    # Recreate the file so a persistent test image cannot leave binary data
+    # after the text written by this test.
+    movl $14, %eax
+    leaq path(%rip), %rdi
+    int $0x80
+
+    movl $12, %eax
+    leaq path(%rip), %rdi
+    int $0x80
+    testq %rax, %rax
+    js .Lfail
+
     movl $6, %eax
     leaq path(%rip), %rdi
     movl $3, %esi
@@ -53,6 +65,12 @@ _start:
     testq %rax, %rax
     js .Lfail
 
+    movl $14, %eax
+    leaq path(%rip), %rdi
+    int $0x80
+    testq %rax, %rax
+    js .Lfail
+
     movl $12, %eax
     leaq created_path(%rip), %rdi
     int $0x80
@@ -99,7 +117,7 @@ _start:
 
 .section .rodata
 path:
-    .asciz "/writable.txt"
+    .asciz "/syscall-write.txt"
 created_path:
     .asciz "/syscall-created.txt"
 created_directory:
