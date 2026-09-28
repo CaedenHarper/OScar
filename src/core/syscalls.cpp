@@ -81,31 +81,63 @@ bool copy_path(uintptr_t user_path, char* path) {
     return false;
 }
 
+int64_t write_file_descriptor(const syscalls::Frame* frame, process::Process* owner) {
+    if(frame->rdx != 0 && !user_memory::validate(frame->rsi, frame->rdx, false)) {
+        return kErrorInvalidArgument;
+    }
+    auto* file = process::file_descriptor(owner, frame->rdi);
+    constexpr uint64_t kBufferSize = 128;
+    char buffer[kBufferSize];
+    uint64_t copied = 0;
+    while(copied < frame->rdx) {
+        const uint64_t chunk = frame->rdx - copied > sizeof(buffer) ? sizeof(buffer) : frame->rdx - copied;
+        if(!user_memory::copy_from_user(static_cast<void*>(buffer), frame->rsi + copied, chunk)) {
+            return copied == 0 ? kErrorInvalidArgument : static_cast<int64_t>(copied);
+        }
+        uint32_t written = 0;
+        const vfs::Status result =
+            vfs::write(file, static_cast<const void*>(buffer), static_cast<uint32_t>(chunk), &written);
+        if(result != vfs::Status::Success) {
+            return copied == 0 ? translate_vfs_status(result) : static_cast<int64_t>(copied);
+        }
+        copied += written;
+        if(written < chunk) {
+            break;
+        }
+    }
+    return static_cast<int64_t>(copied);
+}
+
+int64_t write_terminal(const syscalls::Frame* frame) {
+    constexpr uint64_t kBufferSize = 128;
+    char buffer[kBufferSize];
+    uint64_t copied = 0;
+    while(copied < frame->rdx) {
+        const uint64_t chunk = frame->rdx - copied > sizeof(buffer) ? sizeof(buffer) : frame->rdx - copied;
+        if(!user_memory::copy_from_user(static_cast<void*>(buffer), frame->rsi + copied, chunk)) {
+            return kErrorInvalidArgument;
+        }
+        if(terminal::write(&buffer[0], chunk) != static_cast<int64_t>(chunk)) {
+            return copied == 0 ? kErrorIo : static_cast<int64_t>(copied);
+        }
+        copied += chunk;
+    }
+    return static_cast<int64_t>(copied);
+}
+
 int64_t write(const syscalls::Frame* frame) {
     auto* owner = current_process();
     if(owner == nullptr || frame->rdx > kMaximumWriteLength) {
         return kErrorInvalidArgument;
     }
     const process::DescriptorKind kind = process::descriptor_kind(owner, frame->rdi);
+    if(kind == process::DescriptorKind::File) {
+        return write_file_descriptor(frame, owner);
+    }
     if(kind != process::DescriptorKind::StandardOutput && kind != process::DescriptorKind::StandardError) {
-        return kind == process::DescriptorKind::File ? kErrorReadOnly : kErrorBadDescriptor;
+        return kErrorBadDescriptor;
     }
-
-    constexpr uint64_t kBufferSize = 128;
-    char buffer[kBufferSize];
-    uint64_t copied = 0;
-    while(copied < frame->rdx) {
-        const uint64_t chunk = frame->rdx - copied > kBufferSize ? kBufferSize : frame->rdx - copied;
-        if(!user_memory::copy_from_user(static_cast<void*>(buffer), frame->rsi + copied, chunk)) {
-            return kErrorInvalidArgument;
-        }
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
-        if(terminal::write(buffer, chunk) != static_cast<int64_t>(chunk)) {
-            return copied == 0 ? kErrorIo : static_cast<int64_t>(copied);
-        }
-        copied += chunk;
-    }
-    return static_cast<int64_t>(copied);
+    return write_terminal(frame);
 }
 
 int64_t get_pid() {

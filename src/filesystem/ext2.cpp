@@ -19,7 +19,7 @@ constexpr uint32_t kSuperblockOffset = 1024;
 constexpr uint32_t kSuperblockSize = 1024;
 constexpr uint32_t kDirectoryEntryHeaderSize = 8;
 constexpr uint32_t kDirectBlockCount = 12;
-constexpr uint32_t kIndirectBlockCount = 15;
+constexpr uint32_t kIndirectBlockCount = kInodeBlockPointerCount;
 
 enum class DataBlockResult : uint8_t {
     Success,
@@ -71,6 +71,212 @@ bool read_fs_block(const FileSystem* file_system, uint32_t block) {
     );
 }
 
+bool write_fs_block(const FileSystem* file_system, uint32_t block) {
+    if(file_system == nullptr || block >= file_system->block_count) {
+        return false;
+    }
+    const auto geometry = block_device::get_geometry(file_system->device);
+    if(geometry.block_size == 0 || file_system->block_size % geometry.block_size != 0) {
+        return false;
+    }
+    const uint32_t device_blocks = file_system->block_size / geometry.block_size;
+    const uint64_t first_device_block = static_cast<uint64_t>(block) * device_blocks;
+    return first_device_block <= UINT64_MAX - device_blocks &&
+           block_device::write(file_system->device, first_device_block, device_blocks, g_io_buffer) ==
+               block_device::Status::Success;
+}
+
+bool valid_inode_number(const FileSystem* file_system, uint32_t inode_number);
+
+void write_u16(uint8_t* bytes, uint32_t offset, uint16_t value) {
+    bytes[offset] = static_cast<uint8_t>(value);
+    bytes[offset + 1] = static_cast<uint8_t>(value >> 8U);
+}
+
+void write_u32(uint8_t* bytes, uint32_t offset, uint32_t value) {
+    bytes[offset] = static_cast<uint8_t>(value);
+    bytes[offset + 1] = static_cast<uint8_t>(value >> 8U);
+    bytes[offset + 2] = static_cast<uint8_t>(value >> 16U);
+    bytes[offset + 3] = static_cast<uint8_t>(value >> 24U);
+}
+
+uint32_t descriptor_block(const FileSystem* file_system, uint32_t group) {
+    return (file_system->block_size == kBlockSizeMinimum ? 2 : 1) + (group * 32U) / file_system->block_size;
+}
+
+uint32_t descriptor_offset(const FileSystem* file_system, uint32_t group) {
+    return (group * 32U) % file_system->block_size;
+}
+
+bool group_descriptor(
+    const FileSystem* file_system,
+    uint32_t group,
+    uint32_t* block_bitmap,
+    uint32_t* inode_bitmap,
+    uint16_t* free_blocks,
+    uint16_t* free_inodes
+) {
+    if(file_system == nullptr || group >= file_system->group_count || block_bitmap == nullptr ||
+       inode_bitmap == nullptr || free_blocks == nullptr || free_inodes == nullptr ||
+       !read_fs_block(file_system, descriptor_block(file_system, group))) {
+        return false;
+    }
+    const uint32_t offset = descriptor_offset(file_system, group);
+    if(offset + 18 > file_system->block_size) {
+        return false;
+    }
+    *block_bitmap = read_u32(g_io_buffer + offset, 0);
+    *inode_bitmap = read_u32(g_io_buffer + offset, 4);
+    *free_blocks = read_u16(g_io_buffer + offset, 12);
+    *free_inodes = read_u16(g_io_buffer + offset, 14);
+    return *block_bitmap < file_system->block_count && *inode_bitmap < file_system->block_count;
+}
+
+bool update_group_counts(const FileSystem* file_system, uint32_t group, int32_t block_delta, int32_t inode_delta) {
+    if(file_system == nullptr || group >= file_system->group_count ||
+       !read_fs_block(file_system, descriptor_block(file_system, group))) {
+        return false;
+    }
+    const uint32_t offset = descriptor_offset(file_system, group);
+    const int32_t free_blocks = static_cast<int32_t>(read_u16(g_io_buffer + offset, 12)) + block_delta;
+    const int32_t free_inodes = static_cast<int32_t>(read_u16(g_io_buffer + offset, 14)) + inode_delta;
+    if(offset + 16 > file_system->block_size || free_blocks < 0 || free_blocks > UINT16_MAX || free_inodes < 0 ||
+       free_inodes > UINT16_MAX) {
+        return false;
+    }
+    write_u16(g_io_buffer + offset, 12, static_cast<uint16_t>(free_blocks));
+    write_u16(g_io_buffer + offset, 14, static_cast<uint16_t>(free_inodes));
+    return write_fs_block(file_system, descriptor_block(file_system, group));
+}
+
+bool update_superblock_counts(const FileSystem* file_system, int32_t block_delta, int32_t inode_delta) {
+    if(file_system == nullptr || !read_fs_block(file_system, kSuperblockOffset / file_system->block_size)) {
+        return false;
+    }
+    const uint32_t offset = kSuperblockOffset % file_system->block_size;
+    const int64_t free_blocks = static_cast<int64_t>(read_u32(g_io_buffer + offset, 12)) + block_delta;
+    const int64_t free_inodes = static_cast<int64_t>(read_u32(g_io_buffer + offset, 16)) + inode_delta;
+    if(free_blocks < 0 || free_blocks > UINT32_MAX || free_inodes < 0 || free_inodes > UINT32_MAX) {
+        return false;
+    }
+    write_u32(g_io_buffer + offset, 12, static_cast<uint32_t>(free_blocks));
+    write_u32(g_io_buffer + offset, 16, static_cast<uint32_t>(free_inodes));
+    return write_fs_block(file_system, kSuperblockOffset / file_system->block_size);
+}
+
+bool allocate_bitmap_entry(const FileSystem* file_system, uint32_t bitmap_block, uint32_t limit, uint32_t* bit) {
+    if(file_system == nullptr || bit == nullptr || limit == 0 || limit > file_system->block_size * 8U ||
+       !read_fs_block(file_system, bitmap_block)) {
+        return false;
+    }
+    for(uint32_t candidate = 0; candidate < limit; ++candidate) {
+        const uint32_t byte = candidate / 8U;
+        const uint8_t mask = static_cast<uint8_t>(1U << (candidate % 8U));
+        if((g_io_buffer[byte] & mask) == 0) {
+            g_io_buffer[byte] = static_cast<uint8_t>(g_io_buffer[byte] | mask);
+            if(!write_fs_block(file_system, bitmap_block)) {
+                return false;
+            }
+            *bit = candidate;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool allocate_block(const FileSystem* file_system, uint32_t* block) {
+    if(file_system == nullptr || block == nullptr) {
+        return false;
+    }
+    for(uint32_t group = 0; group < file_system->group_count; ++group) {
+        uint32_t block_bitmap = 0;
+        uint32_t inode_bitmap = 0;
+        uint16_t free_blocks = 0;
+        uint16_t free_inodes = 0;
+        if(!group_descriptor(file_system, group, &block_bitmap, &inode_bitmap, &free_blocks, &free_inodes) ||
+           free_blocks == 0) {
+            continue;
+        }
+        // For a 1 KiB ext2 filesystem, group zero begins at block one because
+        // block zero is reserved for boot code. Bitmap bit zero therefore names
+        // first_data_block, not physical block zero; omitting this offset would
+        // overwrite the boot area and eventually make indirect pointers invalid.
+        const uint64_t group_start = static_cast<uint64_t>(file_system->first_data_block) +
+                                     static_cast<uint64_t>(group) * file_system->blocks_per_group;
+        const uint64_t group_end = group + 1 == file_system->group_count ? file_system->block_count
+                                                                         : group_start + file_system->blocks_per_group;
+        const uint32_t limit = static_cast<uint32_t>(group_end - group_start);
+        uint32_t bit = 0;
+        if(!allocate_bitmap_entry(file_system, block_bitmap, limit, &bit)) {
+            continue;
+        }
+        const uint64_t selected = group_start + bit;
+        if(selected >= file_system->block_count || !update_group_counts(file_system, group, -1, 0) ||
+           !update_superblock_counts(file_system, -1, 0)) {
+            return false;
+        }
+        *block = static_cast<uint32_t>(selected);
+        return true;
+    }
+    return false;
+}
+
+bool inode_location(
+    const FileSystem* file_system,
+    uint32_t inode_number,
+    uint32_t* table_block,
+    uint32_t* table_offset
+) {
+    if(!valid_inode_number(file_system, inode_number) || table_block == nullptr || table_offset == nullptr) {
+        return false;
+    }
+    const uint32_t group = (inode_number - 1) / file_system->inodes_per_group;
+    const uint32_t index = (inode_number - 1) % file_system->inodes_per_group;
+    uint32_t block_bitmap = 0;
+    uint32_t inode_bitmap = 0;
+    uint16_t free_blocks = 0;
+    uint16_t free_inodes = 0;
+    if(!group_descriptor(file_system, group, &block_bitmap, &inode_bitmap, &free_blocks, &free_inodes)) {
+        return false;
+    }
+    const uint64_t inode_offset = static_cast<uint64_t>(index) * file_system->inode_size;
+    if(inode_offset % file_system->block_size + file_system->inode_size > file_system->block_size) {
+        return false;
+    }
+    // The inode table location is stored in the descriptor at offset 8.
+    if(!read_fs_block(file_system, descriptor_block(file_system, group))) {
+        return false;
+    }
+    const uint32_t table = read_u32(g_io_buffer + descriptor_offset(file_system, group), 8);
+    *table_block = static_cast<uint32_t>(static_cast<uint64_t>(table) + inode_offset / file_system->block_size);
+    *table_offset = static_cast<uint32_t>(inode_offset % file_system->block_size);
+    return *table_block < file_system->block_count;
+}
+
+bool write_inode(const FileSystem* file_system, const Inode& inode) {
+    uint32_t table_block = 0;
+    uint32_t table_offset = 0;
+    if(!inode_location(file_system, inode.number, &table_block, &table_offset) ||
+       !read_fs_block(file_system, table_block)) {
+        return false;
+    }
+    write_u16(g_io_buffer + table_offset, 0, inode.mode);
+    write_u32(g_io_buffer + table_offset, 4, static_cast<uint32_t>(inode.size));
+    write_u32(g_io_buffer + table_offset, 28, inode.sectors);
+    for(uint32_t index = 0; index < kIndirectBlockCount; ++index) {
+        write_u32(g_io_buffer + table_offset, 40 + index * sizeof(uint32_t), inode.blocks[index]);
+    }
+    write_u32(g_io_buffer + table_offset, 108, static_cast<uint32_t>(inode.size >> 32U));
+    return write_fs_block(file_system, table_block);
+}
+
+bool zero_block(const FileSystem* file_system, uint32_t block) {
+    for(uint32_t index = 0; index < file_system->block_size; ++index) {
+        g_io_buffer[index] = 0;
+    }
+    return write_fs_block(file_system, block);
+}
+
 bool valid_inode_number(const FileSystem* file_system, uint32_t inode_number) {
     return file_system != nullptr && inode_number != 0 && inode_number <= file_system->inode_count;
 }
@@ -100,6 +306,7 @@ bool read_inode(const FileSystem* file_system, uint32_t inode_number, Inode* ino
     inode->number = inode_number;
     inode->mode = read_u16(raw_inode, 0);
     inode->size = read_u32(raw_inode, 4);
+    inode->sectors = read_u32(raw_inode, 28);
     if((inode->mode & kDirectoryType) == 0 && (inode->mode & 0xf000U) == 0) {
         return false;
     }
@@ -110,6 +317,7 @@ bool read_inode(const FileSystem* file_system, uint32_t inode_number, Inode* ino
     if(direct_blocks != nullptr) {
         for(uint32_t index = 0; index < kIndirectBlockCount; ++index) {
             direct_blocks[index] = read_u32(raw_inode, 40 + index * sizeof(uint32_t));
+            inode->blocks[index] = direct_blocks[index];
         }
     }
     return true;
@@ -165,6 +373,107 @@ DataBlockResult get_data_block(
         return DataBlockResult::Hole;
     }
     return *physical_block < file_system->block_count ? DataBlockResult::Success : DataBlockResult::Corrupt;
+}
+
+bool allocate_data_block(
+    const FileSystem* file_system,
+    uint32_t* inode_blocks,
+    uint64_t logical_block,
+    uint32_t* sectors_added
+) {
+    if(file_system == nullptr || inode_blocks == nullptr || sectors_added == nullptr) {
+        return false;
+    }
+    const uint64_t pointers_per_block = file_system->block_size / sizeof(uint32_t);
+    uint32_t data_block = 0;
+    if(logical_block < kDirectBlockCount) {
+        if(!allocate_block(file_system, &data_block)) {
+            return false;
+        }
+        inode_blocks[logical_block] = data_block;
+        *sectors_added += file_system->block_size / 512U;
+        return true;
+    }
+
+    logical_block -= kDirectBlockCount;
+    if(logical_block < pointers_per_block) {
+        if(inode_blocks[12] == 0) {
+            if(!allocate_block(file_system, &inode_blocks[12]) || !zero_block(file_system, inode_blocks[12])) {
+                return false;
+            }
+            *sectors_added += file_system->block_size / 512U;
+        }
+        if(!read_fs_block(file_system, inode_blocks[12])) {
+            return false;
+        }
+        uint32_t* pointers = reinterpret_cast<uint32_t*>(g_io_buffer);
+        if(pointers[logical_block] != 0) {
+            return true;
+        }
+        if(!allocate_block(file_system, &data_block)) {
+            return false;
+        }
+        if(!read_fs_block(file_system, inode_blocks[12])) {
+            return false;
+        }
+        pointers = reinterpret_cast<uint32_t*>(g_io_buffer);
+        pointers[logical_block] = data_block;
+        if(!write_fs_block(file_system, inode_blocks[12])) {
+            return false;
+        }
+        *sectors_added += file_system->block_size / 512U;
+        return true;
+    }
+
+    logical_block -= pointers_per_block;
+    if(logical_block >= pointers_per_block * pointers_per_block) {
+        return false;
+    }
+    if(inode_blocks[13] == 0) {
+        if(!allocate_block(file_system, &inode_blocks[13]) || !zero_block(file_system, inode_blocks[13])) {
+            return false;
+        }
+        *sectors_added += file_system->block_size / 512U;
+    }
+    const uint32_t first_index = static_cast<uint32_t>(logical_block / pointers_per_block);
+    const uint32_t second_index = static_cast<uint32_t>(logical_block % pointers_per_block);
+    if(!read_fs_block(file_system, inode_blocks[13])) {
+        return false;
+    }
+    uint32_t indirect_block = reinterpret_cast<uint32_t*>(g_io_buffer)[first_index];
+    if(indirect_block == 0) {
+        if(!allocate_block(file_system, &indirect_block) || !zero_block(file_system, indirect_block)) {
+            return false;
+        }
+        *sectors_added += file_system->block_size / 512U;
+        if(!read_fs_block(file_system, inode_blocks[13])) {
+            return false;
+        }
+        reinterpret_cast<uint32_t*>(g_io_buffer)[first_index] = indirect_block;
+        if(!write_fs_block(file_system, inode_blocks[13])) {
+            return false;
+        }
+    }
+    if(!read_fs_block(file_system, indirect_block)) {
+        return false;
+    }
+    uint32_t* pointers = reinterpret_cast<uint32_t*>(g_io_buffer);
+    if(pointers[second_index] != 0) {
+        return true;
+    }
+    if(!allocate_block(file_system, &data_block)) {
+        return false;
+    }
+    if(!read_fs_block(file_system, indirect_block)) {
+        return false;
+    }
+    pointers = reinterpret_cast<uint32_t*>(g_io_buffer);
+    pointers[second_index] = data_block;
+    if(!write_fs_block(file_system, indirect_block)) {
+        return false;
+    }
+    *sectors_added += file_system->block_size / 512U;
+    return true;
 }
 
 bool component_equals(const uint8_t* name, uint8_t name_length, const char* component, uint32_t component_length) {
@@ -293,6 +602,8 @@ bool mount(block_device::Device* device, FileSystem* file_system) {
     file_system->device = device;
     file_system->block_count = blocks_count;
     file_system->block_size = block_size;
+    file_system->first_data_block = first_data_block;
+    file_system->blocks_per_group = blocks_per_group;
     file_system->inode_count = inode_count;
     file_system->inodes_per_group = inodes_per_group;
     file_system->inode_size = inode_size;
@@ -433,6 +744,111 @@ Status read_file(
         }
         *bytes_read += amount;
         position += amount;
+    }
+    synchronization::unlock(&file_system->io_lock, previous_state);
+    return Status::Success;
+}
+
+Status write_file(
+    const FileSystem* file_system,
+    const Inode* inode,
+    uint64_t offset,
+    uint32_t length,
+    const void* buffer,
+    uint32_t* bytes_written
+) {
+    if(file_system == nullptr || !file_system->mounted || inode == nullptr || bytes_written == nullptr ||
+       (length != 0 && buffer == nullptr)) {
+        return Status::InvalidArgument;
+    }
+    *bytes_written = 0;
+    if(length == 0) {
+        return Status::Success;
+    }
+    if(offset > UINT64_MAX - length) {
+        return Status::Unsupported;
+    }
+
+    const interrupts::State previous_state = synchronization::lock(&file_system->io_lock);
+    Inode current = {};
+    if(!read_inode(file_system, inode->number, &current, current.blocks)) {
+        synchronization::unlock(&file_system->io_lock, previous_state);
+        return Status::Corrupt;
+    }
+    if(current.directory) {
+        synchronization::unlock(&file_system->io_lock, previous_state);
+        return Status::NotDirectory;
+    }
+    const uint64_t end = offset + length;
+    const uint64_t maximum_blocks =
+        12ULL + file_system->block_size / sizeof(uint32_t) +
+        (file_system->block_size / sizeof(uint32_t)) * (file_system->block_size / sizeof(uint32_t));
+    if((end + file_system->block_size - 1) / file_system->block_size > maximum_blocks) {
+        synchronization::unlock(&file_system->io_lock, previous_state);
+        return Status::Unsupported;
+    }
+
+    const uint8_t* source = static_cast<const uint8_t*>(buffer);
+    uint64_t position = offset;
+    uint32_t sectors_added = 0;
+    while(*bytes_written < length) {
+        const uint64_t logical_block = position / file_system->block_size;
+        uint32_t physical_block = 0;
+        const DataBlockResult existing = get_data_block(file_system, current.blocks, logical_block, &physical_block);
+        if(existing == DataBlockResult::Unsupported) {
+            synchronization::unlock(&file_system->io_lock, previous_state);
+            return Status::Unsupported;
+        }
+        if(existing == DataBlockResult::Corrupt || existing == DataBlockResult::IoError) {
+            synchronization::unlock(&file_system->io_lock, previous_state);
+            return existing == DataBlockResult::Corrupt ? Status::Corrupt : Status::IoError;
+        }
+        if(existing == DataBlockResult::Hole) {
+            if(!allocate_data_block(file_system, current.blocks, logical_block, &sectors_added)) {
+                synchronization::unlock(&file_system->io_lock, previous_state);
+                return Status::IoError;
+            }
+            physical_block = 0;
+            const DataBlockResult allocated =
+                get_data_block(file_system, current.blocks, logical_block, &physical_block);
+            if(allocated != DataBlockResult::Success) {
+                synchronization::unlock(&file_system->io_lock, previous_state);
+                return Status::Corrupt;
+            }
+            if(!zero_block(file_system, physical_block)) {
+                synchronization::unlock(&file_system->io_lock, previous_state);
+                return Status::IoError;
+            }
+        } else if(!read_fs_block(file_system, physical_block)) {
+            synchronization::unlock(&file_system->io_lock, previous_state);
+            return Status::IoError;
+        }
+        const uint32_t block_offset = static_cast<uint32_t>(position % file_system->block_size);
+        const uint32_t amount = (file_system->block_size - block_offset) < (length - *bytes_written)
+                                    ? file_system->block_size - block_offset
+                                    : length - *bytes_written;
+        for(uint32_t index = 0; index < amount; ++index) {
+            g_io_buffer[block_offset + index] = source[*bytes_written + index];
+        }
+        if(!write_fs_block(file_system, physical_block)) {
+            synchronization::unlock(&file_system->io_lock, previous_state);
+            return Status::IoError;
+        }
+        *bytes_written += amount;
+        position += amount;
+    }
+    if(end > current.size) {
+        current.size = end;
+    }
+    current.sectors += sectors_added;
+    if(!write_inode(file_system, current)) {
+        synchronization::unlock(&file_system->io_lock, previous_state);
+        return Status::IoError;
+    }
+    const block_device::Status flush_status = block_device::flush(file_system->device);
+    if(flush_status != block_device::Status::Success && flush_status != block_device::Status::Unsupported) {
+        synchronization::unlock(&file_system->io_lock, previous_state);
+        return Status::IoError;
     }
     synchronization::unlock(&file_system->io_lock, previous_state);
     return Status::Success;

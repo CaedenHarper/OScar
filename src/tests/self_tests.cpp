@@ -21,6 +21,7 @@ void run(uintptr_t hhdm_offset) {
     self_tests_detail::test_block_device();
     self_tests_detail::test_filesystem();
     self_tests_detail::test_vfs();
+    self_tests_detail::test_writable_filesystem();
     self_tests_detail::test_process_address_spaces();
     // The heap is initialized after page-table tests because its backing mappings depend
     // on the virtual-memory and physical-page allocators being ready first.

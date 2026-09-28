@@ -11,7 +11,7 @@ KERNEL := $(BUILD_DIR)/kernel.elf
 ISO := $(BUILD_DIR)/barebones-kernel.iso
 VIRTIO_DISK := $(BUILD_DIR)/virtio-test.img
 LARGE_FILESYSTEM_TEST_FILE := $(BUILD_DIR)/filesystem-large.bin
-FILESYSTEM_TEST_FILES := tests/filesystem/hello.txt tests/filesystem/config.txt
+FILESYSTEM_TEST_FILES := tests/filesystem/hello.txt tests/filesystem/config.txt tests/filesystem/writable.txt
 CPP_SOURCES := $(wildcard src/*.cpp src/*/*.cpp src/*/*/*.cpp)
 ASM_SOURCES := $(wildcard src/*.S src/*/*.S src/*/*/*.S)
 LINT_CPP_FILES := $(shell find src -name '*.cpp' -o -name '*.hpp')
@@ -96,6 +96,7 @@ $(VIRTIO_DISK): Makefile $(FILESYSTEM_TEST_FILES) $(LARGE_FILESYSTEM_TEST_FILE) 
 	debugfs -w -R 'mkdir /bin' $@
 	debugfs -w -R 'write tests/filesystem/hello.txt /hello.txt' $@
 	debugfs -w -R 'write tests/filesystem/config.txt /etc/oscar/config.txt' $@
+	debugfs -w -R 'write tests/filesystem/writable.txt /writable.txt' $@
 	debugfs -w -R 'write $(USER_BUILD_DIR)/second.elf /bin/second.elf' $@
 	debugfs -w -R 'write $(LARGE_FILESYSTEM_TEST_FILE) /large.bin' $@
 	index=0; while [ $$index -lt 300 ]; do \

@@ -131,7 +131,7 @@ Status resolve(const char* path, Node* node) {
 }
 
 Status open(const char* path, uint32_t flags, File* file) {
-    if(file == nullptr || (flags & ~kOpenRead) != 0 || (flags & kOpenRead) == 0) {
+    if(file == nullptr || (flags & ~kOpenReadWrite) != 0 || (flags & kOpenReadWrite) == 0) {
         return Status::InvalidArgument;
     }
     Node node = {};
@@ -144,7 +144,8 @@ Status open(const char* path, uint32_t flags, File* file) {
 }
 
 Status read(File* file, void* buffer, uint32_t length, uint32_t* bytes_read) {
-    if(file == nullptr || !file->open || bytes_read == nullptr || (length != 0 && buffer == nullptr)) {
+    if(file == nullptr || !file->open || (file->flags & kOpenRead) == 0 || bytes_read == nullptr ||
+       (length != 0 && buffer == nullptr)) {
         return Status::InvalidArgument;
     }
     if(file->node.type == NodeType::Directory) {
@@ -159,6 +160,29 @@ Status read(File* file, void* buffer, uint32_t length, uint32_t* bytes_read) {
     const ext2::Status result = ext2::read_file(&g_root_filesystem, &inode, file->offset, length, buffer, bytes_read);
     if(result == ext2::Status::Success) {
         file->offset += *bytes_read;
+    }
+    return translate_status(result);
+}
+
+Status write(File* file, const void* buffer, uint32_t length, uint32_t* bytes_written) {
+    if(file == nullptr || !file->open || (file->flags & kOpenWrite) == 0 || bytes_written == nullptr ||
+       (length != 0 && buffer == nullptr)) {
+        return Status::InvalidArgument;
+    }
+    if(file->node.type == NodeType::Directory) {
+        return Status::IsDirectory;
+    }
+    ext2::Inode inode = {};
+    const ext2::Status inode_status =
+        ext2::get_inode(&g_root_filesystem, static_cast<uint32_t>(file->node.identifier), &inode);
+    if(inode_status != ext2::Status::Success) {
+        return translate_status(inode_status);
+    }
+    const ext2::Status result =
+        ext2::write_file(&g_root_filesystem, &inode, file->offset, length, buffer, bytes_written);
+    if(result == ext2::Status::Success) {
+        file->offset += *bytes_written;
+        file->node.size = file->offset > file->node.size ? file->offset : file->node.size;
     }
     return translate_status(result);
 }

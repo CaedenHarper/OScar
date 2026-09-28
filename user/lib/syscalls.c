@@ -55,9 +55,9 @@ int64_t oscar_getid(void) {
     return (int64_t)call;
 }
 
-int64_t oscar_open(const char* path) {
+int64_t oscar_open(const char* path, uint32_t flags) {
     uint64_t call = kOpenSystemCall;
-    __asm__ volatile("int $0x80" : "+a"(call) : "D"(path), "S"((uint64_t)1) : "rcx", "r11", "memory");
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"(path), "S"((uint64_t)flags) : "rcx", "r11", "memory");
     return (int64_t)call;
 }
 

@@ -128,7 +128,7 @@ void test_vfs() {
     }
     if(vfs::close(&file) != vfs::Status::InvalidArgument ||
        vfs::open("/hello.txt", 0, &file) != vfs::Status::InvalidArgument ||
-       vfs::open("/hello.txt", 2, &file) != vfs::Status::InvalidArgument ||
+       vfs::open("/hello.txt", 4, &file) != vfs::Status::InvalidArgument ||
        vfs::resolve("///etc//./oscar/config.txt", &file.node) != vfs::Status::Success) {
         panic::halt("VFS smoke test accepted an invalid handle or path request");
     }
@@ -141,6 +141,95 @@ void test_vfs() {
         panic::halt("VFS smoke test accepted an invalid operation");
     }
     serial::write("VFS mount, path, handle, read, seek, and close smoke test passed.\n");
+}
+
+void test_writable_filesystem() {
+    constexpr uint32_t kWriteSize = 300 * 1024;
+    static uint8_t write_buffer[kWriteSize];
+    static uint8_t read_buffer[1024];
+    static uint8_t hole_check[18];
+    for(uint32_t index = 0; index < kWriteSize; ++index) {
+        write_buffer[index] = static_cast<uint8_t>((index * 37U + 11U) & 0xffU);
+    }
+
+    vfs::File read_only = {};
+    if(vfs::open("/hello.txt", vfs::kOpenRead, &read_only) != vfs::Status::Success) {
+        panic::halt("writable filesystem smoke test could not open read-only fixture");
+    }
+    uint32_t bytes = 0;
+    if(vfs::write(&read_only, write_buffer, 1, &bytes) != vfs::Status::InvalidArgument ||
+       vfs::close(&read_only) != vfs::Status::Success) {
+        panic::halt("writable filesystem smoke test allowed a read-only write");
+    }
+
+    vfs::File file = {};
+    const vfs::Status open_status = vfs::open("/writable.txt", vfs::kOpenReadWrite, &file);
+    const vfs::Status zero_write_status = vfs::write(&file, nullptr, 0, &bytes);
+    const vfs::Status null_buffer_status = vfs::write(&file, nullptr, 1, &bytes);
+    const uint8_t directory_byte = 0x5a;
+    vfs::File directory = {};
+    const vfs::Status directory_open_status = vfs::open("/", vfs::kOpenReadWrite, &directory);
+    const vfs::Status directory_write_status = vfs::write(&directory, &directory_byte, 1, &bytes);
+    const vfs::Status directory_close_status = vfs::close(&directory);
+    const vfs::Status overflow_seek_status = vfs::seek(&file, UINT64_MAX);
+    const vfs::Status overflow_write_status = vfs::write(&file, &directory_byte, 1, &bytes);
+    const vfs::Status rewind_status = vfs::seek(&file, 0);
+    const vfs::Status write_status = vfs::write(&file, write_buffer, kWriteSize, &bytes);
+    if(open_status != vfs::Status::Success || zero_write_status != vfs::Status::Success ||
+       null_buffer_status != vfs::Status::InvalidArgument || directory_open_status != vfs::Status::Success ||
+       directory_write_status != vfs::Status::IsDirectory || directory_close_status != vfs::Status::Success ||
+       overflow_seek_status != vfs::Status::Success || overflow_write_status != vfs::Status::Unsupported ||
+       rewind_status != vfs::Status::Success || write_status != vfs::Status::Success || bytes != kWriteSize) {
+        panic::halt("writable filesystem smoke test could not write the indirect-block fixture");
+    }
+    if(vfs::seek(&file, 0) != vfs::Status::Success) {
+        panic::halt("writable filesystem smoke test could not rewind the file");
+    }
+    for(uint32_t offset = 0; offset < kWriteSize; offset += sizeof(read_buffer)) {
+        const uint32_t expected =
+            (kWriteSize - offset) < sizeof(read_buffer) ? kWriteSize - offset : sizeof(read_buffer);
+        uint32_t received = 0;
+        if(vfs::read(&file, read_buffer, expected, &received) != vfs::Status::Success || received != expected) {
+            panic::halt("writable filesystem smoke test could not read back written data");
+        }
+        for(uint32_t index = 0; index < received; ++index) {
+            if(read_buffer[index] != write_buffer[offset + index]) {
+                panic::halt("writable filesystem smoke test read back corrupted data");
+            }
+        }
+    }
+    const uint8_t marker = 0xa7;
+    if(vfs::seek(&file, kWriteSize + 17) != vfs::Status::Success ||
+       vfs::write(&file, &marker, sizeof(marker), &bytes) != vfs::Status::Success || bytes != sizeof(marker) ||
+       vfs::seek(&file, kWriteSize) != vfs::Status::Success ||
+       vfs::read(&file, hole_check, sizeof(hole_check), &bytes) != vfs::Status::Success ||
+       bytes != sizeof(hole_check)) {
+        panic::halt("writable filesystem smoke test could not test a sparse extension");
+    }
+    for(uint32_t index = 0; index < sizeof(hole_check) - 1; ++index) {
+        if(hole_check[index] != 0) {
+            panic::halt("writable filesystem smoke test did not zero-fill an extension gap");
+        }
+    }
+    if(hole_check[sizeof(hole_check) - 1] != marker || vfs::close(&file) != vfs::Status::Success) {
+        panic::halt("writable filesystem smoke test returned an incorrect extension marker");
+    }
+
+    if(vfs::open("/writable.txt", vfs::kOpenRead, &file) != vfs::Status::Success || file.node.size != kWriteSize + 18 ||
+       vfs::seek(&file, kWriteSize) != vfs::Status::Success ||
+       vfs::read(&file, hole_check, sizeof(hole_check), &bytes) != vfs::Status::Success ||
+       bytes != sizeof(hole_check) || vfs::close(&file) != vfs::Status::Success) {
+        panic::halt("writable filesystem smoke test did not persist file metadata");
+    }
+    for(uint32_t index = 0; index < sizeof(hole_check) - 1; ++index) {
+        if(hole_check[index] != 0) {
+            panic::halt("writable filesystem smoke test did not persist zero-filled bytes");
+        }
+    }
+    if(hole_check[sizeof(hole_check) - 1] != marker) {
+        panic::halt("writable filesystem smoke test did not persist file data");
+    }
+    serial::write("Writable filesystem write, readback, indirect-block, and persistence smoke test passed.\n");
 }
 
 } // namespace self_tests_detail

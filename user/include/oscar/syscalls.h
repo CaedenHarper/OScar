@@ -2,7 +2,15 @@
 
 #include <stdint.h>
 
-/** Write up to length bytes to a standard output or error descriptor. */
+/** Open a path for reading, writing, or both; returns a descriptor or a negative error. */
+int64_t oscar_open(const char* path, uint32_t flags);
+
+enum {
+    OSCAR_OPEN_READ = 1,
+    OSCAR_OPEN_WRITE = 2,
+};
+
+/** Write up to length bytes to a descriptor. */
 int64_t oscar_write(int64_t descriptor, const void* buffer, uint64_t length);
 
 /** Terminate the calling process with status and never return. */
@@ -19,9 +27,6 @@ int64_t oscar_getpid(void);
 
 /** Return the calling thread identifier, or a negative error code. */
 int64_t oscar_getid(void);
-
-/** Open a mounted filesystem path read-only and return its descriptor. */
-int64_t oscar_open(const char* path);
 
 /** Read up to length bytes from descriptor into buffer. */
 int64_t oscar_read(int64_t descriptor, void* buffer, uint64_t length);

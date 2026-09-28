@@ -24,6 +24,8 @@ enum class NodeType : uint8_t {
 };
 
 constexpr uint32_t kOpenRead = 1;
+constexpr uint32_t kOpenWrite = 2;
+constexpr uint32_t kOpenReadWrite = kOpenRead | kOpenWrite;
 
 struct Node {
     uint64_t identifier;
@@ -38,7 +40,7 @@ struct File {
     bool open;
 };
 
-/** Mount the read-only ext2 filesystem as the single VFS root. */
+/** Mount the ext2 filesystem as the single VFS root. Regular files may be written. */
 bool mount_root(block_device::Device* device);
 
 /** Return whether the VFS root filesystem has been mounted. */
@@ -52,6 +54,9 @@ Status open(const char* path, uint32_t flags, File* file);
 
 /** Read from an open file and advance its current offset. */
 Status read(File* file, void* buffer, uint32_t length, uint32_t* bytes_read);
+
+/** Write to an open writable regular file and advance its current offset; directory writes are rejected. */
+Status write(File* file, const void* buffer, uint32_t length, uint32_t* bytes_written);
 
 /** Set the current offset of an open file. */
 Status seek(File* file, uint64_t offset);

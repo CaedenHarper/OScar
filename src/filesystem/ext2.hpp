@@ -18,10 +18,14 @@ enum class Status : uint8_t {
     Unsupported,
 };
 
+constexpr uint32_t kInodeBlockPointerCount = 15;
+
 struct Inode {
     uint32_t number;
     uint16_t mode;
     uint64_t size;
+    uint32_t sectors;
+    uint32_t blocks[kInodeBlockPointerCount];
     bool directory;
 };
 
@@ -29,6 +33,8 @@ struct FileSystem {
     block_device::Device* device;
     uint64_t block_count;
     uint32_t block_size;
+    uint32_t first_data_block;
+    uint32_t blocks_per_group;
     uint32_t inode_count;
     uint32_t inodes_per_group;
     uint32_t inode_size;
@@ -39,7 +45,8 @@ struct FileSystem {
 };
 
 /**
- * Mount a read-only ext2 filesystem from the complete block device.
+ * Mount an ext2 filesystem from the complete block device. Regular-file writes
+ * are synchronous; directory mutation is not yet supported.
  * The block-device protocol and physical-memory allocator must be initialized first.
  * The filesystem does not take ownership of device and must remain mounted while
  * the device is used. Returns false when the superblock or metadata is unsupported.
@@ -73,6 +80,20 @@ Status read_file(
     uint32_t length,
     void* buffer,
     uint32_t* bytes_read
+);
+
+/**
+ * Write bytes to a regular file inode, allocating direct or indirect blocks as needed.
+ * Writes are synchronous and extend files with zero-filled gaps; directory mutation and
+ * writes beyond the supported direct/double-indirect capacity return Unsupported.
+ */
+Status write_file(
+    const FileSystem* file_system,
+    const Inode* inode,
+    uint64_t offset,
+    uint32_t length,
+    const void* buffer,
+    uint32_t* bytes_written
 );
 
 } // namespace ext2

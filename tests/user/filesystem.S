@@ -4,11 +4,26 @@
 _start:
     movl $6, %eax
     leaq path(%rip), %rdi
-    movl $1, %esi
+    movl $3, %esi
     int $0x80
     testq %rax, %rax
     js .Lfail
     movq %rax, %r12
+
+    movl $0, %eax
+    movq %r12, %rdi
+    leaq write_data(%rip), %rsi
+    movl $(write_data_end - write_data), %edx
+    int $0x80
+    testq %rax, %rax
+    js .Lfail_close
+
+    movl $9, %eax
+    movq %r12, %rdi
+    xorl %esi, %esi
+    int $0x80
+    testq %rax, %rax
+    js .Lfail_close
 
     movl $7, %eax
     movq %r12, %rdi
@@ -60,7 +75,10 @@ _start:
 
 .section .rodata
 path:
-    .asciz "/hello.txt"
+    .asciz "/writable.txt"
+write_data:
+    .ascii "User syscall write test.\n"
+write_data_end:
 failure:
     .ascii "Filesystem syscall test failed.\n"
 failure_end:

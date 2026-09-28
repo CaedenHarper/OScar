@@ -8,8 +8,8 @@ and QEMU provides the primary development and test environment. The kernel
 initializes COM1 serial output, reads the Limine memory map, manages physical
 pages and basic virtual-memory mappings, provides a kernel heap, installs the
 GDT/TSS, Interrupt Descriptor Table, and hardware timer interrupts, creates
-  ring-3 user threads, handles an initial system-call ABI including read-only
-  filesystem file operations plus `spawn`/`waitpid`, loads validated
+  ring-3 user threads, handles an initial system-call ABI including writable
+  regular-file operations plus `spawn`/`waitpid`, loads validated
 in-memory ELF64 executables, provides kernel synchronization primitives and
 process structures, runs boot-time smoke tests, reports exception register
 state, and halts.
@@ -38,8 +38,8 @@ The source tree is organized as follows:
 - `src/drivers/`: x86 port I/O, serial output, timer/PIT support, the generic
   keyboard event layer, the serial-backed terminal, the IRQ-driven PS/2 backend,
   the COM1 receive-interrupt backend, and the polling legacy VirtIO block driver.
-- `src/filesystem/`: the generic VFS, read-only ext2 mounting, inode loading,
-  path lookup, and regular-file reads through direct and indirect data blocks.
+- `src/filesystem/`: the generic VFS, ext2 mounting, inode loading, path
+  lookup, and regular-file reads/writes through direct and indirect data blocks.
 - `src/exec/`: freestanding ELF64 validation and process image loading,
   including filesystem-backed child creation.
 - `src/interrupts/`: interrupt-controller routing and CPU interrupt helpers.
@@ -75,7 +75,10 @@ The image is formatted as ext2 and populated with lookup fixtures during its
 first build. The generated `large.bin` fixture crosses the single- and
 double-indirect data-block boundaries, and `/many` contains 300 entries for
 indirect-directory lookup tests. Filesystem changes should keep those smoke
-tests passing. `mke2fs` and `debugfs` are required.
+tests passing. The writable-filesystem test also writes a deterministic 300 KiB
+pattern across direct, single-indirect, and double-indirect blocks, verifies
+zero-filled extension gaps and persisted metadata, and checks that read-only
+handles reject writes. `mke2fs` and `debugfs` are required.
 `make test-exception` builds in a separate `build-exception/` directory,
 executes `ud2`, and should print an invalid-opcode diagnostic with register
 state before halting.
