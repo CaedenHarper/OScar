@@ -36,9 +36,10 @@ void run_terminal();
 void run_scheduler();
 
 /**
- * Load and enqueue `/sbin/init` from the mounted filesystem after kernel smoke tests
- * are prepared. The scheduler and ELF-loading prerequisites must be initialized first;
- * scheduling begins later when scheduler::start() runs.
+ * Load and enqueue `/sbin/init` from the mounted filesystem after the scheduler's
+ * boot smoke-test phase has completed. The scheduler and ELF-loading prerequisites
+ * must be initialized first; normal scheduling begins later when scheduler::start()
+ * runs.
  */
 bool prepare_init();
 

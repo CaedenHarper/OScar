@@ -88,6 +88,13 @@ void yield();
  */
 [[noreturn]] void start();
 
+/**
+ * Run the threads queued for the boot smoke-test phase and return after they
+ * have all terminated. The scheduler must be initialized and its boot-phase
+ * threads must already be queued; no user startup process should be queued yet.
+ */
+void start_bootstrap();
+
 /** Terminate the current thread with an exit status and switch permanently to the next runnable thread. */
 [[noreturn]] void thread_exit(kernel_thread::Thread* thread, int64_t status);
 

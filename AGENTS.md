@@ -84,8 +84,9 @@ handles reject writes. `mke2fs` and `debugfs` are required.
 The mutation test additionally creates and removes regular files and nested
 directories, rejects duplicate names and non-empty directory removal, and
 cleans up its entries for repeatable persistent-image runs.
-The user-space `cash` fixture currently exercises the terminal line-input loop;
-command parsing and external command execution are separate shell milestones.
+The user-space `cash` fixture exercises terminal line input and its initial
+`cd`, `pwd`, and `exit` built-ins; external command execution is a separate
+shell milestone.
 `make test-exception` builds in a separate `build-exception/` directory,
 executes `ud2`, and should print an invalid-opcode diagnostic with register
 state before halting.

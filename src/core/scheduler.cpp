@@ -30,6 +30,8 @@ bool g_initialized = false;
 bool g_started = false;
 bool g_reschedule_pending = false;
 kernel_thread::Thread* g_reap_head = nullptr;
+bool g_bootstrap_phase = false;
+uint32_t g_bootstrap_remaining = 0;
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
 [[noreturn]] void park() {
@@ -42,6 +44,21 @@ void idle_entry(void* argument) {
     (void)argument;
     for(;;) {
         asm volatile("hlt" : : : "memory");
+        if(!g_bootstrap_phase || g_bootstrap_remaining != 0) {
+            continue;
+        }
+
+        // The bootstrap context is the only caller that may resume after this
+        // phase. Returning there keeps init out of the ready queue until every
+        // smoke-test thread, including blocked and sleeping tests, has exited.
+        interrupts::disable();
+        g_bootstrap_phase = false;
+        g_started = false;
+        g_current_thread = nullptr;
+        // The idle context will be resumed after cash blocks on terminal input. Save
+        // it with IF set so its HLT remains interruptible during normal scheduling.
+        interrupts::enable();
+        context::switch_context(&g_idle_thread->cpu_context, &g_bootstrap_context);
     }
 }
 
@@ -440,6 +457,9 @@ void sleep(uint64_t ticks) {
             : nullptr;
     thread->reap_next = g_reap_head;
     g_reap_head = thread;
+    if(g_bootstrap_phase && g_bootstrap_remaining != 0) {
+        --g_bootstrap_remaining;
+    }
     auto* next_thread = next_locked();
     next_thread->state = kernel_thread::State::Running;
     prepare_thread(next_thread);
@@ -447,6 +467,30 @@ void sleep(uint64_t ticks) {
     g_current_thread = next_thread;
     context::switch_context(&thread->cpu_context, &next_thread->cpu_context);
     park();
+}
+
+void start_bootstrap() {
+    if(!g_initialized || g_started || g_bootstrap_phase) {
+        panic::halt("scheduler cannot start its bootstrap phase in the current state");
+    }
+
+    interrupts::disable();
+    g_bootstrap_remaining = 0;
+    for(auto* thread = g_ready_head; thread != nullptr; thread = thread->ready_next) {
+        ++g_bootstrap_remaining;
+    }
+    if(g_bootstrap_remaining == 0) {
+        return;
+    }
+
+    g_bootstrap_phase = true;
+    g_started = true;
+    auto* next_thread = next_locked();
+    next_thread->state = kernel_thread::State::Running;
+    prepare_thread(next_thread);
+    reset_time_slice(next_thread);
+    g_current_thread = next_thread;
+    context::switch_context(&g_bootstrap_context, &next_thread->cpu_context);
 }
 
 extern "C" void scheduler_interrupt_exit() {

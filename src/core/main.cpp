@@ -1,6 +1,7 @@
 #include "gdt.hpp"
 #include "idt.hpp"
 #include "interrupt_controller.hpp"
+#include "interrupts.hpp"
 #include "memory.hpp"
 #include "panic.hpp"
 #include "scheduler.hpp"
@@ -89,6 +90,11 @@ extern "C" [[noreturn]] void kmain() {
     self_tests::run_context();
     self_tests::run_scheduler();
 
+    // Scheduler smoke tests are queued but do not run until this boot phase starts.
+    // Returning to kmain after they terminate keeps user-space init out of the queue
+    // until the kernel's startup checks have completed.
+    scheduler::start_bootstrap();
+
     serial::write("Exiting kernel startup.\n");
     if(!self_tests::prepare_init()) {
         panic::halt("could not prepare init process");
@@ -99,7 +105,8 @@ extern "C" [[noreturn]] void kmain() {
     asm volatile("ud2");
 #endif
 
-    // Scheduler::start does not return: after this point execution belongs to a thread,
-    // and the bootstrap stack is retained only as a context-switch origin.
+    // Scheduler::start does not return: after this point execution belongs to init or
+    // another thread, and the bootstrap stack is retained only as a context-switch origin.
+    interrupts::enable();
     scheduler::start();
 }
