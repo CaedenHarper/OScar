@@ -85,8 +85,9 @@ The mutation test additionally creates and removes regular files and nested
 directories, rejects duplicate names and non-empty directory removal, and
 cleans up its entries for repeatable persistent-image runs.
 The user-space `cash` fixture exercises terminal line input, its initial
-`cd`, `pwd`, and `exit` built-ins, and external `/bin/ls` dispatch; general
-argument passing and additional commands remain separate shell milestones.
+`cd`, `pwd`, and `exit` built-ins, external `/bin/ls` dispatch, and the
+bounded-refresh `/bin/top` process monitor; general argument passing and
+additional commands remain separate shell milestones.
 `make test-exception` builds in a separate `build-exception/` directory,
 executes `ud2`, and should print an invalid-opcode diagnostic with register
 state before halting.

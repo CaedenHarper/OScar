@@ -14,6 +14,8 @@ namespace process {
 
 using ProcessId = uint64_t;
 
+constexpr uint32_t kMaximumImagePathLength = 63;
+
 enum class State : uint8_t {
     New,
     Running,
@@ -21,6 +23,14 @@ enum class State : uint8_t {
 };
 
 struct Process;
+
+struct Info {
+    ProcessId id;
+    State state;
+    uint32_t thread_count;
+    uint64_t user_page_count;
+    char image_path[kMaximumImagePathLength + 1];
+};
 
 /** Create a process with a private address space and no threads. */
 Process* create();
@@ -48,5 +58,8 @@ uint32_t thread_count(const Process* process);
 
 /** Return the process exit status, or zero for a null or still-running process. */
 int64_t exit_status(const Process* process);
+
+/** Copy a stable snapshot of the process at zero-based index, or return false at the end. */
+bool info(uint64_t index, Info* output);
 
 } // namespace process

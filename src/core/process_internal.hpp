@@ -46,6 +46,8 @@ struct Process {
     Process* sibling_next;
     synchronization::WaitQueue child_waiters;
     int64_t exit_status;
+    char image_path[kMaximumImagePathLength + 1];
+    Process* all_next;
 };
 
 bool attach_thread(Process* process, kernel_thread::Thread* thread);
@@ -55,6 +57,7 @@ void record_exit(Process* process, int64_t status);
 Process* find_child_locked(Process* parent, ProcessId child_id);
 bool reap_child_locked(Process* parent, Process* child, int64_t* status);
 bool has_parent(const Process* process);
+void set_image_path(Process* process, const char* path);
 
 int32_t allocate_file_descriptor(Process* process, const vfs::File* file);
 vfs::File* file_descriptor(Process* process, uint64_t descriptor);

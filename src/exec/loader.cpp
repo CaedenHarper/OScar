@@ -173,6 +173,9 @@ bool load_path(
     }
 
     const bool loaded = load(image, copied, output_process, output_thread, parent);
+    if(loaded) {
+        process::set_image_path(*output_process, path);
+    }
     (void)kernel_heap::free(image);
     return loaded;
 }

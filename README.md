@@ -31,7 +31,7 @@ that exact child and returns its exit status. After kernel startup, the kernel
 loads `/sbin/init` from the filesystem; `init` then starts `/bin/cash` and
 waits for it in user space. `cash` is the initial user-space interactive shell
 with `cd`, `pwd`, and `exit` built-ins; its first external command is the
-filesystem-backed `/bin/ls` program.
+filesystem-backed `/bin/ls` and bounded-refresh `/bin/top` programs.
 
 ## Repository layout
 

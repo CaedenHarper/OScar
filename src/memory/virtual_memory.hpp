@@ -15,6 +15,7 @@ constexpr uint64_t kNoExecute = 1ULL << 63U;
 
 struct AddressSpace {
     uintptr_t root_physical;
+    uint64_t user_page_count;
 };
 
 /*

@@ -8,6 +8,7 @@ enum {
     kSleepSystemCall = 3,
     kGetPidSystemCall = 4,
     kGetIdSystemCall = 5,
+    kGetProcessInfoSystemCall = 20,
     kOpenSystemCall = 6,
     kReadSystemCall = 7,
     kCloseSystemCall = 8,
@@ -60,6 +61,13 @@ int64_t oscar_getpid(void) {
 int64_t oscar_getid(void) {
     uint64_t call = kGetIdSystemCall;
     __asm__ volatile("int $0x80" : "+a"(call) : : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+// NOLINTNEXTLINE(readability-non-const-parameter) the syscall writes the process snapshot.
+int64_t oscar_get_process_info(uint64_t index, struct oscar_process_info* info) {
+    uint64_t call = kGetProcessInfoSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"(index), "S"(info) : "rcx", "r11", "memory");
     return (int64_t)call;
 }
 

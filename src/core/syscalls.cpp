@@ -34,6 +34,7 @@ constexpr uint64_t kChdir = 16;
 constexpr uint64_t kGetcwd = 17;
 constexpr uint64_t kStat = 18;
 constexpr uint64_t kReaddir = 19;
+constexpr uint64_t kGetProcessInfo = 20;
 constexpr uint64_t kMaximumWriteLength = 4096;
 constexpr uint64_t kMaximumReadLength = 4096;
 constexpr uint64_t kMaximumPathLength = 511;
@@ -64,6 +65,14 @@ struct UserDirectoryEntry {
     uint32_t type;
     uint32_t name_length;
     char name[kMaximumNameLength + 1];
+};
+
+struct UserProcessInfo {
+    uint64_t id;
+    uint32_t state;
+    uint32_t thread_count;
+    uint64_t user_page_count;
+    char image_path[process::kMaximumImagePathLength + 1];
 };
 
 process::Process* current_process() {
@@ -258,6 +267,30 @@ int64_t get_pid() {
 int64_t get_id() {
     auto* thread = scheduler::current();
     return thread == nullptr ? kErrorInvalidArgument : static_cast<int64_t>(kernel_thread::id(thread));
+}
+
+int64_t get_process_info(const syscalls::Frame* frame) {
+    if(frame->rsi == 0 || !user_memory::validate(frame->rsi, sizeof(UserProcessInfo), true)) {
+        return kErrorInvalidArgument;
+    }
+
+    process::Info info = {};
+    if(!process::info(frame->rdi, &info)) {
+        return kErrorNotFound;
+    }
+    UserProcessInfo user_info = {
+        .id = info.id,
+        .state = static_cast<uint32_t>(info.state),
+        .thread_count = info.thread_count,
+        .user_page_count = info.user_page_count,
+        .image_path = {},
+    };
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index, cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    for(uint32_t index = 0; index <= process::kMaximumImagePathLength; ++index) {
+        user_info.image_path[index] = info.image_path[index];
+    }
+    // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index, cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    return user_memory::copy_to_user(frame->rsi, &user_info, sizeof(user_info)) ? 0 : kErrorInvalidArgument;
 }
 
 int64_t open(const syscalls::Frame* frame) {
@@ -586,6 +619,9 @@ extern "C" void handle(Frame* frame) {
             return;
         case kGetId:
             frame->rax = static_cast<uint64_t>(get_id());
+            return;
+        case kGetProcessInfo:
+            frame->rax = static_cast<uint64_t>(get_process_info(frame));
             return;
         case kOpen:
             frame->rax = static_cast<uint64_t>(open(frame));

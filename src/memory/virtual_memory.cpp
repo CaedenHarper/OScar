@@ -264,6 +264,7 @@ bool create_address_space(AddressSpace* address_space) {
     }
 
     address_space->root_physical = root_physical;
+    address_space->user_page_count = 0;
     return true;
 }
 
@@ -290,6 +291,7 @@ void destroy_address_space(AddressSpace* address_space) {
 
     physical_memory::free_page(address_space->root_physical);
     address_space->root_physical = 0;
+    address_space->user_page_count = 0;
 }
 
 bool map_user_page(AddressSpace* address_space, uintptr_t virtual_address, uint64_t flags) {
@@ -312,6 +314,7 @@ bool map_user_page(AddressSpace* address_space, uintptr_t virtual_address, uint6
     if(address_space->root_physical == g_active_address_space.root_physical) {
         invalidate(virtual_address);
     }
+    ++address_space->user_page_count;
     return true;
 }
 
@@ -331,6 +334,9 @@ bool unmap_user_page(AddressSpace* address_space, uintptr_t virtual_address, uin
 
     if(physical_address != nullptr) {
         *physical_address = mapped_physical_address;
+    }
+    if(address_space->user_page_count != 0) {
+        --address_space->user_page_count;
     }
     if(address_space->root_physical == g_active_address_space.root_physical) {
         invalidate(virtual_address);

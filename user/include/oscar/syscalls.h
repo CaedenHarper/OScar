@@ -6,6 +6,20 @@ enum {
     OSCAR_ERROR_NOT_FOUND = -3,
 };
 
+enum {
+    OSCAR_PROCESS_NEW = 0,
+    OSCAR_PROCESS_RUNNING = 1,
+    OSCAR_PROCESS_TERMINATED = 2,
+};
+
+struct oscar_process_info {
+    uint64_t id;
+    uint32_t state;
+    uint32_t thread_count;
+    uint64_t user_page_count;
+    char image_path[64];
+};
+
 /** Open a path for reading, writing, or both; returns a descriptor or a negative error. */
 int64_t oscar_open(const char* path, uint32_t flags);
 
@@ -75,6 +89,9 @@ int64_t oscar_getpid(void);
 
 /** Return the calling thread identifier, or a negative error code. */
 int64_t oscar_getid(void);
+
+/** Copy one zero-based process snapshot into info, or return OSCAR_ERROR_NOT_FOUND at the end. */
+int64_t oscar_get_process_info(uint64_t index, struct oscar_process_info* info);
 
 /** Read up to length bytes from descriptor into buffer. */
 int64_t oscar_read(int64_t descriptor, void* buffer, uint64_t length);

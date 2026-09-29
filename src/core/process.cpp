@@ -18,6 +18,8 @@ namespace {
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables) IDs survive process destruction
 ProcessId g_next_process_id = 1;
+Process* g_process_head = nullptr;
+Process* g_process_tail = nullptr;
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
 } // namespace
@@ -52,6 +54,13 @@ Process* create(Process* parent) {
     process->sibling_next = nullptr;
     synchronization::initialize(&process->child_waiters);
     process->exit_status = 0;
+    constexpr char kUnnamedImagePath[] = "[unnamed]";
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index, cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    for(uint64_t index = 0; index < sizeof(kUnnamedImagePath); ++index) {
+        process->image_path[index] = kUnnamedImagePath[index];
+    }
+    // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index, cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    process->all_next = nullptr;
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
     for(auto& descriptor : process->descriptors) {
         descriptor = {};
@@ -65,6 +74,15 @@ Process* create(Process* parent) {
         (void)destroy(process);
         return nullptr;
     }
+    const interrupts::State previous_state = interrupts::save_and_disable();
+    if(g_process_tail == nullptr) {
+        g_process_head = process;
+        g_process_tail = process;
+    } else {
+        g_process_tail->all_next = process;
+        g_process_tail = process;
+    }
+    interrupts::restore(previous_state);
     return process;
 }
 
@@ -80,6 +98,24 @@ bool destroy(Process* process) {
     if(process->address_space.root_physical != 0) {
         return false;
     }
+    const interrupts::State previous_state = interrupts::save_and_disable();
+    Process* previous = nullptr;
+    for(auto* candidate = g_process_head; candidate != nullptr; candidate = candidate->all_next) {
+        if(candidate != process) {
+            previous = candidate;
+            continue;
+        }
+        if(previous == nullptr) {
+            g_process_head = candidate->all_next;
+        } else {
+            previous->all_next = candidate->all_next;
+        }
+        if(g_process_tail == candidate) {
+            g_process_tail = previous;
+        }
+        break;
+    }
+    interrupts::restore(previous_state);
     return kernel_heap::free(process);
 }
 
@@ -165,6 +201,51 @@ uint32_t thread_count(const Process* process) {
 
 int64_t exit_status(const Process* process) {
     return process == nullptr ? 0 : process->exit_status;
+}
+
+bool info(uint64_t index, Info* output) {
+    if(output == nullptr) {
+        return false;
+    }
+
+    const interrupts::State previous_state = interrupts::save_and_disable();
+    auto* process = g_process_head;
+    while(process != nullptr && index != 0) {
+        process = process->all_next;
+        --index;
+    }
+    if(process == nullptr) {
+        interrupts::restore(previous_state);
+        return false;
+    }
+    output->id = process->id;
+    output->state = process->state;
+    output->thread_count = process->thread_count;
+    output->user_page_count = process->address_space.user_page_count;
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index, cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    for(uint32_t character = 0; character <= kMaximumImagePathLength; ++character) {
+        output->image_path[character] = process->image_path[character];
+        if(process->image_path[character] == '\0') {
+            break;
+        }
+    }
+    // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index, cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    interrupts::restore(previous_state);
+    return true;
+}
+
+void set_image_path(Process* process, const char* path) {
+    if(process == nullptr || path == nullptr) {
+        return;
+    }
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index, cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    uint32_t index = 0;
+    while(path[index] != '\0' && index < kMaximumImagePathLength) {
+        process->image_path[index] = path[index];
+        ++index;
+    }
+    process->image_path[index] = '\0';
+    // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index, cppcoreguidelines-pro-bounds-pointer-arithmetic)
 }
 
 bool set_parent(Process* child, Process* parent) {
