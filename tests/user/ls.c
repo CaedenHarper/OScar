@@ -1,0 +1,42 @@
+#include <oscar/syscalls.h>
+#include <stdint.h>
+
+// NOLINTBEGIN(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
+//             cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+//             cppcoreguidelines-pro-type-member-init)
+
+static uint64_t string_length(const char* string) {
+    uint64_t length = 0;
+    while(string[length] != '\0') {
+        ++length;
+    }
+    return length;
+}
+
+static void write_string(const char* string) {
+    (void)oscar_write(1, string, string_length(string));
+}
+
+void _start(void) {
+    static const char failure[] = "ls: could not read directory.\n";
+    struct oscar_dirent entry;
+    uint64_t index = 0;
+
+    for(;; ++index) {
+        const int64_t result = oscar_readdir(".", index, &entry);
+        if(result == OSCAR_ERROR_NOT_FOUND) {
+            oscar_exit(0);
+        }
+        if(result < 0) {
+            write_string(failure);
+            oscar_exit(1);
+        }
+        (void)oscar_write(1, entry.name, entry.name_length);
+        write_string("\n");
+    }
+    oscar_exit(0);
+}
+
+// NOLINTEND(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
+//           cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+//           cppcoreguidelines-pro-type-member-init)

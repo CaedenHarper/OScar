@@ -7,6 +7,7 @@
 enum {
     kLineCapacity = 128,
     kMaximumArguments = 8,
+    kCommandPathCapacity = 128,
 };
 
 static uint64_t string_length(const char* string) {
@@ -127,6 +128,53 @@ static int run_exit(char* const arguments[], uint32_t argument_count) {
     oscar_exit(status);
 }
 
+static int build_command_path(const char* command, char* path) {
+    uint64_t path_index = 0;
+    uint64_t command_index = 0;
+    if(command[0] == '/') {
+        while(command[command_index] != '\0' && path_index + 1 < kCommandPathCapacity) {
+            path[path_index++] = command[command_index++];
+        }
+    } else {
+        static const char prefix[] = "/bin/";
+        while(prefix[path_index] != '\0' && path_index + 1 < kCommandPathCapacity) {
+            path[path_index] = prefix[path_index];
+            ++path_index;
+        }
+        command_index = 0;
+        while(command[command_index] != '\0' && path_index + 1 < kCommandPathCapacity) {
+            path[path_index++] = command[command_index++];
+        }
+    }
+    if(command[command_index] != '\0') {
+        return 0;
+    }
+    path[path_index] = '\0';
+    return 1;
+}
+
+static void run_external(char* const arguments[], uint32_t argument_count) {
+    static const char unsupported_arguments[] = "cash: external commands do not accept arguments yet.\n";
+    static const char failure[] = "cash: could not start command.\n";
+    static const char exited_failure[] = "cash: command exited unsuccessfully.\n";
+    char path[kCommandPathCapacity];
+    if(argument_count != 1) {
+        write_string(unsupported_arguments);
+        return;
+    }
+    if(!build_command_path(arguments[0], path)) {
+        write_string(failure);
+        return;
+    }
+    const int64_t child_id = oscar_spawn(path);
+    int64_t status = 0;
+    if(child_id < 0 || oscar_waitpid((uint64_t)child_id, &status) < 0) {
+        write_string(failure);
+    } else if(status != 0) {
+        write_string(exited_failure);
+    }
+}
+
 static void execute_line(char* line, uint64_t length) {
     char* arguments[kMaximumArguments];
     const uint64_t terminator = length < kLineCapacity ? length : kLineCapacity - 1;
@@ -143,9 +191,7 @@ static void execute_line(char* line, uint64_t length) {
     } else if(compare_strings(arguments[0], "exit")) {
         (void)run_exit(arguments, argument_count);
     } else {
-        write_string("cash: command not found: ");
-        write_string(arguments[0]);
-        write_string("\n");
+        run_external(arguments, argument_count);
     }
 }
 

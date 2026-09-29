@@ -2,6 +2,10 @@
 
 #include <stdint.h>
 
+enum {
+    OSCAR_ERROR_NOT_FOUND = -3,
+};
+
 /** Open a path for reading, writing, or both; returns a descriptor or a negative error. */
 int64_t oscar_open(const char* path, uint32_t flags);
 
