@@ -21,6 +21,21 @@ static void write_string(const char* string) {
     (void)oscar_write(1, string, string_length(string));
 }
 
+static void write_prompt(void) {
+    static const char prefix[] = "cash:";
+    static const char suffix[] = "$ ";
+    static const char fallback[] = "cash:?$ ";
+    static char directory[kLineCapacity];
+    const int64_t length = oscar_getcwd(directory, sizeof(directory));
+    if(length < 0) {
+        write_string(fallback);
+        return;
+    }
+    write_string(prefix);
+    (void)oscar_write(1, directory, (uint64_t)length);
+    write_string(suffix);
+}
+
 static int compare_strings(const char* left, const char* right) {
     uint64_t index = 0;
     while(left[index] != '\0' && left[index] == right[index]) {
@@ -139,12 +154,11 @@ __attribute__((noreturn)) static void exit_shell(void) {
 }
 
 void _start(void) {
-    static const char prompt[] = "cash> ";
     static const char read_failure[] = "cash: input read failed.\n";
     static char line[kLineCapacity];
 
     for(;;) {
-        (void)oscar_write(1, prompt, sizeof(prompt) - 1);
+        write_prompt();
         const int64_t count = oscar_read(0, line, sizeof(line));
         if(count < 0) {
             (void)oscar_write(1, read_failure, sizeof(read_failure) - 1);
