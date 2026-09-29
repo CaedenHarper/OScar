@@ -18,18 +18,18 @@ __attribute__((noreturn)) static void exit_process(void) {
 
 void _start(void) {
     static const char kStartedMessage[] = "init: user-space initialization started.\n";
-    static const char kTerminalPath[] = "/bin/terminal";
-    static const char kTerminalFailure[] = "init: could not start terminal.\n";
-    static const char kTerminalExit[] = "init: terminal exited.\n";
+    static const char kShellPath[] = "/bin/cash";
+    static const char kShellFailure[] = "init: could not start cash.\n";
+    static const char kShellExit[] = "init: cash exited.\n";
     static const char kExitMessage[] = "init: exiting.\n";
     int64_t terminal_status = 0;
     (void)write_text(kStartedMessage);
-    const int64_t terminal_id = oscar_spawn(kTerminalPath);
-    if(terminal_id < 0 || oscar_waitpid((uint64_t)terminal_id, &terminal_status) < 0) {
-        (void)write_text(kTerminalFailure);
+    const int64_t shell_id = oscar_spawn(kShellPath);
+    if(shell_id < 0 || oscar_waitpid((uint64_t)shell_id, &terminal_status) < 0) {
+        (void)write_text(kShellFailure);
         exit_process();
     }
-    (void)write_text(kTerminalExit);
+    (void)write_text(kShellExit);
     (void)write_text(kExitMessage);
     exit_process();
 }

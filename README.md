@@ -28,8 +28,8 @@ implementation hides the raw `int 0x80` ABI. It does not yet provide
 creation, `mkdir`, `unlink`, empty-directory removal, working-directory navigation,
 metadata lookup, and directory enumeration. `spawn` loads a validated ELF from the mounted filesystem, and `waitpid` waits for
 that exact child and returns its exit status. After kernel startup, the kernel
-loads `/sbin/init` from the filesystem; `init` then starts `/bin/terminal` and
-waits for it in user space.
+loads `/sbin/init` from the filesystem; `init` then starts `/bin/cash` and
+waits for it in user space. `cash` is the initial user-space interactive shell.
 
 ## Repository layout
 
@@ -55,7 +55,7 @@ waits for it in user space.
 
 Limine and its protocol header are downloaded into `deps/` on the first build.
 The build compiles the user ELF fixtures in `tests/user/`—including the basic,
-filesystem-read, computed-prime, second-program, interactive terminal, and
+filesystem-read, computed-prime, second-program, interactive `cash` shell, and
 filesystem-backed `init` success cases plus intentional-crash programs—and
 embeds the test-only images into the kernel smoke tests. The kernel also tests
 malformed ELF metadata directly before scheduling user processes.

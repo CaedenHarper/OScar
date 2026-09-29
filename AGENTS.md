@@ -54,7 +54,7 @@ The source tree is organized as follows:
   context, keyboard, memory/process, scheduler, synchronization, and user-mode tests.
   `self_tests_internal.hpp` contains private cross-test declarations.
 - `tests/user/`: source and linker script for successful, filesystem-read,
-  computed-output, interactive-terminal, filesystem-backed init, and intentional-crash user ELF smoke images. Init and terminal are mounted from the generated ext2 image; the other test images are embedded in the kernel smoke tests. Malformed ELF metadata tests live in
+  computed-output, interactive `cash` shell, filesystem-backed init, and intentional-crash user ELF smoke images. Init and `cash` are mounted from the generated ext2 image; the other test images are embedded in the kernel smoke tests. Malformed ELF metadata tests live in
   `src/tests/` because they exercise validation without loading an image.
 - `user/include/oscar/`: public C headers for the user-space syscall API.
 - `user/lib/`: freestanding C implementations of the user-space syscall wrappers.
@@ -84,8 +84,8 @@ handles reject writes. `mke2fs` and `debugfs` are required.
 The mutation test additionally creates and removes regular files and nested
 directories, rejects duplicate names and non-empty directory removal, and
 cleans up its entries for repeatable persistent-image runs.
-The user terminal fixture also exercises relative paths, `chdir`, `getcwd`,
-metadata lookup, and directory enumeration before entering its input loop.
+The user-space `cash` fixture currently exercises the terminal line-input loop;
+command parsing and external command execution are separate shell milestones.
 `make test-exception` builds in a separate `build-exception/` directory,
 executes `ud2`, and should print an invalid-opcode diagnostic with register
 state before halting.
