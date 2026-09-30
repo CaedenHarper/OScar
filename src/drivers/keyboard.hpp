@@ -10,6 +10,13 @@ enum class Key : uint8_t {
     Enter,
     Backspace,
     Tab,
+    ArrowUp,
+    ArrowDown,
+    ArrowLeft,
+    ArrowRight,
+    Home,
+    End,
+    Delete,
 };
 
 struct Event {

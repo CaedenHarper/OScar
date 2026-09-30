@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 // NOLINTBEGIN(bugprone-easily-swappable-parameters) private helpers here are low risk
+// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables) serial parser state persists between IRQ bytes.
 // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-constant-array-index) we
 // must do pointer arithmetic and array indexing for string handling
 
@@ -32,6 +33,13 @@ constexpr uint8_t kTransmitHoldingRegisterEmpty = 0x20;
 constexpr uint8_t kReceiveDataAvailable = 0x01;
 constexpr uint8_t kReceiveInterruptEnable = 0x01;
 constexpr char kDeleteCharacter = static_cast<char>(0x7f);
+constexpr char kEscapeCharacter = static_cast<char>(0x1b);
+constexpr uint16_t kHomeSequenceParameter = 1;
+constexpr uint16_t kAlternateHomeSequenceParameter = 7;
+constexpr uint16_t kDeleteSequenceParameter = 3;
+constexpr uint16_t kEndSequenceParameter = 4;
+constexpr uint16_t kAlternateEndSequenceParameter = 8;
+constexpr uint16_t kUnsupportedEscapeParameter = 0xffff;
 
 // String formatting
 constexpr unsigned kMaximumUint64DecimalDigits = 20;
@@ -43,6 +51,17 @@ constexpr uint64_t kHexNibbleMask = 0xf;
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) IRQ input state persists between bytes.
 bool g_previous_input_was_carriage_return = false;
+
+enum class EscapeState : uint8_t {
+    None,
+    Escape,
+    ControlSequence,
+    FunctionSequence,
+};
+
+EscapeState g_escape_state = EscapeState::None;
+uint16_t g_escape_parameter = 0;
+bool g_escape_parameter_present = false;
 
 void write_raw(char character) {
     // Polling keeps early diagnostics independent of a serial IRQ handler, which is not
@@ -76,7 +95,126 @@ keyboard::Event make_input_event(char character) {
     };
 }
 
+void submit_navigation_event(keyboard::Key key) {
+    keyboard::submit_event(
+        {.key = key, .character = 0, .pressed = true, .shift = false, .control = false, .alt = false}
+    );
+}
+
+void reset_escape_sequence() {
+    g_escape_state = EscapeState::None;
+    g_escape_parameter = 0;
+    g_escape_parameter_present = false;
+}
+
+keyboard::Key csi_navigation_key(char final_character) {
+    if(final_character == 'A') {
+        return keyboard::Key::ArrowUp;
+    }
+    if(final_character == 'B') {
+        return keyboard::Key::ArrowDown;
+    }
+    if(final_character == 'C') {
+        return keyboard::Key::ArrowRight;
+    }
+    if(final_character == 'D') {
+        return keyboard::Key::ArrowLeft;
+    }
+    if(final_character == 'H') {
+        return keyboard::Key::Home;
+    }
+    if(final_character == 'F') {
+        return keyboard::Key::End;
+    }
+    if(final_character == '~' && g_escape_parameter_present) {
+        if(g_escape_parameter == kHomeSequenceParameter || g_escape_parameter == kAlternateHomeSequenceParameter) {
+            return keyboard::Key::Home;
+        }
+        if(g_escape_parameter == kDeleteSequenceParameter) {
+            return keyboard::Key::Delete;
+        }
+        if(g_escape_parameter == kEndSequenceParameter || g_escape_parameter == kAlternateEndSequenceParameter) {
+            return keyboard::Key::End;
+        }
+    }
+    return keyboard::Key::Unknown;
+}
+
+keyboard::Key function_navigation_key(char final_character) {
+    if(final_character == 'A') {
+        return keyboard::Key::ArrowUp;
+    }
+    if(final_character == 'B') {
+        return keyboard::Key::ArrowDown;
+    }
+    if(final_character == 'C') {
+        return keyboard::Key::ArrowRight;
+    }
+    if(final_character == 'D') {
+        return keyboard::Key::ArrowLeft;
+    }
+    if(final_character == 'H') {
+        return keyboard::Key::Home;
+    }
+    if(final_character == 'F') {
+        return keyboard::Key::End;
+    }
+    return keyboard::Key::Unknown;
+}
+
+bool consume_escape_character(char character) {
+    if(g_escape_state == EscapeState::None) {
+        if(character == kEscapeCharacter) {
+            g_escape_state = EscapeState::Escape;
+            return true;
+        }
+        return false;
+    }
+
+    if(g_escape_state == EscapeState::Escape) {
+        if(character == '[') {
+            g_escape_state = EscapeState::ControlSequence;
+            return true;
+        }
+        if(character == 'O') {
+            g_escape_state = EscapeState::FunctionSequence;
+            return true;
+        }
+        // An isolated or unsupported escape is discarded; reprocess the current byte
+        // so a normal character immediately following it is not lost.
+        reset_escape_sequence();
+        return false;
+    }
+
+    if(g_escape_state == EscapeState::ControlSequence && character >= '0' && character <= '9') {
+        g_escape_parameter_present = true;
+        g_escape_parameter = static_cast<uint16_t>((g_escape_parameter * kDecimalBase) + (character - '0'));
+        return true;
+    }
+
+    if(g_escape_state == EscapeState::ControlSequence && character == ';') {
+        // Modifier-bearing CSI sequences are placeholders for now. Keep consuming
+        // their parameter bytes so they cannot leak into the shell as text, while
+        // still recognizing the final arrow direction below.
+        g_escape_parameter_present = true;
+        g_escape_parameter = kUnsupportedEscapeParameter;
+        return true;
+    }
+
+    const keyboard::Key key = g_escape_state == EscapeState::ControlSequence ? csi_navigation_key(character)
+                                                                             : function_navigation_key(character);
+    reset_escape_sequence();
+    if(key != keyboard::Key::Unknown) {
+        submit_navigation_event(key);
+    }
+    return true;
+}
+
 void submit_input_character(char character) {
+    if(consume_escape_character(character)) {
+        return;
+    }
+
     // Host terminal drivers commonly send Enter as CRLF. The CR already completes
     // the line, so discard only its paired LF while preserving standalone LF input.
     if(character == '\n' && g_previous_input_was_carriage_return) {
@@ -92,6 +230,8 @@ void submit_input_character(char character) {
 namespace serial {
 
 void initialize() {
+    reset_escape_sequence();
+    g_previous_input_was_carriage_return = false;
     io::out8(kCom1 + kInterruptEnableRegister, kDisableInterrupts); // Disable interrupts.
     io::out8(kCom1 + kLineControlRegister, kEnableDivisorLatch); // Enable divisor latch.
     io::out8(kCom1 + kDataRegister, kBaudDivisorLow); // 38400 baud divisor, low byte.
@@ -167,4 +307,5 @@ extern "C" void serial_irq_handler() {
 }
 
 // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-constant-array-index)
+// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 // NOLINTEND(bugprone-easily-swappable-parameters) private helpers here are low risk
