@@ -25,6 +25,9 @@ enum {
     kGetcwdSystemCall = 17,
     kStatSystemCall = 18,
     kReaddirSystemCall = 19,
+    kDupSystemCall = 23,
+    kDup2SystemCall = 24,
+    kPipeSystemCall = 25,
 };
 
 int64_t oscar_write(int64_t descriptor, const void* buffer, uint64_t length) {
@@ -153,6 +156,29 @@ int64_t oscar_seek(int64_t descriptor, uint64_t offset) {
 int64_t oscar_close(int64_t descriptor) {
     uint64_t call = kCloseSystemCall;
     __asm__ volatile("int $0x80" : "+a"(call) : "D"((uint64_t)descriptor) : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+int64_t oscar_dup(int64_t descriptor) {
+    uint64_t call = kDupSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"((uint64_t)descriptor) : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters) syscall ABI uses old descriptor then target.
+int64_t oscar_dup2(int64_t descriptor, int64_t target) {
+    uint64_t call = kDup2SystemCall;
+    __asm__ volatile("int $0x80"
+                     : "+a"(call)
+                     : "D"((uint64_t)descriptor), "S"((uint64_t)target)
+                     : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+// NOLINTNEXTLINE(readability-non-const-parameter) the syscall writes both descriptors.
+int64_t oscar_pipe(int64_t descriptors[2]) {
+    uint64_t call = kPipeSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"(descriptors) : "rcx", "r11", "memory");
     return (int64_t)call;
 }
 

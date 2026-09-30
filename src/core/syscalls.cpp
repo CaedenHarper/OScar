@@ -39,6 +39,9 @@ constexpr uint64_t kStat = 18;
 constexpr uint64_t kReaddir = 19;
 constexpr uint64_t kGetProcessInfo = 20;
 constexpr uint64_t kKill = 21;
+constexpr uint64_t kDup = 23;
+constexpr uint64_t kDup2 = 24;
+constexpr uint64_t kPipe = 25;
 #ifdef OSCAR_TEST_SUITE
 constexpr uint64_t kTestComplete = 22;
 constexpr uint16_t kTestExitPort = 0xf4;
@@ -88,6 +91,44 @@ struct UserProcessInfo {
 process::Process* current_process() {
     auto* thread = scheduler::current();
     return kernel_thread::owner_process(thread);
+}
+
+int64_t write_pipe(const syscalls::Frame* frame, process::Process* owner);
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+int64_t read_pipe(const syscalls::Frame* frame, process::Process* owner) {
+    auto* pipe = process::pipe_descriptor(owner, frame->rdi, nullptr);
+    if(pipe == nullptr || frame->rdx == 0) {
+        return pipe == nullptr ? kErrorBadDescriptor : 0;
+    }
+    uint64_t total = 0;
+    while(total < frame->rdx) {
+        uint8_t byte = 0;
+        const interrupts::State previous_state = interrupts::save_and_disable();
+        if(pipe->bytes != 0) {
+            // The ring index is bounded by kPipeCapacity while interrupts are disabled.
+            byte = pipe->buffer[pipe->read_position]; // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+            pipe->read_position = (pipe->read_position + 1) % process::kPipeCapacity;
+            --pipe->bytes;
+            (void)scheduler::wake_all(&pipe->write_waiters);
+            interrupts::restore(previous_state);
+            if(!user_memory::copy_to_user(frame->rsi + total, &byte, sizeof(byte))) {
+                return total == 0 ? kErrorInvalidArgument : static_cast<int64_t>(total);
+            }
+            ++total;
+            continue;
+        }
+        if(pipe->writers == 0) {
+            interrupts::restore(previous_state);
+            return static_cast<int64_t>(total);
+        }
+        const bool blocked = scheduler::block_current(&pipe->read_waiters);
+        interrupts::restore(previous_state);
+        if(!blocked) {
+            return total == 0 ? kErrorIo : static_cast<int64_t>(total);
+        }
+    }
+    return static_cast<int64_t>(total);
 }
 
 int64_t translate_vfs_status(vfs::Status status) {
@@ -305,6 +346,9 @@ int64_t write(const syscalls::Frame* frame) {
     const process::DescriptorKind kind = process::descriptor_kind(owner, frame->rdi);
     if(kind == process::DescriptorKind::File) {
         return write_file_descriptor(frame, owner);
+    }
+    if(kind == process::DescriptorKind::PipeWrite) {
+        return write_pipe(frame, owner);
     }
     if(kind != process::DescriptorKind::StandardOutput && kind != process::DescriptorKind::StandardError) {
         return kErrorBadDescriptor;
@@ -573,12 +617,94 @@ int64_t read(const syscalls::Frame* frame) {
             return read_terminal(frame);
         case process::DescriptorKind::File:
             return read_file(frame, owner);
+        case process::DescriptorKind::PipeRead:
+            return read_pipe(frame, owner);
         case process::DescriptorKind::Invalid:
         case process::DescriptorKind::StandardOutput:
         case process::DescriptorKind::StandardError:
+        case process::DescriptorKind::PipeWrite:
             return kErrorBadDescriptor;
     }
     return kErrorBadDescriptor;
+}
+
+int64_t write_pipe(const syscalls::Frame* frame, process::Process* owner) {
+    auto* pipe = process::pipe_descriptor(owner, frame->rdi, nullptr);
+    if(pipe == nullptr) {
+        return kErrorBadDescriptor;
+    }
+    if(frame->rdx == 0) {
+        return 0;
+    }
+    uint64_t total = 0;
+    while(total < frame->rdx) {
+        uint8_t byte = 0;
+        if(!user_memory::copy_from_user(&byte, frame->rsi + total, sizeof(byte))) {
+            return total == 0 ? kErrorInvalidArgument : static_cast<int64_t>(total);
+        }
+        const interrupts::State previous_state = interrupts::save_and_disable();
+        if(pipe->readers == 0) {
+            interrupts::restore(previous_state);
+            return total == 0 ? kErrorIo : static_cast<int64_t>(total);
+        }
+        if(pipe->bytes == process::kPipeCapacity) {
+            const bool blocked = scheduler::block_current(&pipe->write_waiters);
+            interrupts::restore(previous_state);
+            if(!blocked) {
+                return total == 0 ? kErrorIo : static_cast<int64_t>(total);
+            }
+            continue;
+        }
+        pipe->buffer[pipe->write_position] = byte; // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+        pipe->write_position = (pipe->write_position + 1) % process::kPipeCapacity;
+        ++pipe->bytes;
+        (void)scheduler::wake_all(&pipe->read_waiters);
+        interrupts::restore(previous_state);
+        ++total;
+    }
+    return static_cast<int64_t>(total);
+}
+
+int64_t duplicate(const syscalls::Frame* frame, bool explicit_target) {
+    auto* owner = current_process();
+    if(owner == nullptr || frame->rdi >= process::kMaximumFileDescriptors) {
+        return kErrorBadDescriptor;
+    }
+    uint64_t target = frame->rsi;
+    if(!explicit_target) {
+        target = process::kMaximumFileDescriptors;
+        for(uint64_t descriptor = process::kFirstFileDescriptor; descriptor < process::kMaximumFileDescriptors;
+            ++descriptor) {
+            if(process::descriptor_kind(owner, descriptor) == process::DescriptorKind::Invalid) {
+                target = descriptor;
+                break;
+            }
+        }
+    }
+    if(target >= process::kMaximumFileDescriptors) {
+        return kErrorIo;
+    }
+    const int32_t result = process::duplicate_descriptor(owner, frame->rdi, target);
+    return result < 0 ? kErrorBadDescriptor : result;
+}
+
+int64_t create_pipe(const syscalls::Frame* frame) {
+    auto* owner = current_process();
+    if(owner == nullptr || !user_memory::validate(frame->rdi, sizeof(int64_t) * 2, true)) {
+        return kErrorInvalidArgument;
+    }
+    int64_t descriptors[2] = {-1, -1};
+    if(!process::create_pipe(owner, &descriptors[0]) ||
+       !user_memory::copy_to_user(frame->rdi, &descriptors[0], sizeof(descriptors))) {
+        if(descriptors[0] >= 0) {
+            (void)process::close_file_descriptor(owner, static_cast<uint64_t>(descriptors[0]));
+        }
+        if(descriptors[1] >= 0) {
+            (void)process::close_file_descriptor(owner, static_cast<uint64_t>(descriptors[1]));
+        }
+        return kErrorIo;
+    }
+    return 0;
 }
 
 int64_t close(const syscalls::Frame* frame) {
@@ -719,6 +845,15 @@ extern "C" void handle(Frame* frame) {
             return;
         case kKill:
             frame->rax = static_cast<uint64_t>(kill_process(frame));
+            return;
+        case kDup:
+            frame->rax = static_cast<uint64_t>(duplicate(frame, false));
+            return;
+        case kDup2:
+            frame->rax = static_cast<uint64_t>(duplicate(frame, true));
+            return;
+        case kPipe:
+            frame->rax = static_cast<uint64_t>(create_pipe(frame));
             return;
 #ifdef OSCAR_TEST_SUITE
         case kTestComplete:

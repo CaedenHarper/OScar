@@ -23,11 +23,27 @@ enum class DescriptorKind : uint8_t {
     StandardOutput,
     StandardError,
     File,
+    PipeRead,
+    PipeWrite,
+};
+
+constexpr uint32_t kPipeCapacity = 4096;
+
+struct Pipe {
+    uint8_t buffer[kPipeCapacity];
+    uint32_t read_position;
+    uint32_t write_position;
+    uint32_t bytes;
+    uint32_t readers;
+    uint32_t writers;
+    synchronization::WaitQueue read_waiters;
+    synchronization::WaitQueue write_waiters;
 };
 
 struct FileDescriptor {
     DescriptorKind kind;
     vfs::File file;
+    Pipe* pipe;
     bool open;
 };
 
@@ -60,7 +76,19 @@ bool has_parent(const Process* process);
 void set_image_path(Process* process, const char* path);
 bool inherit_descriptors(Process* child, const Process* parent);
 
+/** Allocate the lowest unused descriptor for an open VFS file. */
 int32_t allocate_file_descriptor(Process* process, const vfs::File* file);
+
+/** Create a reference-counted in-memory pipe and return its read/write descriptors. */
+bool create_pipe(Process* process, int64_t descriptors[2]);
+
+/** Duplicate a descriptor into target, closing the previous target when open. */
+int32_t duplicate_descriptor(Process* process, uint64_t descriptor, uint64_t target);
+
+/** Return a pipe endpoint and optionally its read/write kind. */
+Pipe* pipe_descriptor(Process* process, uint64_t descriptor, DescriptorKind* kind);
+
+/** Return a writable pointer to a regular-file descriptor, or null for other kinds. */
 vfs::File* file_descriptor(Process* process, uint64_t descriptor);
 DescriptorKind descriptor_kind(const Process* process, uint64_t descriptor);
 bool close_file_descriptor(Process* process, uint64_t descriptor);

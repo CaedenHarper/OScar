@@ -4,6 +4,7 @@
 // NOLINTBEGIN(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp, readability-magic-numbers)
 
 static const int64_t kKilledStatus = 137;
+static const int64_t kPipeTargetDescriptor = 7;
 
 static uint64_t write_text(const char* text) {
     uint64_t length = 0;
@@ -26,6 +27,8 @@ void _start(void) {
     static const char kArgumentTestPath[] = "/bin/argv_test";
     static const char kArgumentTestFailure[] = "test init: argv/descriptor test failed.\n";
     static const char kArgumentTestPassed[] = "test init: argv/descriptor test passed.\n";
+    static const char kPipeTestFailure[] = "test init: pipe/descriptor duplication test failed.\n";
+    static const char kPipeTestPassed[] = "test init: pipe/descriptor duplication test passed.\n";
     static const char kKillTestPath[] = "/bin/kill_target";
     static const char kKillTestFailure[] = "test init: cross-process kill test failed.\n";
     static const char kKillTestPassed[] = "test init: cross-process kill test passed.\n";
@@ -51,6 +54,40 @@ void _start(void) {
     }
     (void)oscar_close(inherited_descriptor);
     (void)write_text(kArgumentTestPassed);
+
+    int64_t pipe_descriptors[2] = {-1, -1};
+    char pipe_message[] = "pipe ok";
+    char pipe_result[sizeof(pipe_message)];
+    for(uint64_t index = 0; index < sizeof(pipe_result); ++index) {
+        pipe_result[index] = '\0';
+    }
+    const int64_t pipe_result_descriptor = oscar_pipe(pipe_descriptors);
+    const int64_t duplicate_read_descriptor = pipe_result_descriptor == 0 ? oscar_dup(pipe_descriptors[0]) : -1;
+    const int64_t duplicate_write_descriptor =
+        pipe_result_descriptor == 0 ? oscar_dup2(pipe_descriptors[1], kPipeTargetDescriptor) : -1;
+    const int64_t write_result = duplicate_write_descriptor >= 0
+                                     ? oscar_write(duplicate_write_descriptor, pipe_message, sizeof(pipe_message) - 1)
+                                     : -1;
+    const int64_t read_result = duplicate_read_descriptor >= 0
+                                    ? oscar_read(duplicate_read_descriptor, pipe_result, sizeof(pipe_result) - 1)
+                                    : -1;
+    int pipe_contents_match = 1;
+    for(uint64_t index = 0; index < sizeof(pipe_message) - 1; ++index) {
+        if(pipe_result[index] != pipe_message[index]) {
+            pipe_contents_match = 0;
+        }
+    }
+    if(pipe_result_descriptor < 0 || duplicate_read_descriptor < 0 ||
+       duplicate_write_descriptor != kPipeTargetDescriptor || write_result != (int64_t)(sizeof(pipe_message) - 1) ||
+       read_result != write_result || !pipe_contents_match) {
+        (void)write_text(kPipeTestFailure);
+        exit_process();
+    }
+    (void)oscar_close(pipe_descriptors[0]);
+    (void)oscar_close(pipe_descriptors[1]);
+    (void)oscar_close(duplicate_read_descriptor);
+    (void)oscar_close(duplicate_write_descriptor);
+    (void)write_text(kPipeTestPassed);
 
     const int64_t kill_test_id = oscar_spawn(kKillTestPath);
     if(kill_test_id < 0 || oscar_kill((uint64_t)kill_test_id) < 0 ||

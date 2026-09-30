@@ -109,6 +109,15 @@ int64_t oscar_seek(int64_t descriptor, uint64_t offset);
 /** Close a file descriptor. */
 int64_t oscar_close(int64_t descriptor);
 
+/** Duplicate a descriptor into the lowest available descriptor slot. */
+int64_t oscar_dup(int64_t descriptor);
+
+/** Duplicate a descriptor into target, closing target first when necessary. */
+int64_t oscar_dup2(int64_t descriptor, int64_t target);
+
+/** Create a pipe and write its read and write descriptors into descriptors[0] and descriptors[1]. */
+int64_t oscar_pipe(int64_t descriptors[2]);
+
 /** Create a child process by loading a filesystem-backed ELF path without arguments. */
 int64_t oscar_spawn(const char* path);
 

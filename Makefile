@@ -105,7 +105,7 @@ test-run: $(ISO) $(VIRTIO_DISK)
 	@echo "All kernel and user-space tests passed."
 
 lint:
-	bear --output compile_commands.json -- $(MAKE) clean all OSCAR_TEST_SUITE=1
+	bear --output compile_commands.json -- $(MAKE) BUILD_DIR=build-lint clean all OSCAR_TEST_SUITE=1
 	clang-format --dry-run --Werror $(LINT_ALL_FILES)
 	clang-tidy $(LINT_CPP_FILES) --config-file=.clang-tidy --warnings-as-errors="*"
 	clang-tidy --extra-arg-before=-x --extra-arg-before=c $(LINT_C_FILES) $(LINT_C_HEADERS) --config-file=.clang-tidy --warnings-as-errors="*"

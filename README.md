@@ -6,7 +6,7 @@ a physical page allocator, manages kernel and process address-space structures a
 validates user memory ranges, installs an IDT, GDT/TSS, and PIT timer
 interrupts, creates ring-3 user threads with private kernel stacks, handles an
 initial `int 0x80` system-call ABI (`write`, `exit`, `yield`, `sleep`, `getpid`,
-`getid`, `spawn`, and `waitpid`, plus filesystem `open`, `create`, `read`, `write`,
+`getid`, `spawn`, `waitpid`, `dup`, `dup2`, and `pipe`, plus filesystem `open`, `create`, `read`, `write`,
 `seek`, `close`, `mkdir`, `unlink`, and `rmdir`),
 `chdir`, `getcwd`, `stat`, and `readdir`,
 loads validated in-memory ELF64 executables with `PT_LOAD` segments, including
@@ -79,7 +79,7 @@ basic filesystem fixtures.
 suite in headless QEMU, and succeeds only after it sees `OSCAR TESTS PASSED`.
 The test image includes the large indirect-block fixture, 300-entry directory,
 test executables, and test-only `/sbin/init`. The test suite covers filesystem
-read/write/mutation behavior, malformed and crashing ELFs, scheduling,
+read/write/mutation behavior, descriptor duplication and pipes, malformed and crashing ELFs, scheduling,
 interrupts, synchronization, process creation, descriptor inheritance, and
 shell commands. Install `mke2fs` and `debugfs` in addition to the tools below.
 
@@ -111,7 +111,7 @@ The repository keeps its editor, lint, and formatting configuration in
 `.clangd`, `.clang-tidy`, and `.clang-format`. From the repository root, run:
 
 ```sh
-bear --output compile_commands.json -- make clean all OSCAR_TEST_SUITE=1
+bear --output compile_commands.json -- make BUILD_DIR=build-lint clean all OSCAR_TEST_SUITE=1
 clang-format --dry-run --Werror $(find src tests user -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \))
 clang-tidy $(find src tests user -type f \( -name '*.cpp' -o -name '*.hpp' \)) --config-file=.clang-tidy --warnings-as-errors="*"
 clang-tidy --extra-arg-before=-x --extra-arg-before=c $(find src tests user -type f \( -name '*.c' -o -name '*.h' \)) --config-file=.clang-tidy --warnings-as-errors="*"

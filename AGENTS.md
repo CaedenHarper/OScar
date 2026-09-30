@@ -10,7 +10,7 @@ pages and basic virtual-memory mappings, provides a kernel heap, installs the
 GDT/TSS, Interrupt Descriptor Table, and hardware timer interrupts, creates
   ring-3 user threads, handles an initial system-call ABI including writable
   regular-file and basic directory operations, working directories, metadata and
-  enumeration plus `spawn`/`waitpid`, loads validated
+  enumeration, descriptor duplication, in-memory pipes, and `spawn`/`waitpid`, loads validated
 in-memory ELF64 executables, provides kernel synchronization primitives and
 process structures, runs boot-time smoke tests, reports exception register
 state, and halts.
@@ -99,7 +99,8 @@ The user-space `cash` fixture exercises terminal line input, its `cd`, `pwd`,
 dispatch, and the bounded-refresh `/bin/top` process monitor. The
 `shell_commands` fixture validates the filesystem-command results and process
 inspection during init startup. The `argv_test` fixture validates initial
-`argc`/`argv` construction and descriptor inheritance. External command
+`argc`/`argv` construction, descriptor inheritance, and pipe/descriptor-duplication
+semantics. External command
 dispatch now passes argument vectors; signal delivery remains a separate
 shell milestone.
 `make test-exception` builds in a separate `build-exception/` directory,
@@ -121,7 +122,7 @@ The repository's tool configuration is kept in these files:
 Run the available C++ formatting and lint checks from the repository root:
 
 ```sh
-bear --output compile_commands.json -- make clean all OSCAR_TEST_SUITE=1
+bear --output compile_commands.json -- make BUILD_DIR=build-lint clean all OSCAR_TEST_SUITE=1
 clang-format --dry-run --Werror $(find src tests user -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \))
 clang-tidy $(find src tests user -type f \( -name '*.cpp' -o -name '*.hpp' \)) --config-file=.clang-tidy --warnings-as-errors="*"
 clang-tidy --extra-arg-before=-x --extra-arg-before=c $(find src tests user -type f \( -name '*.c' -o -name '*.h' \)) --config-file=.clang-tidy --warnings-as-errors="*"
