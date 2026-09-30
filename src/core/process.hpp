@@ -47,6 +47,9 @@ bool destroy(Process* process);
 /** Return the stable process identifier, or zero for a null process. */
 ProcessId id(const Process* process);
 
+/** Find a live process by identifier, or return nullptr if it is not present. */
+Process* find(ProcessId process_id);
+
 /** Return the process lifecycle state, or State::Terminated for a null process. */
 State state(const Process* process);
 

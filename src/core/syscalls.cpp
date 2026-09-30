@@ -127,6 +127,50 @@ bool copy_path(uintptr_t user_path, char* path) {
 }
 
 // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-constant-array-index,
+//             cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay,
+//             readability-math-missing-parentheses)
+bool copy_spawn_arguments(uintptr_t user_arguments, char* storage, const char** arguments, uint32_t* argument_count) {
+    if(storage == nullptr || arguments == nullptr || argument_count == nullptr) {
+        return false;
+    }
+    *argument_count = 0;
+    if(user_arguments == 0) {
+        return true;
+    }
+
+    uint32_t storage_length = 0;
+    for(uint32_t index = 0; index < loader::kMaximumArguments; ++index) {
+        uintptr_t user_argument = 0;
+        const uintptr_t pointer_address = user_arguments + index * sizeof(uintptr_t);
+        if(pointer_address < user_arguments ||
+           !user_memory::copy_from_user(&user_argument, pointer_address, sizeof(user_argument))) {
+            return false;
+        }
+        if(user_argument == 0) {
+            *argument_count = index;
+            return true;
+        }
+        arguments[index] = storage + storage_length;
+        for(;;) {
+            if(storage_length >= loader::kMaximumArgumentBytes ||
+               !user_memory::copy_from_user(storage + storage_length, user_argument, 1)) {
+                return false;
+            }
+            if(storage[storage_length] == '\0') {
+                ++storage_length;
+                break;
+            }
+            ++storage_length;
+            ++user_argument;
+        }
+    }
+    return false;
+}
+// NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-constant-array-index,
+//           cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay,
+//           readability-math-missing-parentheses)
+
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-constant-array-index,
 //             cppcoreguidelines-avoid-magic-numbers, readability-function-cognitive-complexity,
 //             readability-math-missing-parentheses)
 bool normalize_process_path(const process::Process* owner, const char* input, char* output) {
@@ -298,13 +342,20 @@ int64_t get_process_info(const syscalls::Frame* frame) {
 int64_t kill_process(const syscalls::Frame* frame) {
     auto* thread = scheduler::current();
     auto* owner = kernel_thread::owner_process(thread);
-    // There is no signal or cross-thread cancellation path yet. Restricting this first
-    // implementation to self-termination avoids leaving another thread on a scheduler
-    // or wait queue while its address space is being reclaimed.
-    if(owner == nullptr || frame->rdi != process::id(owner)) {
+    if(owner == nullptr || frame->rdi == 0) {
         return kErrorInvalidArgument;
     }
-    scheduler::thread_exit(thread, kKillExitStatus);
+    auto* target = process::find(frame->rdi);
+    if(target == nullptr) {
+        return kErrorNotFound;
+    }
+    if(target == owner) {
+        scheduler::thread_exit(thread, kKillExitStatus);
+    }
+    // The scheduler removes ready and wait-queue threads before detaching their address
+    // space. This ordering prevents a killed process from being selected after CR3
+    // teardown has begun.
+    return scheduler::terminate_process(target, kKillExitStatus) ? 0 : kErrorIo;
 }
 
 int64_t open(const syscalls::Frame* frame) {
@@ -539,10 +590,19 @@ int64_t spawn(const syscalls::Frame* frame) {
         return kErrorInvalidArgument;
     }
 
+    char argument_storage[loader::kMaximumArgumentBytes];
+    const char* arguments[loader::kMaximumArguments];
+    uint32_t argument_count = 0;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
+    if(!copy_spawn_arguments(frame->rsi, &argument_storage[0], &arguments[0], &argument_count)) {
+        return kErrorInvalidArgument;
+    }
+
     process::Process* child = nullptr;
     kernel_thread::Thread* thread = nullptr;
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
-    if(!loader::load_path(path, parent, &child, &thread) || child == nullptr || thread == nullptr) {
+    if(!loader::load_path(path, parent, arguments, argument_count, &child, &thread) || child == nullptr ||
+       thread == nullptr) {
         return kErrorNotFound;
     }
 

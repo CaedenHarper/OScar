@@ -57,6 +57,8 @@ context_start:
 context_start_user:
     # Interrupts are disabled while the kernel constructs the privilege-transition frame.
     cli
+    movq %r14, %rdi
+    movq %r15, %rsi
     movq $0x202, %rax
     pushq $0x23
     pushq %r13

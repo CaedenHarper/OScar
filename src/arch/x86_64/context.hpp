@@ -61,8 +61,21 @@ bool initialize(CpuContext* context, uintptr_t stack_top, Entry entry, void* arg
 
 /**
  * Prepare a kernel context that enters a mapped user instruction pointer with a mapped
- * user stack. Both addresses must be canonical user addresses; this does not create mappings.
+ * user stack. The user entry receives argument_count and argument_vector in the C
+ * entry registers. Both addresses must be canonical user addresses; this does not create mappings.
  */
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 bool initialize_user(CpuContext* context, uintptr_t stack_top, uintptr_t user_entry, uintptr_t user_stack);
+
+/** Prepare a user context with explicit C entry arguments in rdi and rsi. */
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+bool initialize_user(
+    CpuContext* context,
+    uintptr_t stack_top,
+    uintptr_t user_entry,
+    uintptr_t user_stack,
+    uint64_t argument_count,
+    uintptr_t argument_vector
+);
 
 } // namespace context

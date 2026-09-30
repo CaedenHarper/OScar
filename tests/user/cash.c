@@ -356,19 +356,19 @@ static int build_command_path(const char* command, char* path) {
 }
 
 static void run_external(char* const arguments[], uint32_t argument_count) {
-    static const char unsupported_arguments[] = "cash: external commands do not accept arguments yet.\n";
     static const char failure[] = "cash: could not start command.\n";
     static const char exited_failure[] = "cash: command exited unsuccessfully.\n";
     char path[kCommandPathCapacity];
-    if(argument_count != 1) {
-        write_string(unsupported_arguments);
-        return;
-    }
     if(!build_command_path(arguments[0], path)) {
         write_string(failure);
         return;
     }
-    const int64_t child_id = oscar_spawn(path);
+    const char* child_arguments[kMaximumArguments + 1];
+    for(uint32_t index = 0; index < argument_count; ++index) {
+        child_arguments[index] = arguments[index];
+    }
+    child_arguments[argument_count] = 0;
+    const int64_t child_id = oscar_spawn_args(path, child_arguments);
     int64_t status = 0;
     if(child_id < 0 || oscar_waitpid((uint64_t)child_id, &status) < 0) {
         write_string(failure);

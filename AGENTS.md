@@ -91,8 +91,10 @@ The user-space `cash` fixture exercises terminal line input, its `cd`, `pwd`,
 `echo`, `help`, and `exit` built-ins, filesystem commands, external `/bin/ls`
 dispatch, and the bounded-refresh `/bin/top` process monitor. The
 `shell_commands` fixture validates the filesystem-command results and process
-inspection during init startup. General external argument passing and
-cross-process signals remain separate shell milestones.
+inspection during init startup. The `argv_test` fixture validates initial
+`argc`/`argv` construction and descriptor inheritance. External command
+dispatch now passes argument vectors; signal delivery remains a separate
+shell milestone.
 `make test-exception` builds in a separate `build-exception/` directory,
 executes `ud2`, and should print an invalid-opcode diagnostic with register
 state before halting.

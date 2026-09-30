@@ -133,13 +133,25 @@ Thread* create(process::Process* process, context::Entry entry, void* argument) 
 }
 
 Thread* create_user(process::Process* process, uintptr_t user_entry, uintptr_t user_stack) {
+    return create_user(process, user_entry, user_stack, 0, 0);
+}
+
+Thread* create_user(
+    process::Process* process,
+    uintptr_t user_entry,
+    uintptr_t user_stack,
+    uint64_t argument_count,
+    uintptr_t argument_vector
+) {
     if(process == nullptr) {
         return nullptr;
     }
 
     auto* thread = create(process, user_placeholder, nullptr, kDefaultStackSize);
     if(thread == nullptr ||
-       !context::initialize_user(&thread->cpu_context, thread->stack_top, user_entry, user_stack)) {
+       !context::initialize_user(
+           &thread->cpu_context, thread->stack_top, user_entry, user_stack, argument_count, argument_vector
+       )) {
         if(thread != nullptr) {
             (void)destroy(thread);
         }

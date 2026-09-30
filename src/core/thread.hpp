@@ -56,6 +56,15 @@ Thread* create(process::Process* process, context::Entry entry, void* argument);
  */
 Thread* create_user(process::Process* process, uintptr_t user_entry, uintptr_t user_stack);
 
+/** Create a user-mode thread and provide argc/argv values in its C entry registers. */
+Thread* create_user(
+    process::Process* process,
+    uintptr_t user_entry,
+    uintptr_t user_stack,
+    uint64_t argument_count,
+    uintptr_t argument_vector
+);
+
 /** Return whether the thread is initialized to enter ring 3. */
 bool is_user(const Thread* thread);
 

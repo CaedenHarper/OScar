@@ -25,7 +25,9 @@ prints diagnostics to QEMU's serial console, and idles.
 This is a kernel seed, not yet an operating system. C user programs can use
 the public freestanding API in `user/include/oscar/syscalls.h`; its library
 implementation hides the raw `int 0x80` ABI. It does not yet provide
-`fork`, dynamic linking, or rename support. The filesystem now supports regular-file
+`fork`, dynamic linking, or rename support. `spawn` now constructs an initial
+`argc`/`argv` user stack and inherits the parent's descriptor table. The
+filesystem now supports regular-file
 creation, `mkdir`, `unlink`, empty-directory removal, working-directory navigation,
 metadata lookup, and directory enumeration. `spawn` loads a validated ELF from the mounted filesystem, and `waitpid` waits for
 that exact child and returns its exit status. After kernel startup, the kernel
@@ -33,11 +35,11 @@ loads `/sbin/init` from the filesystem; `init` then starts `/bin/cash` and
 waits for it in user space. `cash` is the initial user-space interactive shell
 with `cd`, `pwd`, `echo`, `help`, and `exit` built-ins. Its current filesystem
 and process commands are implemented in the shell using the public syscall
-API: `mkdir`, `touch`, `cp`, `mv`, `rm`, `cat`, `ps`, and the self-termination
-form of `kill`. The shell also dispatches filesystem-backed `/bin/ls` and
+API: `mkdir`, `touch`, `cp`, `mv`, `rm`, `cat`, `ps`, and `kill`. The shell also dispatches filesystem-backed `/bin/ls` and
 bounded-refresh `/bin/top`. The shell command smoke program exercises the
 filesystem operations and process inspection during init startup; general
-external argument passing and cross-process signals remain later milestones.
+external command dispatch now passes argument vectors to child programs, while
+signal delivery remains a later milestone.
 
 ## Repository layout
 

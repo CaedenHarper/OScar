@@ -93,7 +93,7 @@ int64_t oscar_getid(void);
 /** Copy one zero-based process snapshot into info, or return OSCAR_ERROR_NOT_FOUND at the end. */
 int64_t oscar_get_process_info(uint64_t index, struct oscar_process_info* info);
 
-/** Terminate the calling process when process_id matches its PID. */
+/** Terminate the process identified by process_id, or return an error for an invalid target. */
 int64_t oscar_kill(uint64_t process_id);
 
 /** Read up to length bytes from descriptor into buffer. */
@@ -105,8 +105,11 @@ int64_t oscar_seek(int64_t descriptor, uint64_t offset);
 /** Close a file descriptor. */
 int64_t oscar_close(int64_t descriptor);
 
-/** Create a child process by loading a filesystem-backed ELF path. */
+/** Create a child process by loading a filesystem-backed ELF path without arguments. */
 int64_t oscar_spawn(const char* path);
+
+/** Create a child process and pass a null-terminated argument vector to its entry point. */
+int64_t oscar_spawn_args(const char* path, const char* const arguments[]);
 
 /** Wait for the exact child process and optionally receive its exit status. */
 int64_t oscar_waitpid(uint64_t process_id, int64_t* status);

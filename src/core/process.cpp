@@ -187,6 +187,21 @@ ProcessId id(const Process* process) {
     return process == nullptr ? 0 : process->id;
 }
 
+Process* find(ProcessId process_id) {
+    if(process_id == 0) {
+        return nullptr;
+    }
+    const interrupts::State previous_state = interrupts::save_and_disable();
+    for(auto* candidate = g_process_head; candidate != nullptr; candidate = candidate->all_next) {
+        if(candidate->id == process_id) {
+            interrupts::restore(previous_state);
+            return candidate;
+        }
+    }
+    interrupts::restore(previous_state);
+    return nullptr;
+}
+
 State state(const Process* process) {
     return process == nullptr ? State::Terminated : process->state;
 }
@@ -246,6 +261,23 @@ void set_image_path(Process* process, const char* path) {
     }
     process->image_path[index] = '\0';
     // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index, cppcoreguidelines-pro-bounds-pointer-arithmetic)
+}
+
+bool inherit_descriptors(Process* child, const Process* parent) {
+    if(child == nullptr || parent == nullptr) {
+        return false;
+    }
+
+    // File handles are value objects in the current VFS. Copying the complete table
+    // preserves standard streams and the parent's descriptor numbers while the
+    // filesystem layer is still single-threaded; shared open-file offsets can be
+    // introduced later with a reference-counted open-file description.
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index)
+    for(uint32_t descriptor = 0; descriptor < kMaximumFileDescriptors; ++descriptor) {
+        child->descriptors[descriptor] = parent->descriptors[descriptor];
+    }
+    // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index)
+    return true;
 }
 
 bool set_parent(Process* child, Process* parent) {

@@ -41,6 +41,18 @@ bool initialize(CpuContext* context, uintptr_t stack_top, Entry entry, void* arg
 }
 
 bool initialize_user(CpuContext* context, uintptr_t stack_top, uintptr_t user_entry, uintptr_t user_stack) {
+    return initialize_user(context, stack_top, user_entry, user_stack, 0, 0);
+}
+
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
+bool initialize_user(
+    CpuContext* context,
+    uintptr_t stack_top,
+    uintptr_t user_entry,
+    uintptr_t user_stack,
+    uint64_t argument_count,
+    uintptr_t argument_vector
+) {
     constexpr uintptr_t kUserAddressLimit = 0x0000800000000000ULL;
     if(context == nullptr || stack_top == 0 || user_entry >= kUserAddressLimit || user_stack >= kUserAddressLimit ||
        user_entry == 0 || user_stack == 0) {
@@ -54,9 +66,10 @@ bool initialize_user(CpuContext* context, uintptr_t stack_top, uintptr_t user_en
     context->rbp = 0;
     context->r12 = user_entry;
     context->r13 = user_stack;
-    context->r14 = 0;
-    context->r15 = 0;
+    context->r14 = argument_count;
+    context->r15 = argument_vector;
     return true;
 }
+// NOLINTEND(bugprone-easily-swappable-parameters)
 
 } // namespace context

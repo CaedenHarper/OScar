@@ -98,4 +98,7 @@ void start_bootstrap();
 /** Terminate the current thread with an exit status and switch permanently to the next runnable thread. */
 [[noreturn]] void thread_exit(kernel_thread::Thread* thread, int64_t status);
 
+/** Terminate a non-current process and queue its resources for deferred reclamation. */
+bool terminate_process(process::Process* process, int64_t status);
+
 } // namespace scheduler

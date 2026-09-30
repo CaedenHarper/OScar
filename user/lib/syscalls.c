@@ -156,8 +156,12 @@ int64_t oscar_close(int64_t descriptor) {
 }
 
 int64_t oscar_spawn(const char* path) {
+    return oscar_spawn_args(path, (const char* const*)0);
+}
+
+int64_t oscar_spawn_args(const char* path, const char* const arguments[]) {
     uint64_t call = kSpawnSystemCall;
-    __asm__ volatile("int $0x80" : "+a"(call) : "D"(path) : "rcx", "r11", "memory");
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"(path), "S"(arguments) : "rcx", "r11", "memory");
     return (int64_t)call;
 }
 

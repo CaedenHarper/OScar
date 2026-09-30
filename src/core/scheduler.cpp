@@ -132,6 +132,86 @@ kernel_thread::Thread* next_locked() {
     return thread == nullptr ? g_idle_thread : thread;
 }
 
+bool remove_waiting_locked(kernel_thread::Thread* thread) {
+    if(thread == nullptr || !thread->waiting) {
+        return false;
+    }
+    if(thread->wait_queue != nullptr) {
+        return synchronization::remove_locked(thread->wait_queue, thread);
+    }
+
+    kernel_thread::Thread* previous = nullptr;
+    for(auto* candidate = g_waiting_head; candidate != nullptr; candidate = candidate->waiting_next) {
+        if(candidate != thread) {
+            previous = candidate;
+            continue;
+        }
+        if(previous == nullptr) {
+            g_waiting_head = candidate->waiting_next;
+        } else {
+            previous->waiting_next = candidate->waiting_next;
+        }
+        candidate->waiting_next = nullptr;
+        candidate->waiting = false;
+        candidate->wait_queue = nullptr;
+        candidate->wait_reason = kernel_thread::WaitReason::None;
+        return true;
+    }
+    return false;
+}
+
+void queue_terminated_locked(kernel_thread::Thread* thread, process::Process* terminated_process) {
+    thread->state = kernel_thread::State::Terminated;
+    thread->terminated_process = terminated_process;
+    thread->reap_next = g_reap_head;
+    g_reap_head = thread;
+}
+
+bool terminate_thread_locked(kernel_thread::Thread* thread, int64_t status) {
+    if(thread == nullptr || thread == g_current_thread || thread->state == kernel_thread::State::Terminated) {
+        return false;
+    }
+    if(thread->queued) {
+        kernel_thread::Thread* previous = nullptr;
+        bool removed = false;
+        for(auto* candidate = g_ready_head; candidate != nullptr; candidate = candidate->ready_next) {
+            if(candidate != thread) {
+                previous = candidate;
+                continue;
+            }
+            if(previous == nullptr) {
+                g_ready_head = candidate->ready_next;
+            } else {
+                previous->ready_next = candidate->ready_next;
+            }
+            if(g_ready_tail == candidate) {
+                g_ready_tail = previous;
+            }
+            candidate->ready_next = nullptr;
+            candidate->queued = false;
+            removed = true;
+            break;
+        }
+        if(!removed) {
+            return false;
+        }
+    } else if(thread->waiting && !remove_waiting_locked(thread)) {
+        return false;
+    }
+
+    auto* owner = kernel_thread::owner_process(thread);
+    if(!process::detach_thread(thread)) {
+        return false;
+    }
+    if(owner != nullptr && process::thread_count(owner) == 0) {
+        process::record_exit(owner, status);
+    }
+    queue_terminated_locked(
+        thread, owner != nullptr && process::state(owner) == process::State::Terminated ? owner : nullptr
+    );
+    return true;
+}
+
 void reset_time_slice(kernel_thread::Thread* thread) {
     // Idle work has no fairness budget; assigning it a slice would make its accounting
     // indistinguishable from a runnable thread and could create needless reschedules.
@@ -467,6 +547,26 @@ void sleep(uint64_t ticks) {
     g_current_thread = next_thread;
     context::switch_context(&thread->cpu_context, &next_thread->cpu_context);
     park();
+}
+
+bool terminate_process(process::Process* process, int64_t status) {
+    if(!g_started || process == nullptr || process == kernel_thread::owner_process(g_current_thread) ||
+       process::state(process) == process::State::Terminated) {
+        return false;
+    }
+
+    interrupts::disable();
+    for(auto* thread = process->thread_head; thread != nullptr;) {
+        auto* next = thread->process_next;
+        if(!terminate_thread_locked(thread, status)) {
+            interrupts::enable();
+            return false;
+        }
+        thread = next;
+    }
+    const bool terminated = process::state(process) == process::State::Terminated;
+    interrupts::enable();
+    return terminated;
 }
 
 void start_bootstrap() {
