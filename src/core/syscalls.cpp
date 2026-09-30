@@ -1,6 +1,9 @@
 #include "syscalls.hpp"
 
 #include "interrupts.hpp"
+#ifdef OSCAR_TEST_SUITE
+#include "io.hpp"
+#endif
 #include "loader.hpp"
 #include "process.hpp"
 #include "process_internal.hpp"
@@ -36,6 +39,11 @@ constexpr uint64_t kStat = 18;
 constexpr uint64_t kReaddir = 19;
 constexpr uint64_t kGetProcessInfo = 20;
 constexpr uint64_t kKill = 21;
+#ifdef OSCAR_TEST_SUITE
+constexpr uint64_t kTestComplete = 22;
+constexpr uint16_t kTestExitPort = 0xf4;
+constexpr uint8_t kTestExitCode = 0x10;
+#endif
 constexpr uint64_t kMaximumWriteLength = 4096;
 constexpr uint64_t kMaximumReadLength = 4096;
 constexpr uint64_t kMaximumPathLength = 511;
@@ -357,6 +365,18 @@ int64_t kill_process(const syscalls::Frame* frame) {
     // teardown has begun.
     return scheduler::terminate_process(target, kKillExitStatus) ? 0 : kErrorIo;
 }
+
+#ifdef OSCAR_TEST_SUITE
+[[noreturn]] void complete_test_suite() {
+    // QEMU's isa-debug-exit device turns this privileged port write into a
+    // clean emulator exit, so the test runner does not need to wait for the
+    // kernel's idle loop after the user-space pass marker is printed.
+    io::out8(kTestExitPort, kTestExitCode);
+    for(;;) {
+        asm volatile("pause");
+    }
+}
+#endif
 
 int64_t open(const syscalls::Frame* frame) {
     auto* owner = current_process();
@@ -700,6 +720,10 @@ extern "C" void handle(Frame* frame) {
         case kKill:
             frame->rax = static_cast<uint64_t>(kill_process(frame));
             return;
+#ifdef OSCAR_TEST_SUITE
+        case kTestComplete:
+            complete_test_suite();
+#endif
         case kOpen:
             frame->rax = static_cast<uint64_t>(open(frame));
             return;

@@ -59,28 +59,29 @@ signal delivery remains a later milestone.
     ├── memory/       Physical pages, virtual memory, and kernel heap
     ├── synchronization/ Spinlocks, wait queues, and mutexes
     ├── storage/      Hardware-independent block-device protocol
-    ├── tests/        Boot-time subsystem smoke tests
-    └── tests/filesystem/ Files copied into the generated ext2 test image
+    ├── tests/        Boot-time subsystem smoke tests and user programs
+    └── tests/filesystem/ Files copied into generated ext2 images
 ```
 
 Limine and its protocol header are downloaded into `deps/` on the first build.
-The build compiles the user ELF fixtures in `tests/user/`—including the basic,
-filesystem-read, computed-prime, second-program, interactive `cash` shell, and
-filesystem-backed `init` success cases plus intentional-crash programs—and
-embeds the test-only images into the kernel smoke tests. The kernel also tests
-malformed ELF metadata directly before scheduling user processes.
-Generated files go into `build/`.
+The normal build compiles only the runtime user programs in `tests/user/`:
+filesystem-backed `init`, `cash`, `ls`, and `top`. Test fixtures and the
+boot-time smoke-test sources are excluded from the normal kernel. Generated
+files go into `build/`.
 
-`make run` creates and attaches the persistent `build/virtio-test.img` disk to
-QEMU. The image is ignored by Git and remains across emulator runs; `make
-clean` removes it with the other build products.
-The image is formatted as ext2 and populated with filesystem lookup and
-writable-file fixtures, including a generated 300 KiB file for indirect-block
-reads and a directory with 300 entries for indirect-directory lookup tests.
-The boot-time filesystem suite writes and reads back a deterministic 300 KiB
-pattern across direct, single-indirect, and double-indirect blocks, checks
-zero-filled extension gaps, and reopens the file to verify persistence;
-install `mke2fs` and `debugfs` in addition to the tools listed below.
+`make run` creates and attaches the persistent `build/virtio.img` disk to QEMU.
+The image is ignored by Git and remains across emulator runs; `make clean`
+removes it with the other build products. It contains the runtime programs and
+basic filesystem fixtures.
+
+`make test` creates a separate `build-test/` kernel and
+`build-test/virtio-test.img`, runs the complete kernel and user-space smoke
+suite in headless QEMU, and succeeds only after it sees `OSCAR TESTS PASSED`.
+The test image includes the large indirect-block fixture, 300-entry directory,
+test executables, and test-only `/sbin/init`. The test suite covers filesystem
+read/write/mutation behavior, malformed and crashing ELFs, scheduling,
+interrupts, synchronization, process creation, descriptor inheritance, and
+shell commands. Install `mke2fs` and `debugfs` in addition to the tools below.
 
 ## Recommended environment
 
@@ -96,6 +97,7 @@ sudo apt install build-essential clang lld make git curl xorriso e2fsprogs qemu-
 ```sh
 make iso
 make run
+make test
 ```
 
 `make test-exception` builds a separate test kernel, executes `ud2`, and
@@ -109,9 +111,11 @@ The repository keeps its editor, lint, and formatting configuration in
 `.clangd`, `.clang-tidy`, and `.clang-format`. From the repository root, run:
 
 ```sh
-bear --output compile_commands.json -- make clean all
-clang-format --dry-run --Werror $(find src -name '*.cpp' -o -name '*.hpp') $(find tests/user -name '*.c')
-clang-tidy $(find src -name '*.cpp' -o -name '*.hpp') $(find tests/user -name '*.c') --config-file=.clang-tidy --warnings-as-errors="*"
+bear --output compile_commands.json -- make clean all OSCAR_TEST_SUITE=1
+clang-format --dry-run --Werror $(find src -name '*.cpp' -o -name '*.hpp') $(find tests/user -name '*.c') $(find user -name '*.c' -o -name '*.h')
+clang-tidy $(find src -name '*.cpp' -o -name '*.hpp') --config-file=.clang-tidy --warnings-as-errors="*"
+clang-tidy --extra-arg-before=-x --extra-arg-before=c $(find tests/user -name '*.c') --config-file=.clang-tidy --warnings-as-errors="*"
+clang-tidy $(find user -name '*.c') --config-file=.clang-tidy --warnings-as-errors="*"
 ```
 
 The repository-local equivalent is:

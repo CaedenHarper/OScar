@@ -113,3 +113,6 @@ int64_t oscar_spawn_args(const char* path, const char* const arguments[]);
 
 /** Wait for the exact child process and optionally receive its exit status. */
 int64_t oscar_waitpid(uint64_t process_id, int64_t* status);
+
+/** Complete the kernel test suite and terminate the test emulator; test runner use only. */
+__attribute__((noreturn)) void oscar_test_complete(void);

@@ -16,6 +16,7 @@ enum {
     kSeekSystemCall = 9,
     kSpawnSystemCall = 10,
     kWaitPidSystemCall = 11,
+    kTestCompleteSystemCall = 22,
     kCreateSystemCall = 12,
     kMkdirSystemCall = 13,
     kUnlinkSystemCall = 14,
@@ -170,4 +171,12 @@ int64_t oscar_waitpid(uint64_t process_id, int64_t* status) {
     uint64_t call = kWaitPidSystemCall;
     __asm__ volatile("int $0x80" : "+a"(call) : "D"(process_id), "S"(status) : "rcx", "r11", "memory");
     return (int64_t)call;
+}
+
+__attribute__((noreturn)) void oscar_test_complete(void) {
+    uint64_t call = kTestCompleteSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : : "rcx", "r11", "memory");
+    for(;;) {
+        __asm__ volatile("pause");
+    }
 }

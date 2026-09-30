@@ -5,7 +5,14 @@
 #include "memory.hpp"
 #include "panic.hpp"
 #include "scheduler.hpp"
+#ifdef OSCAR_TEST_SUITE
 #include "self_tests.hpp"
+#endif
+#ifndef OSCAR_TEST_SUITE
+#include "keyboard_ps2.hpp"
+#include "startup.hpp"
+#include "timer.hpp"
+#endif
 #include "serial.hpp"
 #include "terminal.hpp"
 
@@ -70,9 +77,15 @@ extern "C" [[noreturn]] void kmain() {
     serial::write_u64(physical_memory::free_pages());
     serial::write(" free\n");
 
-    // Memory tests must run before the IDT and scheduler take ownership of interrupts;
-    // the later tests deliberately exercise those newly initialized subsystems.
+#ifdef OSCAR_TEST_SUITE
+    // The test profile initializes and exercises subsystems in dependency order, then
+    // queues synthetic workloads before production init is allowed to run.
     self_tests::run(g_hhdm_request.response->offset);
+#else
+    if(!startup::initialize(g_hhdm_request.response->offset)) {
+        panic::halt("could not initialize production kernel subsystems");
+    }
+#endif
 
     if(!gdt::initialize()) {
         panic::halt("could not initialize the GDT and TSS");
@@ -80,15 +93,27 @@ extern "C" [[noreturn]] void kmain() {
 
     idt::initialize();
     interrupt_controller::initialize(g_hhdm_request.response->offset);
+#ifdef OSCAR_TEST_SUITE
     self_tests::run_keyboard_ps2();
+#else
+    if(!keyboard_ps2::initialize()) {
+        panic::halt("could not initialize the PS/2 keyboard");
+    }
+#endif
     if(!terminal::initialize()) {
         panic::halt("could not initialize the kernel terminal");
     }
     serial::enable_input_interrupts();
+#ifdef OSCAR_TEST_SUITE
     self_tests::run_terminal();
     self_tests::run_timer();
     self_tests::run_context();
     self_tests::run_scheduler();
+#else
+    if(!timer::initialize(100)) {
+        panic::halt("could not initialize the PIT");
+    }
+#endif
 
     // Scheduler smoke tests are queued but do not run until this boot phase starts.
     // Returning to kmain after they terminate keeps user-space init out of the queue
@@ -96,7 +121,11 @@ extern "C" [[noreturn]] void kmain() {
     scheduler::start_bootstrap();
 
     serial::write("Exiting kernel startup.\n");
+#ifdef OSCAR_TEST_SUITE
     if(!self_tests::prepare_init()) {
+#else
+    if(!startup::prepare_init()) {
+#endif
         panic::halt("could not prepare init process");
     }
 

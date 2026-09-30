@@ -3,17 +3,28 @@ SHELL := /bin/sh
 
 BUILD_DIR := build
 USER_BUILD_DIR := $(BUILD_DIR)/user
-USER_PROGRAM_NAMES := basic prime second filesystem divzero kernel_access invalid_opcode init cash ls top shell_commands argv_test kill_target
+RUNTIME_USER_PROGRAM_NAMES := init cash ls top
+TEST_USER_PROGRAM_NAMES := basic prime second filesystem divzero kernel_access invalid_opcode init test_init cash ls top shell_commands argv_test kill_target
+ifeq ($(OSCAR_TEST_SUITE),1)
+USER_PROGRAM_NAMES := $(TEST_USER_PROGRAM_NAMES)
+VIRTIO_DISK := $(BUILD_DIR)/virtio-test.img
+else
+USER_PROGRAM_NAMES := $(RUNTIME_USER_PROGRAM_NAMES)
+VIRTIO_DISK := $(BUILD_DIR)/virtio.img
+endif
 USER_ELFS := $(addprefix $(USER_BUILD_DIR)/,$(addsuffix .elf,$(USER_PROGRAM_NAMES)))
 DEPS_DIR := deps
 ISO_ROOT := $(BUILD_DIR)/iso_root
 KERNEL := $(BUILD_DIR)/kernel.elf
 ISO := $(BUILD_DIR)/barebones-kernel.iso
-VIRTIO_DISK := $(BUILD_DIR)/virtio-test.img
 LARGE_FILESYSTEM_TEST_FILE := $(BUILD_DIR)/filesystem-large.bin
 FILESYSTEM_TEST_FILES := tests/filesystem/hello.txt tests/filesystem/config.txt tests/filesystem/writable.txt
-CPP_SOURCES := $(wildcard src/*.cpp src/*/*.cpp src/*/*/*.cpp)
-ASM_SOURCES := $(wildcard src/*.S src/*/*.S src/*/*/*.S)
+CPP_SOURCES := $(filter-out src/tests/%,$(wildcard src/*.cpp src/*/*.cpp src/*/*/*.cpp))
+ASM_SOURCES := $(filter-out src/tests/%,$(wildcard src/*.S src/*/*.S src/*/*/*.S))
+ifeq ($(OSCAR_TEST_SUITE),1)
+CPP_SOURCES += $(wildcard src/tests/*.cpp)
+ASM_SOURCES += $(wildcard src/tests/*.S)
+endif
 LINT_CPP_FILES := $(shell find src -name '*.cpp' -o -name '*.hpp')
 LINT_USER_C_FILES := $(shell find tests/user -name '*.c') $(shell find user -name '*.c')
 LINT_TEST_C_FILES := $(shell find tests/user -name '*.c')
@@ -42,9 +53,12 @@ CXXFLAGS := \
 	-fno-pic -fno-pie -mno-red-zone -mcmodel=kernel \
 	-mno-mmx -mno-sse -mno-sse2 \
 	-ffunction-sections -fdata-sections
+ifeq ($(OSCAR_TEST_SUITE),1)
+CXXFLAGS += -DOSCAR_TEST_SUITE
+endif
 ASFLAGS := \
 	-target x86_64-unknown-none-elf \
-	-ffreestanding -fno-pie -mno-red-zone
+	-ffreestanding -fno-pie -mno-red-zone -Wa,-I$(BUILD_DIR)
 LDFLAGS := \
 	-target x86_64-unknown-none-elf -fuse-ld=lld \
 	-nostdlib -static \
@@ -56,7 +70,7 @@ LDFLAGS := \
 
 QEMUFLAGS ?= -M q35 -m 256M -serial stdio -display none -no-reboot -no-shutdown
 
-.PHONY: all iso run debug test-exception lint clean distclean help
+.PHONY: all iso run debug test test-run test-exception lint clean distclean help
 
 all: $(KERNEL)
 
@@ -71,10 +85,28 @@ debug: $(ISO) $(VIRTIO_DISK)
 	$(QEMU) $(QEMUFLAGS) -drive file=$(VIRTIO_DISK),format=raw,if=none,id=virtio-disk -device virtio-blk-pci,disable-modern=on,drive=virtio-disk -cdrom $(ISO) -boot d -S -s
 
 test-exception:
-	$(MAKE) BUILD_DIR=$(BUILD_DIR)-exception CXXFLAGS="$(CXXFLAGS) -DOSCAR_TEST_EXCEPTION" run
+	$(MAKE) BUILD_DIR=$(BUILD_DIR)-exception OSCAR_TEST_SUITE=1 CXXFLAGS="$(CXXFLAGS) -DOSCAR_TEST_SUITE -DOSCAR_TEST_EXCEPTION" run
+
+test:
+	$(MAKE) BUILD_DIR=$(BUILD_DIR)-test OSCAR_TEST_SUITE=1 test-run
+
+test-run: $(ISO) $(VIRTIO_DISK)
+	@rm -f $(BUILD_DIR)/test-output.log
+	@qemu_pid=0; completed=0; elapsed=0; \
+	$(QEMU) $(filter-out -serial stdio,$(QEMUFLAGS)) -serial stdio -monitor none -drive file=$(VIRTIO_DISK),format=raw,if=none,id=virtio-disk -device virtio-blk-pci,disable-modern=on,drive=virtio-disk -cdrom $(ISO) -boot d >$(BUILD_DIR)/test-output.log 2>/dev/null & qemu_pid=$$!; \
+	while [ $$elapsed -lt 150 ]; do \
+		if grep -q "OSCAR TESTS PASSED" $(BUILD_DIR)/test-output.log; then completed=1; kill $$qemu_pid 2>/dev/null || true; break; fi; \
+		if ! kill -0 $$qemu_pid 2>/dev/null; then break; fi; \
+		sleep 0.1; elapsed=$$((elapsed + 1)); \
+	done; \
+	wait $$qemu_pid 2>/dev/null || true; \
+	cat $(BUILD_DIR)/test-output.log; \
+	if [ $$completed -ne 1 ]; then echo "Test suite did not complete within 15 seconds." >&2; exit 1; fi
+	@grep -q "OSCAR TESTS PASSED" $(BUILD_DIR)/test-output.log
+	@echo "All kernel and user-space tests passed."
 
 lint:
-	bear --output compile_commands.json -- $(MAKE) clean all
+	bear --output compile_commands.json -- $(MAKE) clean all OSCAR_TEST_SUITE=1
 	clang-format --dry-run --Werror $(LINT_CPP_FILES) $(LINT_USER_C_FILES) $(LINT_USER_HEADERS)
 	clang-tidy $(LINT_CPP_FILES) --config-file=.clang-tidy --warnings-as-errors="*"
 	clang-tidy --extra-arg-before=-x --extra-arg-before=c $(LINT_TEST_C_FILES) --config-file=.clang-tidy --warnings-as-errors="*"
@@ -84,6 +116,7 @@ help:
 	@echo "make          Build the kernel ELF"
 	@echo "make iso      Build a BIOS/UEFI bootable ISO"
 	@echo "make run      Boot it in QEMU; serial output appears here"
+	@echo "make test     Build a separate test kernel/image and run all smoke tests"
 	@echo "make debug    Boot paused and open QEMU's GDB stub"
 	@echo "make lint     Build a compile database and run format/lint checks"
 	@echo "make clean    Remove build products"
@@ -92,8 +125,13 @@ help:
 $(BUILD_DIR):
 	mkdir -p $@
 
-$(VIRTIO_DISK): Makefile $(FILESYSTEM_TEST_FILES) $(LARGE_FILESYSTEM_TEST_FILE) \
-	$(USER_BUILD_DIR)/second.elf $(USER_BUILD_DIR)/init.elf $(USER_BUILD_DIR)/cash.elf $(USER_BUILD_DIR)/ls.elf $(USER_BUILD_DIR)/top.elf $(USER_BUILD_DIR)/shell_commands.elf $(USER_BUILD_DIR)/argv_test.elf $(USER_BUILD_DIR)/kill_target.elf | $(BUILD_DIR)
+ifeq ($(OSCAR_TEST_SUITE),1)
+IMAGE_PROGRAMS := $(USER_BUILD_DIR)/second.elf $(USER_BUILD_DIR)/init.elf $(USER_BUILD_DIR)/test_init.elf $(USER_BUILD_DIR)/cash.elf $(USER_BUILD_DIR)/ls.elf $(USER_BUILD_DIR)/top.elf $(USER_BUILD_DIR)/shell_commands.elf $(USER_BUILD_DIR)/argv_test.elf $(USER_BUILD_DIR)/kill_target.elf
+else
+IMAGE_PROGRAMS := $(USER_BUILD_DIR)/init.elf $(USER_BUILD_DIR)/cash.elf $(USER_BUILD_DIR)/ls.elf $(USER_BUILD_DIR)/top.elf
+endif
+
+$(VIRTIO_DISK): Makefile $(FILESYSTEM_TEST_FILES) $(IMAGE_PROGRAMS) $(if $(filter 1,$(OSCAR_TEST_SUITE)),$(LARGE_FILESYSTEM_TEST_FILE),) | $(BUILD_DIR)
 	truncate -s 8M $@
 	mke2fs -q -F -t ext2 -b 1024 $@
 	debugfs -w -R 'mkdir /etc' $@
@@ -104,19 +142,20 @@ $(VIRTIO_DISK): Makefile $(FILESYSTEM_TEST_FILES) $(LARGE_FILESYSTEM_TEST_FILE) 
 	debugfs -w -R 'write tests/filesystem/hello.txt /hello.txt' $@
 	debugfs -w -R 'write tests/filesystem/config.txt /etc/oscar/config.txt' $@
 	debugfs -w -R 'write tests/filesystem/writable.txt /writable.txt' $@
-	debugfs -w -R 'write $(USER_BUILD_DIR)/second.elf /bin/second.elf' $@
 	debugfs -w -R 'write $(USER_BUILD_DIR)/cash.elf /bin/cash' $@
 	debugfs -w -R 'write $(USER_BUILD_DIR)/ls.elf /bin/ls' $@
 	debugfs -w -R 'write $(USER_BUILD_DIR)/top.elf /bin/top' $@
-	debugfs -w -R 'write $(USER_BUILD_DIR)/shell_commands.elf /bin/shell_commands' $@
-	debugfs -w -R 'write $(USER_BUILD_DIR)/argv_test.elf /bin/argv_test' $@
-	debugfs -w -R 'write $(USER_BUILD_DIR)/kill_target.elf /bin/kill_target' $@
-	debugfs -w -R 'write $(USER_BUILD_DIR)/init.elf /sbin/init' $@
-	debugfs -w -R 'write $(LARGE_FILESYSTEM_TEST_FILE) /large.bin' $@
-	index=0; while [ $$index -lt 300 ]; do \
+	$(if $(filter 1,$(OSCAR_TEST_SUITE)),true,debugfs -w -R 'write $(USER_BUILD_DIR)/init.elf /sbin/init' $@)
+	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/second.elf /bin/second.elf' $@)
+	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/shell_commands.elf /bin/shell_commands' $@)
+	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/argv_test.elf /bin/argv_test' $@)
+	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/kill_target.elf /bin/kill_target' $@)
+	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/test_init.elf /sbin/init' $@)
+	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(LARGE_FILESYSTEM_TEST_FILE) /large.bin' $@)
+	$(if $(filter 1,$(OSCAR_TEST_SUITE)),index=0; while [ $$index -lt 300 ]; do \
 		debugfs -w -R "write tests/filesystem/hello.txt /many/file$$index" $@ >/dev/null || exit 1; \
 		index=$$((index + 1)); \
-	done
+	done)
 
 $(LARGE_FILESYSTEM_TEST_FILE): | $(BUILD_DIR)
 	dd if=/dev/zero of=$@ bs=1024 count=300 status=none

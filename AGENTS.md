@@ -70,12 +70,19 @@ Use the following checks before submitting changes:
 ```sh
 make all
 make run
+make test
 make test-exception
 ```
 
-`make run` should boot the kernel in headless QEMU and print serial output. It
-also attaches the persistent, generated `build/virtio-test.img` disk used by
-the VirtIO block-driver smoke test; `make clean` removes that image.
+`make run` should boot the production kernel in headless QEMU and print serial
+output. It attaches the persistent generated `build/virtio.img` runtime disk;
+`make clean` removes that image. The production kernel excludes `src/tests/`
+and boots the small filesystem-backed `init` without the exhaustive smoke
+suite.
+`make test` builds an isolated `build-test/` kernel and
+`build-test/virtio-test.img` with all kernel and user-space tests, runs QEMU
+for a bounded interval, and verifies the `OSCAR TESTS PASSED` marker. Test
+artifacts are disposable and are removed by `make BUILD_DIR=build-test clean`.
 The image is formatted as ext2 and populated with lookup fixtures during its
 first build. The generated `large.bin` fixture crosses the single- and
 double-indirect data-block boundaries, and `/many` contains 300 entries for
@@ -114,7 +121,7 @@ The repository's tool configuration is kept in these files:
 Run the available C++ formatting and lint checks from the repository root:
 
 ```sh
-bear --output compile_commands.json -- make clean all
+bear --output compile_commands.json -- make clean all OSCAR_TEST_SUITE=1
 clang-format --dry-run --Werror $(find src -name '*.cpp' -o -name '*.hpp') $(find tests/user -name '*.c') $(find user -name '*.c' -o -name '*.h')
 clang-tidy $(find src -name '*.cpp' -o -name '*.hpp') --config-file=.clang-tidy --warnings-as-errors="*"
 clang-tidy --extra-arg-before=-x --extra-arg-before=c $(find tests/user -name '*.c') --config-file=.clang-tidy --warnings-as-errors="*"

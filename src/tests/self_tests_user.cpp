@@ -3,6 +3,7 @@
 #include "process.hpp"
 #include "scheduler.hpp"
 #include "serial.hpp"
+#include "startup.hpp"
 #include "thread.hpp"
 #include "virtual_memory.hpp"
 
@@ -210,12 +211,7 @@ bool prepare_crash_test_thread(const uint8_t* image, const uint8_t* image_end) {
 }
 
 bool prepare_init_process() {
-    process::Process* process = nullptr;
-    kernel_thread::Thread* thread = nullptr;
-    if(!loader::load_path("/sbin/init", nullptr, &process, &thread) || process == nullptr || thread == nullptr) {
-        return false;
-    }
-    return scheduler::enqueue(thread);
+    return startup::prepare_init();
 }
 
 // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic, performance-no-int-to-ptr,
