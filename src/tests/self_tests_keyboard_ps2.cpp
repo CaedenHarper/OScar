@@ -58,6 +58,56 @@ void test_terminal() {
     if(length != 3 || line[0] != 'o' || line[1] != 'k' || line[2] != '\n') {
         panic::halt("terminal smoke test did not produce the expected input line");
     }
+
+    keyboard::submit_event(
+        {.key = keyboard::Key::Character,
+         .character = 'a',
+         .pressed = true,
+         .shift = false,
+         .control = false,
+         .alt = false}
+    );
+    keyboard::submit_event(
+        {.key = keyboard::Key::Character,
+         .character = 'b',
+         .pressed = true,
+         .shift = false,
+         .control = false,
+         .alt = false}
+    );
+    keyboard::submit_event(
+        {.key = keyboard::Key::ArrowLeft,
+         .character = 0,
+         .pressed = true,
+         .shift = false,
+         .control = false,
+         .alt = false}
+    );
+    keyboard::submit_event(
+        {.key = keyboard::Key::Character,
+         .character = 'X',
+         .pressed = true,
+         .shift = false,
+         .control = false,
+         .alt = false}
+    );
+    keyboard::submit_event(
+        {.key = keyboard::Key::Delete, .character = 0, .pressed = true, .shift = false, .control = false, .alt = false}
+    );
+    keyboard::submit_event(
+        {.key = keyboard::Key::Enter,
+         .character = '\n',
+         .pressed = true,
+         .shift = false,
+         .control = false,
+         .alt = false}
+    );
+
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
+    const int64_t edited_length = terminal::read(line, sizeof(line));
+    if(edited_length != 3 || line[0] != 'a' || line[1] != 'X' || line[2] != '\n') {
+        panic::halt("terminal cursor editing smoke test did not produce the expected line");
+    }
     serial::write("Terminal line-discipline smoke test passed.\n");
 }
 

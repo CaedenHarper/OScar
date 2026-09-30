@@ -19,7 +19,7 @@ driver, mounts an ext2 filesystem, resolves paths, and reads/writes regular
 files through direct, single-indirect, and double-indirect data blocks,
 including sparse holes, initializes an IRQ-driven PS/2 keyboard driver behind a
 hardware-independent keyboard event queue, serial receive interrupts, and a serial-backed kernel terminal,
-including placeholder handling for common serial ANSI navigation sequences,
+including serial ANSI navigation sequences and basic cursor-aware line editing,
 prints diagnostics to QEMU's serial console, and idles.
 
 This is a kernel seed, not yet an operating system. C user programs can use
