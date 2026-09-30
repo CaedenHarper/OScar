@@ -233,20 +233,10 @@ void reap_terminated_locked() {
     while(g_reap_head != nullptr) {
         auto* thread = g_reap_head;
         auto* process = thread->terminated_process;
-        if(process != nullptr && process::has_parent(process)) {
-            // Child process records belong to waitpid(), but their final thread stack
-            // can be reclaimed immediately because no scheduler queue references it.
-            g_reap_head = thread->reap_next;
-            thread->reap_next = nullptr;
-            thread->terminated_process = nullptr;
-            if(!kernel_thread::destroy(thread)) {
-                panic::halt("scheduler could not reap a terminated child thread");
-            }
-            continue;
-        }
         if(process != nullptr && !process::destroy(process)) {
-            // A process can only remain unreapable while its address space is active. Leave
-            // it queued so a later switch can retry without leaking the termination record.
+            // A child remains on this list until waitpid() detaches it from its parent.
+            // Keeping the thread record and process together prevents waitpid() from
+            // freeing an address space while the scheduler still owns its termination record.
             return;
         }
 

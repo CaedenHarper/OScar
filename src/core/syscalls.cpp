@@ -804,9 +804,9 @@ int64_t wait_pid(const syscalls::Frame* frame) {
         }
         const auto child_id = process::id(child);
         interrupts::restore(previous_state);
-        if(!process::destroy(child)) {
-            return kErrorIo;
-        }
+        // The scheduler still owns the terminated thread record. It will destroy the
+        // process and its address space after observing the parent detachment; freeing
+        // the process here would leave that record with a dangling Process pointer.
         return static_cast<int64_t>(child_id);
     }
 }
