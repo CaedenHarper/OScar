@@ -88,7 +88,24 @@ bool split_parent(const char* path, char* parent, char* name) {
 }
 
 Node node_from_inode(const ext2::Inode& inode) {
-    return {inode.number, inode.size, inode.directory ? NodeType::Directory : NodeType::Regular};
+    return {
+        inode.number,
+        inode.size,
+        inode.mode,
+        inode.uid,
+        inode.gid,
+        inode.directory ? NodeType::Directory : NodeType::Regular
+    };
+}
+
+bool has_access(const Node& node, Credentials credentials, uint8_t requested) {
+    if(credentials.uid == 0) {
+        return true;
+    }
+    const uint16_t permission_bits = credentials.uid == node.uid   ? static_cast<uint16_t>((node.mode >> 6U) & 7U)
+                                     : credentials.gid == node.gid ? static_cast<uint16_t>((node.mode >> 3U) & 7U)
+                                                                   : static_cast<uint16_t>(node.mode & 7U);
+    return (permission_bits & requested) == requested;
 }
 
 Status lookup_child(const Node& directory, const char* name, Node* child) {
@@ -147,7 +164,7 @@ bool is_mounted() {
     return g_mounted;
 }
 
-Status resolve(const char* path, Node* node) {
+Status resolve_as(const char* path, Node* node, Credentials credentials) {
     if(!g_mounted) {
         return Status::NotMounted;
     }
@@ -172,6 +189,9 @@ Status resolve(const char* path, Node* node) {
         if(current.type != NodeType::Directory) {
             return Status::NotDirectory;
         }
+        if(!has_access(current, credentials, kAccessExecute)) {
+            return Status::PermissionDenied;
+        }
         const Status result = lookup_child(current, component, &current);
         if(result != Status::Success) {
             return result;
@@ -181,17 +201,24 @@ Status resolve(const char* path, Node* node) {
     return Status::Success;
 }
 
-Status read_directory(const char* path, uint32_t index, DirectoryEntry* entry) {
+Status resolve(const char* path, Node* node) {
+    return resolve_as(path, node, {.uid = 0, .gid = 0});
+}
+
+Status read_directory_as(const char* path, uint32_t index, DirectoryEntry* entry, Credentials credentials) {
     if(!g_mounted || path == nullptr || entry == nullptr) {
         return g_mounted ? Status::InvalidArgument : Status::NotMounted;
     }
     Node directory = {};
-    const Status resolve_status = resolve(path, &directory);
+    const Status resolve_status = resolve_as(path, &directory, credentials);
     if(resolve_status != Status::Success) {
         return resolve_status;
     }
     if(directory.type != NodeType::Directory) {
         return Status::NotDirectory;
+    }
+    if(!has_access(directory, credentials, kAccessRead | kAccessExecute)) {
+        return Status::PermissionDenied;
     }
     ext2::Inode directory_inode = {};
     if(ext2::get_inode(&g_root_filesystem, static_cast<uint32_t>(directory.identifier), &directory_inode) !=
@@ -215,17 +242,35 @@ Status read_directory(const char* path, uint32_t index, DirectoryEntry* entry) {
     return Status::Success;
 }
 
-Status open(const char* path, uint32_t flags, File* file) {
+Status read_directory(const char* path, uint32_t index, DirectoryEntry* entry) {
+    return read_directory_as(path, index, entry, {.uid = 0, .gid = 0});
+}
+
+Status open_as(const char* path, uint32_t flags, File* file, Credentials credentials) {
     if(file == nullptr || (flags & ~kOpenReadWrite) != 0 || (flags & kOpenReadWrite) == 0) {
         return Status::InvalidArgument;
     }
     Node node = {};
-    const Status result = resolve(path, &node);
+    const Status result = resolve_as(path, &node, credentials);
     if(result != Status::Success) {
         return result;
     }
+    uint8_t requested = 0;
+    if((flags & kOpenRead) != 0) {
+        requested |= kAccessRead;
+    }
+    if((flags & kOpenWrite) != 0) {
+        requested |= kAccessWrite;
+    }
+    if(!has_access(node, credentials, requested)) {
+        return Status::PermissionDenied;
+    }
     *file = {node, 0, flags, true};
     return Status::Success;
+}
+
+Status open(const char* path, uint32_t flags, File* file) {
+    return open_as(path, flags, file, {.uid = 0, .gid = 0});
 }
 
 Status read(File* file, void* buffer, uint32_t length, uint32_t* bytes_read) {
@@ -272,7 +317,7 @@ Status write(File* file, const void* buffer, uint32_t length, uint32_t* bytes_wr
     return translate_status(result);
 }
 
-Status create(const char* path, Node* node) {
+Status create_as(const char* path, Node* node, Credentials credentials) {
     if(!g_mounted || node == nullptr) {
         return g_mounted ? Status::InvalidArgument : Status::NotMounted;
     }
@@ -282,12 +327,15 @@ Status create(const char* path, Node* node) {
         return Status::InvalidArgument;
     }
     Node parent_node = {};
-    const Status parent_status = resolve(parent_path, &parent_node);
+    const Status parent_status = resolve_as(parent_path, &parent_node, credentials);
     if(parent_status != Status::Success) {
         return parent_status;
     }
     if(parent_node.type != NodeType::Directory) {
         return Status::NotDirectory;
+    }
+    if(!has_access(parent_node, credentials, kAccessWrite | kAccessExecute)) {
+        return Status::PermissionDenied;
     }
     ext2::Inode parent = {};
     if(ext2::get_inode(&g_root_filesystem, static_cast<uint32_t>(parent_node.identifier), &parent) !=
@@ -302,7 +350,11 @@ Status create(const char* path, Node* node) {
     return result;
 }
 
-Status mkdir(const char* path) {
+Status create(const char* path, Node* node) {
+    return create_as(path, node, {.uid = 0, .gid = 0});
+}
+
+Status mkdir_as(const char* path, Credentials credentials) {
     if(!g_mounted) {
         return Status::NotMounted;
     }
@@ -312,12 +364,15 @@ Status mkdir(const char* path) {
         return Status::InvalidArgument;
     }
     Node parent_node = {};
-    const Status parent_status = resolve(parent_path, &parent_node);
+    const Status parent_status = resolve_as(parent_path, &parent_node, credentials);
     if(parent_status != Status::Success) {
         return parent_status;
     }
     if(parent_node.type != NodeType::Directory) {
         return Status::NotDirectory;
+    }
+    if(!has_access(parent_node, credentials, kAccessWrite | kAccessExecute)) {
+        return Status::PermissionDenied;
     }
     ext2::Inode parent = {};
     if(ext2::get_inode(&g_root_filesystem, static_cast<uint32_t>(parent_node.identifier), &parent) !=
@@ -327,7 +382,11 @@ Status mkdir(const char* path) {
     return translate_status(ext2::create(&g_root_filesystem, &parent, name, true, nullptr));
 }
 
-Status unlink(const char* path) {
+Status mkdir(const char* path) {
+    return mkdir_as(path, {.uid = 0, .gid = 0});
+}
+
+Status unlink_as(const char* path, Credentials credentials) {
     if(!g_mounted) {
         return Status::NotMounted;
     }
@@ -337,9 +396,15 @@ Status unlink(const char* path) {
         return Status::InvalidArgument;
     }
     Node parent_node = {};
-    const Status parent_status = resolve(parent_path, &parent_node);
+    const Status parent_status = resolve_as(parent_path, &parent_node, credentials);
     if(parent_status != Status::Success) {
         return parent_status;
+    }
+    if(parent_node.type != NodeType::Directory) {
+        return Status::NotDirectory;
+    }
+    if(!has_access(parent_node, credentials, kAccessWrite | kAccessExecute)) {
+        return Status::PermissionDenied;
     }
     ext2::Inode parent = {};
     if(ext2::get_inode(&g_root_filesystem, static_cast<uint32_t>(parent_node.identifier), &parent) !=
@@ -349,7 +414,11 @@ Status unlink(const char* path) {
     return translate_status(ext2::unlink(&g_root_filesystem, &parent, name));
 }
 
-Status rmdir(const char* path) {
+Status unlink(const char* path) {
+    return unlink_as(path, {.uid = 0, .gid = 0});
+}
+
+Status rmdir_as(const char* path, Credentials credentials) {
     if(!g_mounted) {
         return Status::NotMounted;
     }
@@ -359,9 +428,15 @@ Status rmdir(const char* path) {
         return Status::InvalidArgument;
     }
     Node parent_node = {};
-    const Status parent_status = resolve(parent_path, &parent_node);
+    const Status parent_status = resolve_as(parent_path, &parent_node, credentials);
     if(parent_status != Status::Success) {
         return parent_status;
+    }
+    if(parent_node.type != NodeType::Directory) {
+        return Status::NotDirectory;
+    }
+    if(!has_access(parent_node, credentials, kAccessWrite | kAccessExecute)) {
+        return Status::PermissionDenied;
     }
     ext2::Inode parent = {};
     if(ext2::get_inode(&g_root_filesystem, static_cast<uint32_t>(parent_node.identifier), &parent) !=
@@ -369,6 +444,10 @@ Status rmdir(const char* path) {
         return Status::IoError;
     }
     return translate_status(ext2::remove_directory(&g_root_filesystem, &parent, name));
+}
+
+Status rmdir(const char* path) {
+    return rmdir_as(path, {.uid = 0, .gid = 0});
 }
 
 Status seek(File* file, uint64_t offset) {

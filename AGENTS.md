@@ -41,7 +41,9 @@ The source tree is organized as follows:
   the COM1 receive-interrupt backend, and the polling legacy VirtIO block driver.
 - `src/filesystem/`: the generic VFS, ext2 mounting, inode loading, path
   lookup, regular-file reads/writes through direct and indirect data blocks,
-  and basic file/directory mutation.
+  and basic file/directory mutation. VFS access checks use process credentials;
+  ext2 mounting validates filesystem geometry, group metadata, inode metadata,
+  and directory-record bounds before allowing access.
 - `src/exec/`: freestanding ELF64 validation and process image loading,
   including filesystem-backed child creation.
 - `src/interrupts/`: interrupt-controller routing and CPU interrupt helpers.

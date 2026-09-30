@@ -27,6 +27,8 @@ constexpr uint32_t kInodeBlockPointerCount = 15;
 struct Inode {
     uint32_t number;
     uint16_t mode;
+    uint16_t uid;
+    uint16_t gid;
     uint64_t size;
     uint32_t sectors;
     uint16_t links;

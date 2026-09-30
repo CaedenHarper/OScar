@@ -14,6 +14,11 @@ namespace process {
 
 using ProcessId = uint64_t;
 
+struct Credentials {
+    uint32_t uid;
+    uint32_t gid;
+};
+
 constexpr uint32_t kMaximumImagePathLength = 63;
 
 enum class State : uint8_t {
@@ -55,6 +60,9 @@ State state(const Process* process);
 
 /** Return the process's owned address space, or nullptr for a null process. */
 virtual_memory::AddressSpace* address_space(Process* process);
+
+/** Return the process credentials; null processes are treated as privileged root. */
+Credentials credentials(const Process* process);
 
 /** Return the number of currently associated threads, or zero for a null process. */
 uint32_t thread_count(const Process* process);

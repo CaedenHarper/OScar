@@ -4,6 +4,7 @@
 
 enum {
     OSCAR_ERROR_NOT_FOUND = -3,
+    OSCAR_ERROR_PERMISSION_DENIED = -12,
 };
 
 enum {
@@ -48,7 +49,10 @@ enum {
 struct oscar_stat {
     uint64_t size;
     uint32_t type;
-    uint32_t reserved;
+    uint16_t mode;
+    uint16_t uid;
+    uint16_t gid;
+    uint16_t reserved;
 };
 
 struct oscar_dirent {

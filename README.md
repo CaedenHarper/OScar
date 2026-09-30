@@ -17,7 +17,9 @@ and waking, provides interrupt-safe spinlocks, wait queues, and blocking
 mutexes, exposes a block-device protocol with a polling legacy VirtIO block
 driver, mounts an ext2 filesystem, resolves paths, and reads/writes regular
 files through direct, single-indirect, and double-indirect data blocks,
-including sparse holes, initializes an IRQ-driven PS/2 keyboard driver behind a
+including sparse holes, enforces inode permissions and ownership during VFS
+access, validates filesystem geometry and metadata against corruption, initializes
+an IRQ-driven PS/2 keyboard driver behind a
 hardware-independent keyboard event queue, serial receive interrupts, and a serial-backed kernel terminal,
 including serial ANSI navigation sequences and basic cursor-aware line editing,
 prints diagnostics to QEMU's serial console, and idles.
@@ -79,7 +81,8 @@ basic filesystem fixtures.
 suite in headless QEMU, and succeeds only after it sees `OSCAR TESTS PASSED`.
 The test image includes the large indirect-block fixture, 300-entry directory,
 test executables, and test-only `/sbin/init`. The test suite covers filesystem
-read/write/mutation behavior, descriptor duplication and pipes, malformed and crashing ELFs, scheduling,
+read/write/mutation, permission enforcement, ownership metadata, corruption
+rejection, descriptor duplication and pipes, malformed and crashing ELFs, scheduling,
 interrupts, synchronization, process creation, descriptor inheritance, and
 shell commands. Install `mke2fs` and `debugfs` in addition to the tools below.
 

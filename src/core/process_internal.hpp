@@ -50,6 +50,7 @@ struct FileDescriptor {
 struct Process {
     ProcessId id;
     State state;
+    Credentials credentials;
     virtual_memory::AddressSpace address_space;
     kernel_thread::Thread* thread_head;
     kernel_thread::Thread* thread_tail;

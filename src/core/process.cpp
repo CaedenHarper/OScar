@@ -45,6 +45,7 @@ Process* create(Process* parent) {
 
     process->id = g_next_process_id++;
     process->state = State::New;
+    process->credentials = {.uid = 0, .gid = 0};
     process->thread_head = nullptr;
     process->thread_tail = nullptr;
     process->thread_count = 0;
@@ -214,6 +215,10 @@ State state(const Process* process) {
 
 virtual_memory::AddressSpace* address_space(Process* process) {
     return process == nullptr ? nullptr : &process->address_space;
+}
+
+Credentials credentials(const Process* process) {
+    return process == nullptr ? Credentials{.uid = 0, .gid = 0} : process->credentials;
 }
 
 uint32_t thread_count(const Process* process) {

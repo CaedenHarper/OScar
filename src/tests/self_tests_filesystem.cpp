@@ -21,16 +21,20 @@ void test_filesystem() {
     ext2::Inode hello = {};
     ext2::Inode config = {};
     ext2::Inode root = {};
+    ext2::Inode temporary = {};
     ext2::Inode directory_tail = {};
     if(ext2::lookup(&file_system, "/hello.txt", &hello) != ext2::Status::Success || hello.directory ||
        hello.size == 0 || ext2::lookup(&file_system, "/etc/oscar/config.txt", &config) != ext2::Status::Success ||
        config.directory || config.size == 0 || ext2::lookup(&file_system, "/", &root) != ext2::Status::Success ||
-       !root.directory || ext2::lookup(&file_system, "/missing", &root) != ext2::Status::NotFound ||
-       ext2::lookup(&file_system, "/hello.txt/more", &root) != ext2::Status::NotDirectory ||
-       ext2::lookup(&file_system, "///etc//./oscar/config.txt", &root) != ext2::Status::Success ||
+       !root.directory || ext2::lookup(&file_system, "/missing", &temporary) != ext2::Status::NotFound ||
+       ext2::lookup(&file_system, "/hello.txt/more", &temporary) != ext2::Status::NotDirectory ||
+       ext2::lookup(&file_system, "///etc//./oscar/config.txt", &temporary) != ext2::Status::Success ||
        ext2::lookup(&file_system, "/many/file299", &directory_tail) != ext2::Status::Success ||
        directory_tail.directory) {
         panic::halt("filesystem smoke test returned an incorrect inode lookup result");
+    }
+    if(hello.uid != 0 || hello.gid != 0 || (hello.mode & 0777U) != 0644U || (root.mode & 0777U) != 0755U) {
+        panic::halt("filesystem smoke test returned invalid inode ownership or permissions");
     }
     if(ext2::get_inode(&file_system, file_system.inode_count + 1, &root) != ext2::Status::Corrupt) {
         panic::halt("filesystem smoke test accepted an out-of-range inode");
@@ -139,6 +143,19 @@ void test_vfs() {
        vfs::close(&directory) != vfs::Status::Success ||
        vfs::resolve("/missing", &directory.node) != vfs::Status::NotFound) {
         panic::halt("VFS smoke test accepted an invalid operation");
+    }
+
+    const vfs::Credentials unprivileged = {.uid = 1000, .gid = 1000};
+    vfs::File permission_file = {};
+    if(vfs::open_as("/hello.txt", vfs::kOpenRead, &permission_file, unprivileged) != vfs::Status::Success ||
+       vfs::close(&permission_file) != vfs::Status::Success ||
+       vfs::open_as("/hello.txt", vfs::kOpenWrite, &permission_file, unprivileged) != vfs::Status::PermissionDenied ||
+       vfs::read_directory_as("/", 0, nullptr, unprivileged) != vfs::Status::InvalidArgument) {
+        panic::halt("VFS permission test returned an incorrect access result");
+    }
+    vfs::Node permission_node = {};
+    if(vfs::create_as("/permission-denied", &permission_node, unprivileged) != vfs::Status::PermissionDenied) {
+        panic::halt("VFS permission test allowed an unprivileged mutation");
     }
     serial::write("VFS mount, path, handle, read, seek, and close smoke test passed.\n");
 }

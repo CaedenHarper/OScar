@@ -64,12 +64,16 @@ constexpr int64_t kErrorExists = -8;
 constexpr int64_t kErrorNotEmpty = -9;
 constexpr int64_t kErrorNoSpace = -10;
 constexpr int64_t kErrorBufferTooSmall = -11;
+constexpr int64_t kErrorPermissionDenied = -12;
 constexpr int64_t kKillExitStatus = 137;
 
 struct UserStat {
     uint64_t size;
     uint32_t type;
-    uint32_t reserved;
+    uint16_t mode;
+    uint16_t uid;
+    uint16_t gid;
+    uint16_t reserved;
 };
 
 struct UserDirectoryEntry {
@@ -150,6 +154,8 @@ int64_t translate_vfs_status(vfs::Status status) {
             return kErrorIo;
         case vfs::Status::ReadOnly:
             return kErrorReadOnly;
+        case vfs::Status::PermissionDenied:
+            return kErrorPermissionDenied;
         case vfs::Status::InvalidArgument:
         case vfs::Status::NotMounted:
         case vfs::Status::Unsupported:
@@ -434,7 +440,11 @@ int64_t open(const syscalls::Frame* frame) {
     }
     vfs::File file = {};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
-    const vfs::Status result = vfs::open(path, static_cast<uint32_t>(frame->rsi), &file);
+    const auto credentials = process::credentials(owner);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
+    const vfs::Status result =
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
+        vfs::open_as(path, static_cast<uint32_t>(frame->rsi), &file, {.uid = credentials.uid, .gid = credentials.gid});
     if(result != vfs::Status::Success) {
         return translate_vfs_status(result);
     }
@@ -453,10 +463,11 @@ int64_t create_file(const syscalls::Frame* frame) {
         return kErrorInvalidArgument;
     }
     vfs::Node node = {};
-    return translate_vfs_status(vfs::create(&path[0], &node));
+    const auto credentials = process::credentials(owner);
+    return translate_vfs_status(vfs::create_as(&path[0], &node, {.uid = credentials.uid, .gid = credentials.gid}));
 }
 
-using PathOperation = vfs::Status (*)(const char* path);
+using PathOperation = vfs::Status (*)(const char* path, vfs::Credentials credentials);
 
 int64_t path_operation(const syscalls::Frame* frame, PathOperation operation) {
     auto* owner = current_process();
@@ -464,7 +475,8 @@ int64_t path_operation(const syscalls::Frame* frame, PathOperation operation) {
     if(owner == nullptr || operation == nullptr || !copy_process_path(frame, owner, &path[0])) {
         return kErrorInvalidArgument;
     }
-    return translate_vfs_status(operation(&path[0]));
+    const auto credentials = process::credentials(owner);
+    return translate_vfs_status(operation(&path[0], {.uid = credentials.uid, .gid = credentials.gid}));
 }
 
 // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-constant-array-index,
@@ -476,12 +488,18 @@ int64_t change_directory(const syscalls::Frame* frame) {
         return kErrorInvalidArgument;
     }
     vfs::Node node = {};
-    const vfs::Status result = vfs::resolve(&path[0], &node);
+    const auto credentials = process::credentials(owner);
+    const vfs::Status result = vfs::resolve_as(&path[0], &node, {.uid = credentials.uid, .gid = credentials.gid});
     if(result != vfs::Status::Success) {
         return translate_vfs_status(result);
     }
     if(node.type != vfs::NodeType::Directory) {
         return kErrorIsDirectory;
+    }
+    if(credentials.uid != 0 && (credentials.uid == node.uid   ? (node.mode & 0100U) == 0
+                                : credentials.gid == node.gid ? (node.mode & 0010U) == 0
+                                                              : (node.mode & 0001U) == 0)) {
+        return kErrorInvalidArgument;
     }
     for(uint32_t index = 0; path[index] != '\0'; ++index) {
         owner->working_directory[index] = path[index];
@@ -518,13 +536,17 @@ int64_t stat_path(const syscalls::Frame* frame) {
         return kErrorInvalidArgument;
     }
     vfs::Node node = {};
-    const vfs::Status result = vfs::resolve(&path[0], &node);
+    const auto credentials = process::credentials(owner);
+    const vfs::Status result = vfs::resolve_as(&path[0], &node, {.uid = credentials.uid, .gid = credentials.gid});
     if(result != vfs::Status::Success) {
         return translate_vfs_status(result);
     }
     UserStat stat = {
         .size = node.size,
         .type = node.type == vfs::NodeType::Directory ? 1U : 0U,
+        .mode = node.mode,
+        .uid = node.uid,
+        .gid = node.gid,
         .reserved = 0,
     };
     return user_memory::copy_to_user(frame->rsi, &stat, sizeof(stat)) ? 0 : kErrorInvalidArgument;
@@ -538,7 +560,10 @@ int64_t read_directory(const syscalls::Frame* frame) {
         return kErrorInvalidArgument;
     }
     vfs::DirectoryEntry entry;
-    const vfs::Status result = vfs::read_directory(&path[0], static_cast<uint32_t>(frame->rsi), &entry);
+    const auto credentials = process::credentials(owner);
+    const vfs::Status result = vfs::read_directory_as(
+        &path[0], static_cast<uint32_t>(frame->rsi), &entry, {.uid = credentials.uid, .gid = credentials.gid}
+    );
     if(result != vfs::Status::Success) {
         return translate_vfs_status(result);
     }
@@ -881,13 +906,13 @@ extern "C" void handle(Frame* frame) {
             frame->rax = static_cast<uint64_t>(create_file(frame));
             return;
         case kMkdir:
-            frame->rax = static_cast<uint64_t>(path_operation(frame, vfs::mkdir));
+            frame->rax = static_cast<uint64_t>(path_operation(frame, vfs::mkdir_as));
             return;
         case kUnlink:
-            frame->rax = static_cast<uint64_t>(path_operation(frame, vfs::unlink));
+            frame->rax = static_cast<uint64_t>(path_operation(frame, vfs::unlink_as));
             return;
         case kRmdir:
-            frame->rax = static_cast<uint64_t>(path_operation(frame, vfs::rmdir));
+            frame->rax = static_cast<uint64_t>(path_operation(frame, vfs::rmdir_as));
             return;
         case kChdir:
             frame->rax = static_cast<uint64_t>(change_directory(frame));

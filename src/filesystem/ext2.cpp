@@ -341,7 +341,9 @@ bool write_inode(const FileSystem* file_system, const Inode& inode) {
         return false;
     }
     write_u16(g_io_buffer + table_offset, 0, inode.mode);
+    write_u16(g_io_buffer + table_offset, 2, inode.uid);
     write_u32(g_io_buffer + table_offset, 4, static_cast<uint32_t>(inode.size));
+    write_u16(g_io_buffer + table_offset, 24, inode.gid);
     write_u16(g_io_buffer + table_offset, 26, inode.links);
     write_u32(g_io_buffer + table_offset, 28, inode.sectors);
     for(uint32_t index = 0; index < kIndirectBlockCount; ++index) {
@@ -399,13 +401,16 @@ bool read_inode(const FileSystem* file_system, uint32_t inode_number, Inode* ino
     const uint8_t* raw_inode = g_io_buffer + table_offset;
     inode->number = inode_number;
     inode->mode = read_u16(raw_inode, 0);
+    inode->uid = read_u16(raw_inode, 2);
+    inode->gid = read_u16(raw_inode, 24);
     inode->size = read_u32(raw_inode, 4);
     inode->links = read_u16(raw_inode, 26);
     inode->sectors = read_u32(raw_inode, 28);
-    if((inode->mode & kDirectoryType) == 0 && (inode->mode & 0xf000U) == 0) {
+    const uint16_t file_type = inode->mode & 0xf000U;
+    if((file_type != kDirectoryType && file_type != 0x8000U) || inode->links == 0) {
         return false;
     }
-    inode->directory = (inode->mode & 0xf000U) == kDirectoryType;
+    inode->directory = file_type == kDirectoryType;
     if(!inode->directory) {
         inode->size |= static_cast<uint64_t>(read_u32(raw_inode, 108)) << 32U;
     }
@@ -414,6 +419,13 @@ bool read_inode(const FileSystem* file_system, uint32_t inode_number, Inode* ino
             direct_blocks[index] = read_u32(raw_inode, 40 + index * sizeof(uint32_t));
             inode->blocks[index] = direct_blocks[index];
         }
+    }
+    const uint64_t maximum_blocks =
+        kDirectBlockCount + file_system->block_size / sizeof(uint32_t) +
+        (file_system->block_size / sizeof(uint32_t)) * (file_system->block_size / sizeof(uint32_t));
+    if(inode->size > static_cast<uint64_t>(maximum_blocks) * file_system->block_size ||
+       (inode->directory && inode->size % file_system->block_size != 0)) {
+        return false;
     }
     return true;
 }
@@ -618,6 +630,7 @@ Status find_child(
             const uint16_t entry_size = read_u16(g_io_buffer + offset, 4);
             const uint8_t name_length = g_io_buffer[offset + 6];
             if(entry_size < kDirectoryEntryHeaderSize || entry_size % 4 != 0 || entry_size > available - offset ||
+               name_length > 255 || (entry_inode != 0 && name_length == 0) ||
                name_length > entry_size - kDirectoryEntryHeaderSize) {
                 return Status::Corrupt;
             }
@@ -697,7 +710,7 @@ bool find_directory_entry(
             const uint16_t entry_size = read_u16(g_io_buffer + offset, 4);
             const uint8_t entry_name_length = g_io_buffer[offset + 6];
             if(entry_size < kDirectoryEntryHeaderSize || entry_size % 4 != 0 ||
-               entry_size > file_system->block_size - offset ||
+               entry_size > file_system->block_size - offset || (entry_inode != 0 && entry_name_length == 0) ||
                entry_name_length > entry_size - kDirectoryEntryHeaderSize) {
                 return false;
             }
@@ -727,7 +740,7 @@ bool directory_empty(const FileSystem* file_system, const Inode& directory) {
             const uint16_t entry_size = read_u16(g_io_buffer + offset, 4);
             const uint8_t entry_name_length = g_io_buffer[offset + 6];
             if(entry_size < kDirectoryEntryHeaderSize || entry_size % 4 != 0 ||
-               entry_size > file_system->block_size - offset ||
+               entry_size > file_system->block_size - offset || (entry_inode != 0 && entry_name_length == 0) ||
                entry_name_length > entry_size - kDirectoryEntryHeaderSize) {
                 return false;
             }
@@ -781,7 +794,7 @@ bool insert_directory_entry(
             const uint16_t entry_size = read_u16(g_io_buffer + offset, 4);
             const uint8_t entry_name_length = g_io_buffer[offset + 6];
             if(entry_size < kDirectoryEntryHeaderSize || entry_size % 4 != 0 ||
-               entry_size > file_system->block_size - offset ||
+               entry_size > file_system->block_size - offset || (entry_inode != 0 && entry_name_length == 0) ||
                entry_name_length > entry_size - kDirectoryEntryHeaderSize) {
                 return false;
             }
@@ -910,6 +923,8 @@ Status create_entry_locked(
     Inode child = {};
     child.number = inode_number;
     child.mode = static_cast<uint16_t>((directory ? kDirectoryType : 0x8000U) | (directory ? 0755U : 0644U));
+    child.uid = current_parent.uid;
+    child.gid = current_parent.gid;
     child.links = directory ? 2 : 1;
     if(directory) {
         uint32_t sectors_added = 0;
@@ -1040,22 +1055,25 @@ bool mount(block_device::Device* device, FileSystem* file_system) {
     const uint32_t inode_count = read_u32(superblock, 0);
     const uint32_t inode_size = read_u16(superblock, 88);
     const uint32_t incompatible = read_u32(superblock, 96);
+    const uint64_t device_bytes = static_cast<uint64_t>(device->geometry.block_count) * device->geometry.block_size;
     if(block_size < kBlockSizeMinimum || block_size > kBlockSizeMaximum ||
        block_size % device->geometry.block_size != 0 || blocks_count == 0 ||
-       blocks_count > device->geometry.block_count * device->geometry.block_size / block_size ||
-       blocks_per_group == 0 || inodes_per_group == 0 || inode_count == 0 || inode_size < 128 ||
-       inode_size > block_size || block_size % inode_size != 0 ||
+       static_cast<uint64_t>(blocks_count) > device_bytes / block_size || blocks_per_group == 0 ||
+       blocks_per_group > block_size * 8U || inodes_per_group == 0 || inodes_per_group > block_size * 8U ||
+       inode_count == 0 || inode_size < 128 || inode_size > block_size || block_size % inode_size != 0 ||
        (incompatible & ~kDirectoryEntryFileTypeFeature) != 0) {
         return false;
     }
-    if(first_data_block >= blocks_count) {
+    if(first_data_block >= blocks_count || first_data_block != (block_size == kBlockSizeMinimum ? 1U : 0U)) {
         return false;
     }
     const uint64_t group_count =
         (static_cast<uint64_t>(blocks_count) - first_data_block + blocks_per_group - 1) / blocks_per_group;
     const uint64_t inode_table_blocks =
         (static_cast<uint64_t>(inodes_per_group) * inode_size + block_size - 1) / block_size;
-    if(group_count == 0 || group_count > kMaximumGroups || inode_table_blocks == 0 || inode_table_blocks > UINT32_MAX) {
+    const uint64_t inode_groups = (static_cast<uint64_t>(inode_count) + inodes_per_group - 1) / inodes_per_group;
+    if(group_count == 0 || group_count > kMaximumGroups || inode_groups > group_count || inode_table_blocks == 0 ||
+       inode_table_blocks > UINT32_MAX) {
         return false;
     }
     file_system->device = device;
@@ -1070,6 +1088,54 @@ bool mount(block_device::Device* device, FileSystem* file_system) {
     file_system->inode_table_blocks = static_cast<uint32_t>(inode_table_blocks);
     file_system->mounted = true;
     synchronization::initialize(&file_system->io_lock);
+
+    // Validate every group descriptor while mounting. Deferring this check would let
+    // a corrupt bitmap or inode table redirect later writes into arbitrary blocks.
+    for(uint32_t group = 0; group < file_system->group_count; ++group) {
+        const uint32_t descriptor = descriptor_block(file_system, group);
+        if(descriptor >= file_system->block_count || !read_fs_block(file_system, descriptor)) {
+            *file_system = {};
+            return false;
+        }
+        const uint32_t offset = descriptor_offset(file_system, group);
+        if(offset + 32 > file_system->block_size) {
+            *file_system = {};
+            return false;
+        }
+        const uint32_t block_bitmap = read_u32(g_io_buffer + offset, 0);
+        const uint32_t inode_bitmap = read_u32(g_io_buffer + offset, 4);
+        const uint32_t inode_table = read_u32(g_io_buffer + offset, 8);
+        const uint16_t free_blocks = read_u16(g_io_buffer + offset, 12);
+        const uint16_t free_inodes = read_u16(g_io_buffer + offset, 14);
+        const uint64_t group_first_block =
+            static_cast<uint64_t>(first_data_block) + static_cast<uint64_t>(group) * blocks_per_group;
+        const uint32_t group_blocks =
+            group_first_block >= blocks_count
+                ? 0
+                : static_cast<uint32_t>(
+                      (blocks_count - group_first_block) < blocks_per_group ? blocks_count - group_first_block
+                                                                            : blocks_per_group
+                  );
+        const uint64_t group_first_inode = static_cast<uint64_t>(group) * inodes_per_group;
+        const uint32_t group_inodes =
+            group_first_inode >= inode_count
+                ? 0
+                : static_cast<uint32_t>(
+                      (inode_count - group_first_inode) < inodes_per_group ? inode_count - group_first_inode
+                                                                           : inodes_per_group
+                  );
+        if(block_bitmap >= file_system->block_count || inode_bitmap >= file_system->block_count ||
+           inode_table >= file_system->block_count ||
+           static_cast<uint64_t>(inode_table) + file_system->inode_table_blocks > file_system->block_count ||
+           free_blocks > group_blocks || free_inodes > group_inodes || group_blocks == 0 || group_inodes == 0 ||
+           block_bitmap < group_first_block || block_bitmap >= group_first_block + group_blocks ||
+           inode_bitmap < group_first_block || inode_bitmap >= group_first_block + group_blocks ||
+           inode_table < group_first_block ||
+           inode_table + file_system->inode_table_blocks > group_first_block + group_blocks) {
+            *file_system = {};
+            return false;
+        }
+    }
 
     Inode root = {};
     if(!read_inode(file_system, 2, &root) || !root.directory) {
@@ -1192,6 +1258,7 @@ Status read_directory(
             const uint16_t entry_size = read_u16(g_io_buffer + offset, 4);
             const uint8_t entry_name_length = g_io_buffer[offset + 6];
             if(entry_size < kDirectoryEntryHeaderSize || entry_size % 4 != 0 || entry_size > available - offset ||
+               (entry_inode != 0 && entry_name_length == 0) ||
                entry_name_length > entry_size - kDirectoryEntryHeaderSize) {
                 synchronization::unlock(&file_system->io_lock, previous_state);
                 return Status::Corrupt;
