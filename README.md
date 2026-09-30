@@ -112,10 +112,9 @@ The repository keeps its editor, lint, and formatting configuration in
 
 ```sh
 bear --output compile_commands.json -- make clean all OSCAR_TEST_SUITE=1
-clang-format --dry-run --Werror $(find src -name '*.cpp' -o -name '*.hpp') $(find tests/user -name '*.c') $(find user -name '*.c' -o -name '*.h')
-clang-tidy $(find src -name '*.cpp' -o -name '*.hpp') --config-file=.clang-tidy --warnings-as-errors="*"
-clang-tidy --extra-arg-before=-x --extra-arg-before=c $(find tests/user -name '*.c') --config-file=.clang-tidy --warnings-as-errors="*"
-clang-tidy $(find user -name '*.c') --config-file=.clang-tidy --warnings-as-errors="*"
+clang-format --dry-run --Werror $(find src tests user -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \))
+clang-tidy $(find src tests user -type f \( -name '*.cpp' -o -name '*.hpp' \)) --config-file=.clang-tidy --warnings-as-errors="*"
+clang-tidy --extra-arg-before=-x --extra-arg-before=c $(find src tests user -type f \( -name '*.c' -o -name '*.h' \)) --config-file=.clang-tidy --warnings-as-errors="*"
 ```
 
 The repository-local equivalent is:

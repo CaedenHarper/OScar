@@ -122,16 +122,14 @@ Run the available C++ formatting and lint checks from the repository root:
 
 ```sh
 bear --output compile_commands.json -- make clean all OSCAR_TEST_SUITE=1
-clang-format --dry-run --Werror $(find src -name '*.cpp' -o -name '*.hpp') $(find tests/user -name '*.c') $(find user -name '*.c' -o -name '*.h')
-clang-tidy $(find src -name '*.cpp' -o -name '*.hpp') --config-file=.clang-tidy --warnings-as-errors="*"
-clang-tidy --extra-arg-before=-x --extra-arg-before=c $(find tests/user -name '*.c') --config-file=.clang-tidy --warnings-as-errors="*"
-clang-tidy $(find user -name '*.c') --config-file=.clang-tidy --warnings-as-errors="*"
+clang-format --dry-run --Werror $(find src tests user -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \))
+clang-tidy $(find src tests user -type f \( -name '*.cpp' -o -name '*.hpp' \)) --config-file=.clang-tidy --warnings-as-errors="*"
+clang-tidy --extra-arg-before=-x --extra-arg-before=c $(find src tests user -type f \( -name '*.c' -o -name '*.h' \)) --config-file=.clang-tidy --warnings-as-errors="*"
 ```
 
-The repository-local `make lint` target runs the same three commands and also
-formats and lints freestanding C user-test sources under `tests/user/` and the
-public syscall library under `user/`. User assembly fixtures are compiled and
-embedded by the build but are not inputs to the C/C++ format or clang-tidy checks.
+The repository-local `make lint` target runs the same commands across every C,
+C++, and header file under `src/`, `tests/`, and `user/`. User assembly fixtures
+are compiled and embedded by the build but are not inputs to the C/C++ checks.
 
 These checks must pass. When a check reports a diagnostic, first determine
 whether it identifies a real defect. Fix real defects in the code. When a

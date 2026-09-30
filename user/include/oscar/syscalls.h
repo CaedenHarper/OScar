@@ -12,12 +12,16 @@ enum {
     OSCAR_PROCESS_TERMINATED = 2,
 };
 
+enum {
+    OSCAR_MAX_IMAGE_PATH_LENGTH = 63,
+};
+
 struct oscar_process_info {
     uint64_t id;
     uint32_t state;
     uint32_t thread_count;
     uint64_t user_page_count;
-    char image_path[64];
+    char image_path[OSCAR_MAX_IMAGE_PATH_LENGTH + 1]; // leave room for null terminator
 };
 
 /** Open a path for reading, writing, or both; returns a descriptor or a negative error. */

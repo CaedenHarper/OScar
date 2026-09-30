@@ -25,11 +25,10 @@ ifeq ($(OSCAR_TEST_SUITE),1)
 CPP_SOURCES += $(wildcard src/tests/*.cpp)
 ASM_SOURCES += $(wildcard src/tests/*.S)
 endif
-LINT_CPP_FILES := $(shell find src -name '*.cpp' -o -name '*.hpp')
-LINT_USER_C_FILES := $(shell find tests/user -name '*.c') $(shell find user -name '*.c')
-LINT_TEST_C_FILES := $(shell find tests/user -name '*.c')
-LINT_USER_LIB_C_FILES := $(shell find user -name '*.c')
-LINT_USER_HEADERS := $(shell find user -name '*.h')
+LINT_CPP_FILES := $(shell find src tests user -type f \( -name '*.cpp' -o -name '*.hpp' \))
+LINT_C_FILES := $(shell find src tests user -type f -name '*.c')
+LINT_C_HEADERS := $(shell find src tests user -type f -name '*.h')
+LINT_ALL_FILES := $(LINT_CPP_FILES) $(LINT_C_FILES) $(LINT_C_HEADERS)
 OBJECTS := $(patsubst src/%.cpp,$(BUILD_DIR)/%.o,$(CPP_SOURCES)) \
 	$(patsubst src/%.S,$(BUILD_DIR)/asm/%.o,$(ASM_SOURCES))
 
@@ -107,10 +106,9 @@ test-run: $(ISO) $(VIRTIO_DISK)
 
 lint:
 	bear --output compile_commands.json -- $(MAKE) clean all OSCAR_TEST_SUITE=1
-	clang-format --dry-run --Werror $(LINT_CPP_FILES) $(LINT_USER_C_FILES) $(LINT_USER_HEADERS)
+	clang-format --dry-run --Werror $(LINT_ALL_FILES)
 	clang-tidy $(LINT_CPP_FILES) --config-file=.clang-tidy --warnings-as-errors="*"
-	clang-tidy --extra-arg-before=-x --extra-arg-before=c $(LINT_TEST_C_FILES) --config-file=.clang-tidy --warnings-as-errors="*"
-	clang-tidy $(LINT_USER_LIB_C_FILES) --config-file=.clang-tidy --warnings-as-errors="*"
+	clang-tidy --extra-arg-before=-x --extra-arg-before=c $(LINT_C_FILES) $(LINT_C_HEADERS) --config-file=.clang-tidy --warnings-as-errors="*"
 
 help:
 	@echo "make          Build the kernel ELF"

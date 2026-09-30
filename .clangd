@@ -1,3 +1,10 @@
+---
 Diagnostics:
   ClangTidy:
     FastCheckFilter: None
+
+# do not use c++ syntax rules for c files
+If:
+  PathMatch: '.*\.c$'
+CompileFlags:
+  Add: [-x, c]

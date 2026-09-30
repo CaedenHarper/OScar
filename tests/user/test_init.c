@@ -17,6 +17,7 @@ __attribute__((noreturn)) static void exit_process(void) {
     oscar_exit(0);
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage) ELF entry point required by linker
 void _start(void) {
     static const char kStartedMessage[] = "test init: user-space test suite started.\n";
     static const char kShellCommandTestPath[] = "/bin/shell_commands";
