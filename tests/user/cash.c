@@ -24,17 +24,27 @@ static void write_string(const char* string) {
 }
 
 static void write_prompt(void) {
-    static const char prefix[] = "cash:";
+    static const char shell_color[] = "\033[1;36m";
+    static const char directory_color[] = "\033[1;34m";
+    static const char reset_color[] = "\033[0m";
+    static const char shell_name[] = "cash";
+    static const char colon[] = ":";
     static const char suffix[] = "$ ";
-    static const char fallback[] = "cash:?$ ";
+    static const char fallback_directory[] = "?";
     static char directory[kLineCapacity];
     const int64_t length = oscar_getcwd(directory, sizeof(directory));
+
+    write_string(shell_color);
+    write_string(shell_name);
+    write_string(reset_color);
+    write_string(colon);
+    write_string(directory_color);
     if(length < 0) {
-        write_string(fallback);
-        return;
+        write_string(fallback_directory);
+    } else {
+        (void)oscar_write(1, directory, (uint64_t)length);
     }
-    write_string(prefix);
-    (void)oscar_write(1, directory, (uint64_t)length);
+    write_string(reset_color);
     write_string(suffix);
 }
 
