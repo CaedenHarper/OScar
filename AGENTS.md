@@ -54,7 +54,10 @@ The source tree is organized as follows:
   context, keyboard, memory/process, scheduler, synchronization, and user-mode tests.
   `self_tests_internal.hpp` contains private cross-test declarations.
 - `tests/user/`: source and linker script for successful, filesystem-read,
-  computed-output, interactive `cash` shell, filesystem-backed init, and intentional-crash user ELF smoke images. Init and `cash` are mounted from the generated ext2 image; the other test images are embedded in the kernel smoke tests. Malformed ELF metadata tests live in
+  computed-output, interactive `cash` shell, filesystem-backed init, shell
+  command, and intentional-crash user ELF smoke images. Init, `cash`, and the
+  shell-command smoke image are mounted from the generated ext2 image; the
+  other test images are embedded in the kernel smoke tests. Malformed ELF metadata tests live in
   `src/tests/` because they exercise validation without loading an image.
 - `user/include/oscar/`: public C headers for the user-space syscall API.
 - `user/lib/`: freestanding C implementations of the user-space syscall wrappers.
@@ -84,10 +87,12 @@ handles reject writes. `mke2fs` and `debugfs` are required.
 The mutation test additionally creates and removes regular files and nested
 directories, rejects duplicate names and non-empty directory removal, and
 cleans up its entries for repeatable persistent-image runs.
-The user-space `cash` fixture exercises terminal line input, its initial
-`cd`, `pwd`, and `exit` built-ins, external `/bin/ls` dispatch, and the
-bounded-refresh `/bin/top` process monitor; general argument passing and
-additional commands remain separate shell milestones.
+The user-space `cash` fixture exercises terminal line input, its `cd`, `pwd`,
+`echo`, `help`, and `exit` built-ins, filesystem commands, external `/bin/ls`
+dispatch, and the bounded-refresh `/bin/top` process monitor. The
+`shell_commands` fixture validates the filesystem-command results and process
+inspection during init startup. General external argument passing and
+cross-process signals remain separate shell milestones.
 `make test-exception` builds in a separate `build-exception/` directory,
 executes `ud2`, and should print an invalid-opcode diagnostic with register
 state before halting.

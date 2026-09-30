@@ -18,12 +18,23 @@ __attribute__((noreturn)) static void exit_process(void) {
 
 void _start(void) {
     static const char kStartedMessage[] = "init: user-space initialization started.\n";
+    static const char kShellCommandTestPath[] = "/bin/shell_commands";
+    static const char kShellCommandTestFailure[] = "init: shell command test failed.\n";
+    static const char kShellCommandTestPassed[] = "init: shell command test passed.\n";
     static const char kShellPath[] = "/bin/cash";
     static const char kShellFailure[] = "init: could not start cash.\n";
     static const char kShellExit[] = "init: cash exited.\n";
     static const char kExitMessage[] = "init: exiting.\n";
     int64_t terminal_status = 0;
+    int64_t shell_command_test_status = 0;
     (void)write_text(kStartedMessage);
+    const int64_t shell_command_test_id = oscar_spawn(kShellCommandTestPath);
+    if(shell_command_test_id < 0 || oscar_waitpid((uint64_t)shell_command_test_id, &shell_command_test_status) < 0 ||
+       shell_command_test_status != 137) {
+        (void)write_text(kShellCommandTestFailure);
+        exit_process();
+    }
+    (void)write_text(kShellCommandTestPassed);
     const int64_t shell_id = oscar_spawn(kShellPath);
     if(shell_id < 0 || oscar_waitpid((uint64_t)shell_id, &terminal_status) < 0) {
         (void)write_text(kShellFailure);

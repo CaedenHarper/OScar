@@ -35,6 +35,7 @@ constexpr uint64_t kGetcwd = 17;
 constexpr uint64_t kStat = 18;
 constexpr uint64_t kReaddir = 19;
 constexpr uint64_t kGetProcessInfo = 20;
+constexpr uint64_t kKill = 21;
 constexpr uint64_t kMaximumWriteLength = 4096;
 constexpr uint64_t kMaximumReadLength = 4096;
 constexpr uint64_t kMaximumPathLength = 511;
@@ -52,6 +53,7 @@ constexpr int64_t kErrorExists = -8;
 constexpr int64_t kErrorNotEmpty = -9;
 constexpr int64_t kErrorNoSpace = -10;
 constexpr int64_t kErrorBufferTooSmall = -11;
+constexpr int64_t kKillExitStatus = 137;
 
 struct UserStat {
     uint64_t size;
@@ -291,6 +293,18 @@ int64_t get_process_info(const syscalls::Frame* frame) {
     }
     // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index, cppcoreguidelines-pro-bounds-pointer-arithmetic)
     return user_memory::copy_to_user(frame->rsi, &user_info, sizeof(user_info)) ? 0 : kErrorInvalidArgument;
+}
+
+int64_t kill_process(const syscalls::Frame* frame) {
+    auto* thread = scheduler::current();
+    auto* owner = kernel_thread::owner_process(thread);
+    // There is no signal or cross-thread cancellation path yet. Restricting this first
+    // implementation to self-termination avoids leaving another thread on a scheduler
+    // or wait queue while its address space is being reclaimed.
+    if(owner == nullptr || frame->rdi != process::id(owner)) {
+        return kErrorInvalidArgument;
+    }
+    scheduler::thread_exit(thread, kKillExitStatus);
 }
 
 int64_t open(const syscalls::Frame* frame) {
@@ -622,6 +636,9 @@ extern "C" void handle(Frame* frame) {
             return;
         case kGetProcessInfo:
             frame->rax = static_cast<uint64_t>(get_process_info(frame));
+            return;
+        case kKill:
+            frame->rax = static_cast<uint64_t>(kill_process(frame));
             return;
         case kOpen:
             frame->rax = static_cast<uint64_t>(open(frame));

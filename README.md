@@ -31,8 +31,13 @@ metadata lookup, and directory enumeration. `spawn` loads a validated ELF from t
 that exact child and returns its exit status. After kernel startup, the kernel
 loads `/sbin/init` from the filesystem; `init` then starts `/bin/cash` and
 waits for it in user space. `cash` is the initial user-space interactive shell
-with `cd`, `pwd`, and `exit` built-ins; its first external command is the
-filesystem-backed `/bin/ls` and bounded-refresh `/bin/top` programs.
+with `cd`, `pwd`, `echo`, `help`, and `exit` built-ins. Its current filesystem
+and process commands are implemented in the shell using the public syscall
+API: `mkdir`, `touch`, `cp`, `mv`, `rm`, `cat`, `ps`, and the self-termination
+form of `kill`. The shell also dispatches filesystem-backed `/bin/ls` and
+bounded-refresh `/bin/top`. The shell command smoke program exercises the
+filesystem operations and process inspection during init startup; general
+external argument passing and cross-process signals remain later milestones.
 
 ## Repository layout
 

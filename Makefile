@@ -3,7 +3,7 @@ SHELL := /bin/sh
 
 BUILD_DIR := build
 USER_BUILD_DIR := $(BUILD_DIR)/user
-USER_PROGRAM_NAMES := basic prime second filesystem divzero kernel_access invalid_opcode init cash ls top
+USER_PROGRAM_NAMES := basic prime second filesystem divzero kernel_access invalid_opcode init cash ls top shell_commands
 USER_ELFS := $(addprefix $(USER_BUILD_DIR)/,$(addsuffix .elf,$(USER_PROGRAM_NAMES)))
 DEPS_DIR := deps
 ISO_ROOT := $(BUILD_DIR)/iso_root
@@ -93,7 +93,7 @@ $(BUILD_DIR):
 	mkdir -p $@
 
 $(VIRTIO_DISK): Makefile $(FILESYSTEM_TEST_FILES) $(LARGE_FILESYSTEM_TEST_FILE) \
-	$(USER_BUILD_DIR)/second.elf $(USER_BUILD_DIR)/init.elf $(USER_BUILD_DIR)/cash.elf $(USER_BUILD_DIR)/ls.elf $(USER_BUILD_DIR)/top.elf | $(BUILD_DIR)
+	$(USER_BUILD_DIR)/second.elf $(USER_BUILD_DIR)/init.elf $(USER_BUILD_DIR)/cash.elf $(USER_BUILD_DIR)/ls.elf $(USER_BUILD_DIR)/top.elf $(USER_BUILD_DIR)/shell_commands.elf | $(BUILD_DIR)
 	truncate -s 8M $@
 	mke2fs -q -F -t ext2 -b 1024 $@
 	debugfs -w -R 'mkdir /etc' $@
@@ -108,6 +108,7 @@ $(VIRTIO_DISK): Makefile $(FILESYSTEM_TEST_FILES) $(LARGE_FILESYSTEM_TEST_FILE) 
 	debugfs -w -R 'write $(USER_BUILD_DIR)/cash.elf /bin/cash' $@
 	debugfs -w -R 'write $(USER_BUILD_DIR)/ls.elf /bin/ls' $@
 	debugfs -w -R 'write $(USER_BUILD_DIR)/top.elf /bin/top' $@
+	debugfs -w -R 'write $(USER_BUILD_DIR)/shell_commands.elf /bin/shell_commands' $@
 	debugfs -w -R 'write $(USER_BUILD_DIR)/init.elf /sbin/init' $@
 	debugfs -w -R 'write $(LARGE_FILESYSTEM_TEST_FILE) /large.bin' $@
 	index=0; while [ $$index -lt 300 ]; do \

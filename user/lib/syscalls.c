@@ -9,6 +9,7 @@ enum {
     kGetPidSystemCall = 4,
     kGetIdSystemCall = 5,
     kGetProcessInfoSystemCall = 20,
+    kKillSystemCall = 21,
     kOpenSystemCall = 6,
     kReadSystemCall = 7,
     kCloseSystemCall = 8,
@@ -68,6 +69,12 @@ int64_t oscar_getid(void) {
 int64_t oscar_get_process_info(uint64_t index, struct oscar_process_info* info) {
     uint64_t call = kGetProcessInfoSystemCall;
     __asm__ volatile("int $0x80" : "+a"(call) : "D"(index), "S"(info) : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+int64_t oscar_kill(uint64_t process_id) {
+    uint64_t call = kKillSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"(process_id) : "rcx", "r11", "memory");
     return (int64_t)call;
 }
 

@@ -93,6 +93,9 @@ int64_t oscar_getid(void);
 /** Copy one zero-based process snapshot into info, or return OSCAR_ERROR_NOT_FOUND at the end. */
 int64_t oscar_get_process_info(uint64_t index, struct oscar_process_info* info);
 
+/** Terminate the calling process when process_id matches its PID. */
+int64_t oscar_kill(uint64_t process_id);
+
 /** Read up to length bytes from descriptor into buffer. */
 int64_t oscar_read(int64_t descriptor, void* buffer, uint64_t length);
 
