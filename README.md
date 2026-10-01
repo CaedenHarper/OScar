@@ -24,7 +24,8 @@ access, validates filesystem geometry and metadata against corruption, initializ
 an IRQ-driven PS/2 keyboard driver behind a
 hardware-independent keyboard event queue, serial receive interrupts, and a serial-backed kernel terminal,
 standalone Ethernet framing plus IPv4 ARP packet parsing, request/reply
-construction, and a bounded ARP cache,
+construction, and a bounded ARP cache, plus IPv4 packet construction,
+checksum validation, static routing, and ARP-backed Ethernet framing,
 including serial ANSI navigation sequences and basic cursor-aware line editing,
 prints diagnostics to QEMU's serial console, and idles.
 
@@ -62,7 +63,7 @@ signal delivery remains a later milestone.
     ├── arch/x86_64/  CPU contexts, GDT/TSS, IDT, and entry stubs
     ├── core/         Entry point, processes, threads, scheduler, and syscalls
     ├── drivers/      Port I/O, PCI discovery, serial, timer, keyboard input, terminal, PS/2, and VirtIO block/network support
-    ├── network/      Ethernet framing and IPv4 ARP protocol support
+    ├── network/      Ethernet framing, IPv4 ARP, and IPv4 packet/routing support
     ├── exec/         ELF64 validation and executable loading
     ├── filesystem/   VFS, ext2 mounting, path lookup, regular-file I/O, and mutation
     ├── interrupts/   IRQ registration, PIC/IOAPIC routing, and CPU interrupt helpers
