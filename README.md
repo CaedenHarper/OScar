@@ -16,7 +16,7 @@ zero-filled memory and an initial user stack,
 provides a kernel heap, creates and runs kernel-thread stacks, schedules kernel
 threads cooperatively and from timer interrupts, supports tick-based waiting
 and waking, provides interrupt-safe spinlocks, wait queues, and blocking
-mutexes, exposes PCI device enumeration with validated BAR discovery, a block-device protocol with a polling legacy VirtIO block
+mutexes, exposes PCI device enumeration with validated BAR discovery, a block-device protocol with polling legacy VirtIO block and network drivers
 driver, mounts an ext2 filesystem, resolves paths, and reads/writes regular
 files through direct, single-indirect, and double-indirect data blocks,
 including sparse holes, enforces inode permissions and ownership during VFS
@@ -59,7 +59,7 @@ signal delivery remains a later milestone.
 └── src/
     ├── arch/x86_64/  CPU contexts, GDT/TSS, IDT, and entry stubs
     ├── core/         Entry point, processes, threads, scheduler, and syscalls
-    ├── drivers/      Port I/O, PCI discovery, serial, timer, keyboard input, terminal, PS/2, and VirtIO block support
+    ├── drivers/      Port I/O, PCI discovery, serial, timer, keyboard input, terminal, PS/2, and VirtIO block/network support
     ├── exec/         ELF64 validation and executable loading
     ├── filesystem/   VFS, ext2 mounting, path lookup, regular-file I/O, and mutation
     ├── interrupts/   IRQ registration, PIC/IOAPIC routing, and CPU interrupt helpers

@@ -39,7 +39,8 @@ The source tree is organized as follows:
   and user threads, scheduler, and system calls.
 - `src/drivers/`: x86 port I/O, PCI enumeration and BAR discovery, serial output, timer/PIT support, the generic
   keyboard event layer, the serial-backed terminal, the IRQ-driven PS/2 backend,
-  the COM1 receive-interrupt backend, and the polling legacy VirtIO block driver.
+  the COM1 receive-interrupt backend, and the polling legacy VirtIO block and
+  network drivers.
 - `src/filesystem/`: the generic VFS, ext2 mounting, inode loading, path
   lookup, regular-file reads/writes through direct and indirect data blocks,
   and basic file/directory mutation. VFS access checks use process credentials;

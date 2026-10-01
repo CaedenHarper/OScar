@@ -68,7 +68,7 @@ LDFLAGS := \
 	-Wl,-z,noexecstack
 
 QEMUFLAGS ?= -M q35 -m 256M -serial stdio -display none -no-reboot -no-shutdown
-QEMU_NETWORK_FLAGS := -netdev user,id=net0 -device virtio-net-pci,netdev=net0
+QEMU_NETWORK_FLAGS := -netdev user,id=net0 -device virtio-net-pci,disable-modern=on,netdev=net0
 
 .PHONY: all iso run debug test test-run test-exception lint clean distclean help
 
