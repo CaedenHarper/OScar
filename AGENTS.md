@@ -42,9 +42,9 @@ The source tree is organized as follows:
   the COM1 receive-interrupt backend, and the polling legacy VirtIO block and
   network drivers.
 - `src/network/`: Ethernet framing, IPv4 ARP packet/cache/interface support,
-  and IPv4 packet parsing, checksums, and static routing. Networking remains
-  polling-based and does not yet provide ICMP, IP fragmentation, or socket
-  APIs.
+  IPv4 packet parsing/checksums/static routing, and ICMP echo handling.
+  Networking remains polling-based and does not yet provide IP fragmentation
+  or socket APIs.
 - `src/filesystem/`: the generic VFS, ext2 mounting, inode loading, path
   lookup, regular-file reads/writes through direct and indirect data blocks,
   and basic file/directory mutation. VFS access checks use process credentials;
