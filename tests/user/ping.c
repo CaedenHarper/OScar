@@ -58,8 +58,9 @@ static int parse_address(const char* text, uint8_t address[4]) {
 }
 
 void _start(int argc, char** argv) {
-    static const char usage[] = "ping: usage: ping <ipv4-address>\n";
+    static const char usage[] = "ping: usage: ping <ipv4-address-or-hostname>\n";
     static const char timeout[] = "ping: request timed out.\n";
+    static const char resolve_failure[] = "ping: could not resolve host.\n";
     static const uint64_t kProbeCount = 4;
     static const uint64_t kTimeoutTicks = 200;
     static const uint64_t kProbeIntervalTicks = 100;
@@ -70,8 +71,10 @@ void _start(int argc, char** argv) {
 
     uint8_t address[4];
     if(!parse_address(argv[1], address)) {
-        write_string(usage);
-        oscar_exit(1);
+        if(oscar_resolve(argv[1], address, kTimeoutTicks) < 0) {
+            write_string(resolve_failure);
+            oscar_exit(1);
+        }
     }
     write_string("PING ");
     write_string(argv[1]);

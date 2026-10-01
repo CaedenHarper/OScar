@@ -144,7 +144,7 @@ static void run_help(uint32_t argument_count) {
     static const char commands[] = "built-ins: cd pwd echo help exit\n"
                                    "filesystem: mkdir touch cp mv rm cat ls df du mount\n"
                                    "processes: ps top kill\n"
-                                   "network: ping <ipv4-address>, nslookup <hostname>\n";
+                                   "network: ping <ipv4-address-or-hostname>, nslookup <hostname>\n";
     if(argument_count != 1) {
         write_string(usage);
         return;
