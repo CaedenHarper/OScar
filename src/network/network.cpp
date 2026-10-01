@@ -3,6 +3,7 @@
 #include "dns.hpp"
 #include "ethernet.hpp"
 #include "icmp.hpp"
+#include "interrupts.hpp"
 #include "timer.hpp"
 #include "udp.hpp"
 #include "virtio_net.hpp"
@@ -143,6 +144,11 @@ PingStatus ping(arp::Ipv4Address destination, uint64_t timeout_ticks, uint16_t i
        destination.bytes[3] == 0) {
         return PingStatus::InvalidArgument;
     }
+    // int 0x80 uses an interrupt gate, so IF is cleared on syscall entry. This
+    // operation polls for network input and uses timer ticks for both its
+    // deadline and elapsed time; leave interrupts enabled while it waits or a
+    // remote reply would always appear to take zero milliseconds.
+    interrupts::enable();
     const PingStatus resolution = resolve(destination, timeout_ticks);
     if(resolution != PingStatus::Success) {
         return resolution;
@@ -151,9 +157,10 @@ PingStatus ping(arp::Ipv4Address destination, uint64_t timeout_ticks, uint16_t i
     static uint8_t request_payload[ipv4::kMaximumPacketLength];
     uint16_t request_payload_length = 0;
     constexpr uint8_t kDefaultPayload[] = {'O', 'S', 'c', 'a', 'r'};
+    const uint16_t sequence = g_sequence++;
     if(icmp::build_echo_request(
            identifier,
-           g_sequence++,
+           sequence,
            kDefaultPayload,
            sizeof(kDefaultPayload),
            request_payload,
@@ -180,11 +187,11 @@ PingStatus ping(arp::Ipv4Address destination, uint64_t timeout_ticks, uint16_t i
         return frame_status == ipv4::FrameStatus::AddressUnreachable ? PingStatus::AddressUnreachable
                                                                      : PingStatus::IoError;
     }
+    const uint64_t start = timer::ticks();
     if(g_device->send(g_device->context, request_frame, request_frame_length) != virtio_net::Status::Success) {
         return PingStatus::IoError;
     }
 
-    const uint64_t start = timer::ticks();
     static uint8_t frame[kMaximumFrameLength];
     while(time_remaining(start, timeout_ticks)) {
         uint16_t length = 0;
@@ -217,7 +224,7 @@ PingStatus ping(arp::Ipv4Address destination, uint64_t timeout_ticks, uint16_t i
         }
         icmp::EchoView reply;
         if(!icmp::parse_echo(packet.payload, packet.payload_length, &reply) || reply.type != icmp::Type::EchoReply ||
-           reply.identifier != identifier) {
+           reply.identifier != identifier || reply.sequence != sequence) {
             continue;
         }
         *elapsed_ticks = timer::ticks() - start;
@@ -233,6 +240,9 @@ ResolveStatus resolve_hostname(const char* hostname, uint64_t timeout_ticks, arp
     if(hostname == nullptr || address == nullptr || hostname[0] == '\0') {
         return ResolveStatus::InvalidArgument;
     }
+    // Like ping, DNS waits on both packet input and timer-driven deadlines;
+    // syscall entry has IF cleared and would otherwise freeze that clock.
+    interrupts::enable();
     const PingStatus resolution = resolve(kDnsServer, timeout_ticks);
     if(resolution != PingStatus::Success) {
         switch(resolution) {
