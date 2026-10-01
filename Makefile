@@ -42,7 +42,7 @@ LIMINE_ARCHIVE := $(DEPS_DIR)/limine-binary.tar.gz
 
 CPPFLAGS := -I$(PROTOCOL_DIR)/include \
 	-Isrc/arch/x86_64 -Isrc/core -Isrc/drivers -Isrc/filesystem -Isrc/interrupts -Isrc/memory \
-	-Isrc/synchronization -Isrc/tests -Isrc/exec -Isrc/storage
+	-Isrc/synchronization -Isrc/tests -Isrc/exec -Isrc/storage -Isrc/network
 CXXFLAGS := \
 	-target x86_64-unknown-none-elf \
 	-std=gnu++20 -O2 -g \

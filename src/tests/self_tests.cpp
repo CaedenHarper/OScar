@@ -19,6 +19,7 @@ void run(uintptr_t hhdm_offset) {
     virtual_memory::initialize(hhdm_offset);
     self_tests_detail::test_virtual_memory();
     self_tests_detail::test_pci();
+    self_tests_detail::test_ethernet();
     self_tests_detail::test_block_device();
     self_tests_detail::test_virtio_network();
     self_tests_detail::test_filesystem();
