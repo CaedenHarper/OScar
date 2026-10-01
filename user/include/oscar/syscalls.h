@@ -8,6 +8,7 @@ enum {
     OSCAR_ERROR_NETWORK_UNAVAILABLE = -13,
     OSCAR_ERROR_NETWORK_TIMEOUT = -14,
     OSCAR_ERROR_ADDRESS_UNREACHABLE = -15,
+    OSCAR_ERROR_NAME_NOT_FOUND = -16,
 };
 
 enum {
@@ -157,6 +158,9 @@ int64_t oscar_waitpid(uint64_t process_id, int64_t* status);
  * negative OSCAR_ERROR_* value.
  */
 int64_t oscar_ping(const uint8_t address[4], uint64_t timeout_ticks);
+
+/** Resolve a hostname through the configured DNS service into a four-byte IPv4 address. */
+int64_t oscar_resolve(const char* hostname, uint8_t address[4], uint64_t timeout_ticks);
 
 /** Complete the kernel test suite and terminate the test emulator; test runner use only. */
 __attribute__((noreturn)) void oscar_test_complete(void);

@@ -1,5 +1,6 @@
 #include "syscalls.hpp"
 
+#include "arp.hpp"
 #include "interrupts.hpp"
 #ifdef OSCAR_TEST_SUITE
 #include "io.hpp"
@@ -46,6 +47,7 @@ constexpr uint64_t kDup2 = 24;
 constexpr uint64_t kPipe = 25;
 constexpr uint64_t kStatfs = 26;
 constexpr uint64_t kPing = 27;
+constexpr uint64_t kResolve = 28;
 #ifdef OSCAR_TEST_SUITE
 constexpr uint64_t kTestComplete = 22;
 constexpr uint16_t kTestExitPort = 0xf4;
@@ -55,6 +57,7 @@ constexpr uint64_t kMaximumWriteLength = 4096;
 constexpr uint64_t kMaximumReadLength = 4096;
 constexpr uint64_t kMaximumPathLength = 511;
 constexpr uint64_t kMaximumNameLength = 255;
+constexpr uint64_t kMaximumHostnameLength = 253;
 constexpr uint64_t kMaximumPathComponents = 256;
 constexpr uint64_t kReadBufferSize = 128;
 constexpr int64_t kErrorInvalidArgument = -1;
@@ -72,6 +75,7 @@ constexpr int64_t kErrorPermissionDenied = -12;
 constexpr int64_t kErrorNetworkUnavailable = -13;
 constexpr int64_t kErrorNetworkTimeout = -14;
 constexpr int64_t kErrorAddressUnreachable = -15;
+constexpr int64_t kErrorNameNotFound = -16;
 constexpr int64_t kKillExitStatus = 137;
 
 struct UserStat {
@@ -423,6 +427,53 @@ int64_t ping(const syscalls::Frame* frame) {
     }
     return kErrorIo;
 }
+
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+//             hicpp-no-array-decay, cppcoreguidelines-pro-type-member-init)
+bool copy_hostname(uintptr_t user_hostname, char* hostname) {
+    if(user_hostname == 0 || hostname == nullptr) {
+        return false;
+    }
+    for(uint64_t index = 0; index <= kMaximumHostnameLength; ++index) {
+        if(user_hostname > UINTPTR_MAX - index ||
+           !user_memory::copy_from_user(hostname + index, user_hostname + index, 1)) {
+            return false;
+        }
+        if(hostname[index] == '\0') {
+            return index != 0;
+        }
+    }
+    return false;
+}
+
+int64_t resolve_hostname(const syscalls::Frame* frame) {
+    char hostname[kMaximumHostnameLength + 1];
+    if(frame->rdi == 0 || frame->rsi == 0 || !copy_hostname(frame->rdi, hostname) ||
+       !user_memory::validate(frame->rsi, 4, true)) {
+        return kErrorInvalidArgument;
+    }
+    arp::Ipv4Address address;
+    const network::ResolveStatus result = network::resolve_hostname(hostname, frame->rdx, &address);
+    switch(result) {
+        case network::ResolveStatus::Success: {
+            uint8_t bytes[4] = {address.bytes[0], address.bytes[1], address.bytes[2], address.bytes[3]};
+            return user_memory::copy_to_user(frame->rsi, bytes, sizeof(bytes)) ? 0 : kErrorInvalidArgument;
+        }
+        case network::ResolveStatus::NotInitialized:
+            return kErrorNetworkUnavailable;
+        case network::ResolveStatus::InvalidArgument:
+            return kErrorInvalidArgument;
+        case network::ResolveStatus::NameNotFound:
+            return kErrorNameNotFound;
+        case network::ResolveStatus::Timeout:
+            return kErrorNetworkTimeout;
+        case network::ResolveStatus::IoError:
+            return kErrorIo;
+    }
+    return kErrorIo;
+}
+// NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+//           hicpp-no-array-decay, cppcoreguidelines-pro-type-member-init)
 
 int64_t get_process_info(const syscalls::Frame* frame) {
     if(frame->rsi == 0 || !user_memory::validate(frame->rsi, sizeof(UserProcessInfo), true)) {
@@ -948,6 +999,9 @@ extern "C" void handle(Frame* frame) {
             return;
         case kPing:
             frame->rax = static_cast<uint64_t>(ping(frame));
+            return;
+        case kResolve:
+            frame->rax = static_cast<uint64_t>(resolve_hostname(frame));
             return;
         case kGetProcessInfo:
             frame->rax = static_cast<uint64_t>(get_process_info(frame));

@@ -1,8 +1,10 @@
 #include "network.hpp"
 
+#include "dns.hpp"
 #include "ethernet.hpp"
 #include "icmp.hpp"
 #include "timer.hpp"
+#include "udp.hpp"
 #include "virtio_net.hpp"
 
 #include <stdint.h>
@@ -16,6 +18,10 @@ namespace {
 constexpr arp::Ipv4Address kLocalAddress = {{10, 0, 2, 15}};
 constexpr arp::Ipv4Address kNetmask = {{255, 255, 255, 0}};
 constexpr arp::Ipv4Address kGateway = {{10, 0, 2, 2}};
+// QEMU user-mode networking exposes its forwarding DNS proxy at this address.
+// Keeping it here makes the initial resolver deterministic while leaving room
+// for DHCP or /etc/resolv.conf configuration later.
+constexpr arp::Ipv4Address kDnsServer = {{10, 0, 2, 3}};
 constexpr ethernet::MacAddress kBroadcast = {{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}};
 constexpr uint16_t kMaximumFrameLength = ethernet::kMaximumFrameLength;
 
@@ -24,6 +30,7 @@ arp::Interface g_arp_interface;
 ipv4::Interface g_ipv4_interface;
 bool g_initialized = false;
 uint16_t g_sequence = 0;
+uint16_t g_dns_identifier = 1;
 
 void copy_mac(ethernet::MacAddress* destination, virtio_net::MacAddress source) {
     for(uint8_t index = 0; index < sizeof(destination->bytes); ++index) {
@@ -217,6 +224,106 @@ PingStatus ping(arp::Ipv4Address destination, uint64_t timeout_ticks, uint16_t i
         return PingStatus::Success;
     }
     return PingStatus::Timeout;
+}
+
+ResolveStatus resolve_hostname(const char* hostname, uint64_t timeout_ticks, arp::Ipv4Address* address) {
+    if(!g_initialized || g_device == nullptr) {
+        return ResolveStatus::NotInitialized;
+    }
+    if(hostname == nullptr || address == nullptr || hostname[0] == '\0') {
+        return ResolveStatus::InvalidArgument;
+    }
+    const PingStatus resolution = resolve(kDnsServer, timeout_ticks);
+    if(resolution != PingStatus::Success) {
+        switch(resolution) {
+            case PingStatus::Timeout:
+                return ResolveStatus::Timeout;
+            case PingStatus::InvalidArgument:
+                return ResolveStatus::InvalidArgument;
+            case PingStatus::NotInitialized:
+                return ResolveStatus::NotInitialized;
+            case PingStatus::AddressUnreachable:
+            case PingStatus::IoError:
+                return ResolveStatus::IoError;
+            case PingStatus::Success:
+                break;
+        }
+    }
+
+    static uint8_t query_payload[512];
+    uint16_t query_length = 0;
+    const uint16_t identifier = g_dns_identifier++;
+    if(dns::build_query(hostname, identifier, query_payload, sizeof(query_payload), &query_length) !=
+       dns::Status::Success) {
+        return ResolveStatus::InvalidArgument;
+    }
+    static uint8_t request_frame[kMaximumFrameLength];
+    uint16_t request_frame_length = 0;
+    constexpr uint16_t kDnsSourcePort = 49152;
+    if(udp::build_frame(
+           g_ipv4_interface,
+           kDnsServer,
+           kDnsSourcePort,
+           53,
+           query_payload,
+           query_length,
+           request_frame,
+           sizeof(request_frame),
+           &request_frame_length,
+           timer::ticks()
+       ) != udp::Status::Success ||
+       g_device->send(g_device->context, request_frame, request_frame_length) != virtio_net::Status::Success) {
+        return ResolveStatus::IoError;
+    }
+
+    const uint64_t start = timer::ticks();
+    static uint8_t frame[kMaximumFrameLength];
+    while(time_remaining(start, timeout_ticks)) {
+        uint16_t length = 0;
+        const virtio_net::Status status = g_device->receive(g_device->context, frame, sizeof(frame), &length);
+        if(status == virtio_net::Status::NotReady) {
+            asm volatile("pause");
+            continue;
+        }
+        if(status != virtio_net::Status::Success) {
+            return ResolveStatus::IoError;
+        }
+        ethernet::FrameView received;
+        if(!ethernet::parse_frame(frame, length, &received)) {
+            continue;
+        }
+        if(received.type == ethernet::EtherType::Arp) {
+            if(!process_incoming_arp(received, timer::ticks())) {
+                return ResolveStatus::IoError;
+            }
+            continue;
+        }
+        if(received.type != ethernet::EtherType::Ipv4 || !ethernet::is_for_us(received, g_arp_interface.hardware)) {
+            continue;
+        }
+        ipv4::PacketView packet;
+        if(!ipv4::parse_packet(received.payload, received.payload_length, &packet) ||
+           packet.protocol != ipv4::Protocol::Udp || !ipv4::is_for_us(g_ipv4_interface, packet) ||
+           !arp::addresses_equal(packet.source, kDnsServer)) {
+            continue;
+        }
+        udp::DatagramView datagram;
+        if(!udp::parse_packet(kDnsServer, g_ipv4_interface.address, packet.payload, packet.payload_length, &datagram) ||
+           datagram.source_port != 53 || datagram.destination_port != kDnsSourcePort) {
+            continue;
+        }
+        const dns::Status result = dns::parse_response(datagram.payload, datagram.payload_length, identifier, address);
+        if(result == dns::Status::Success) {
+            return ResolveStatus::Success;
+        }
+        if(result == dns::Status::NameNotFound) {
+            return ResolveStatus::NameNotFound;
+        }
+        if(result == dns::Status::ServerFailure || result == dns::Status::NoAddress) {
+            return ResolveStatus::IoError;
+        }
+    }
+    return ResolveStatus::Timeout;
 }
 
 } // namespace network

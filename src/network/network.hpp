@@ -15,6 +15,15 @@ enum class PingStatus : uint8_t {
     IoError,
 };
 
+enum class ResolveStatus : uint8_t {
+    Success,
+    NotInitialized,
+    InvalidArgument,
+    NameNotFound,
+    Timeout,
+    IoError,
+};
+
 /** Initialize the static QEMU-compatible IPv4 network interface. */
 bool initialize();
 
@@ -23,5 +32,8 @@ bool is_initialized();
 
 /** Send an ICMP echo request and return its elapsed timer ticks on success. */
 PingStatus ping(arp::Ipv4Address destination, uint64_t timeout_ticks, uint16_t identifier, uint64_t* elapsed_ticks);
+
+/** Resolve a hostname through the configured DNS service and return its IPv4 address. */
+ResolveStatus resolve_hostname(const char* hostname, uint64_t timeout_ticks, arp::Ipv4Address* address);
 
 } // namespace network
