@@ -91,8 +91,10 @@ test:
 
 test-run: $(ISO) $(VIRTIO_DISK)
 	@rm -f $(BUILD_DIR)/test-output.log
-	@qemu_pid=0; completed=0; elapsed=0; \
-	$(QEMU) $(filter-out -serial stdio,$(QEMUFLAGS)) -serial stdio -monitor none -drive file=$(VIRTIO_DISK),format=raw,if=none,id=virtio-disk -device virtio-blk-pci,disable-modern=on,drive=virtio-disk -cdrom $(ISO) -boot d >$(BUILD_DIR)/test-output.log 2>/dev/null & qemu_pid=$$!; \
+	@test_disk=$(BUILD_DIR)/test-run-$$$$.img; cp $(VIRTIO_DISK) $$test_disk; \
+	trap 'rm -f "$$test_disk"' EXIT HUP INT TERM; \
+	qemu_pid=0; completed=0; elapsed=0; \
+	$(QEMU) $(filter-out -serial stdio,$(QEMUFLAGS)) -serial stdio -monitor none -drive file=$$test_disk,format=raw,if=none,id=virtio-disk -device virtio-blk-pci,disable-modern=on,drive=virtio-disk -cdrom $(ISO) -boot d >$(BUILD_DIR)/test-output.log 2>/dev/null & qemu_pid=$$!; \
 	while [ $$elapsed -lt 150 ]; do \
 		if grep -q "OSCAR TESTS PASSED" $(BUILD_DIR)/test-output.log; then completed=1; kill $$qemu_pid 2>/dev/null || true; break; fi; \
 		if ! kill -0 $$qemu_pid 2>/dev/null; then break; fi; \

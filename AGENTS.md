@@ -86,9 +86,10 @@ output. It attaches the persistent generated `build/virtio.img` runtime disk;
 and boots the small filesystem-backed `init` without the exhaustive smoke
 suite.
 `make test` builds an isolated `build-test/` kernel and
-`build-test/virtio-test.img` with all kernel and user-space tests, runs QEMU
-for a bounded interval, and verifies the `OSCAR TESTS PASSED` marker. Test
-artifacts are disposable and are removed by `make BUILD_DIR=build-test clean`.
+`build-test/virtio-test.img` with all kernel and user-space tests, copies the
+image to a per-run temporary disk, runs QEMU for a bounded interval, and
+verifies the `OSCAR TESTS PASSED` marker. Test artifacts are disposable and
+are removed by `make BUILD_DIR=build-test clean`.
 The image is formatted as ext2 and populated with lookup fixtures during its
 first build. The generated `large.bin` fixture crosses the single- and
 double-indirect data-block boundaries, and `/many` contains 300 entries for

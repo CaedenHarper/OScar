@@ -82,8 +82,10 @@ removes it with the other build products. It contains the runtime programs and
 basic filesystem fixtures.
 
 `make test` creates a separate `build-test/` kernel and
-`build-test/virtio-test.img`, runs the complete kernel and user-space smoke
-suite in headless QEMU, and succeeds only after it sees `OSCAR TESTS PASSED`.
+`build-test/virtio-test.img`, copies the image to a per-run temporary disk,
+runs the complete kernel and user-space smoke suite in headless QEMU, and
+succeeds only after it sees `OSCAR TESTS PASSED`. This prevents an interrupted
+QEMU process from locking or modifying the base test image.
 The test image includes the large indirect-block fixture, 300-entry directory,
 test executables, and test-only `/sbin/init`. The test suite covers filesystem
 PCI enumeration and VirtIO BAR discovery,
