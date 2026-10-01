@@ -32,6 +32,11 @@ void _start(void) {
     static const char kKillTestPath[] = "/bin/kill_target";
     static const char kKillTestFailure[] = "test init: cross-process kill test failed.\n";
     static const char kKillTestPassed[] = "test init: cross-process kill test passed.\n";
+    static const char kFilesystemStatusFailure[] = "test init: filesystem status command test failed.\n";
+    static const char kFilesystemStatusPassed[] = "test init: filesystem status commands passed.\n";
+    static const char kDfPath[] = "/bin/df";
+    static const char kDuPath[] = "/bin/du";
+    static const char kMountPath[] = "/bin/mount";
     static const char kPassedMessage[] = "OSCAR TESTS PASSED\n";
     int64_t status = 0;
     (void)write_text(kStartedMessage);
@@ -96,6 +101,16 @@ void _start(void) {
         exit_process();
     }
     (void)write_text(kKillTestPassed);
+
+    const char* status_commands[] = {kDfPath, kDuPath, kMountPath};
+    for(uint64_t index = 0; index < sizeof(status_commands) / sizeof(status_commands[0]); ++index) {
+        const int64_t command_id = oscar_spawn(status_commands[index]);
+        if(command_id < 0 || oscar_waitpid((uint64_t)command_id, &status) < 0 || status != 0) {
+            (void)write_text(kFilesystemStatusFailure);
+            exit_process();
+        }
+    }
+    (void)write_text(kFilesystemStatusPassed);
     (void)write_text(kPassedMessage);
     oscar_test_complete();
 }

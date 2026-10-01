@@ -1507,6 +1507,26 @@ Status remove_directory(const FileSystem* file_system, const Inode* parent, cons
     return result;
 }
 
+Status statistics(const FileSystem* file_system, Statistics* output) {
+    if(file_system == nullptr || !file_system->mounted || output == nullptr) {
+        return Status::InvalidArgument;
+    }
+    const interrupts::State previous_state = synchronization::lock(&file_system->io_lock);
+    if(!read_fs_block(file_system, kSuperblockOffset / file_system->block_size)) {
+        synchronization::unlock(&file_system->io_lock, previous_state);
+        return Status::IoError;
+    }
+    const uint32_t offset = kSuperblockOffset % file_system->block_size;
+    output->block_size = file_system->block_size;
+    output->total_blocks = read_u32(g_io_buffer + offset, 4);
+    output->free_blocks = read_u32(g_io_buffer + offset, 12);
+    output->total_inodes = read_u32(g_io_buffer + offset, 0);
+    output->free_inodes = read_u32(g_io_buffer + offset, 16);
+    synchronization::unlock(&file_system->io_lock, previous_state);
+    return output->free_blocks <= output->total_blocks && output->free_inodes <= output->total_inodes ? Status::Success
+                                                                                                      : Status::Corrupt;
+}
+
 } // namespace ext2
 
 // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-constant-array-index,

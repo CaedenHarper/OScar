@@ -9,6 +9,7 @@ initial `int 0x80` system-call ABI (`write`, `exit`, `yield`, `sleep`, `getpid`,
 `getid`, `spawn`, `waitpid`, `dup`, `dup2`, and `pipe`, plus filesystem `open`, `create`, `read`, `write`,
 `seek`, `close`, `mkdir`, `unlink`, and `rmdir`),
 `chdir`, `getcwd`, `stat`, and `readdir`,
+filesystem-wide `statfs`,
 loads validated in-memory ELF64 executables with `PT_LOAD` segments, including
 zero-filled memory and an initial user stack,
 provides a kernel heap, creates and runs kernel-thread stacks, schedules kernel
@@ -38,7 +39,10 @@ waits for it in user space. `cash` is the initial user-space interactive shell
 with `cd`, `pwd`, `echo`, `help`, and `exit` built-ins. Its current filesystem
 and process commands are implemented in the shell using the public syscall
 API: `mkdir`, `touch`, `cp`, `mv`, `rm`, `cat`, `ps`, and `kill`. The shell also dispatches filesystem-backed `/bin/ls` and
-bounded-refresh `/bin/top`. The shell command smoke program exercises the
+bounded-refresh `/bin/top`, `/bin/df`, `/bin/du`, and `/bin/mount`. `df` reports
+root filesystem capacity, `du` recursively reports file usage, and `mount`
+currently describes the active root mount; mount lifecycle management is a
+future milestone. The shell command smoke program exercises the
 filesystem operations and process inspection during init startup; general
 external command dispatch now passes argument vectors to child programs, while
 signal delivery remains a later milestone.

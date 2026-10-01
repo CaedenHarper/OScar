@@ -51,6 +51,14 @@ struct FileSystem {
     mutable synchronization::Spinlock io_lock;
 };
 
+struct Statistics {
+    uint32_t block_size;
+    uint64_t total_blocks;
+    uint64_t free_blocks;
+    uint64_t total_inodes;
+    uint64_t free_inodes;
+};
+
 /**
  * Mount an ext2 filesystem from the complete block device. Regular-file writes
  * are synchronous. Directory mutation is supported for regular files and
@@ -60,6 +68,9 @@ struct FileSystem {
  * the device is used. Returns false when the superblock or metadata is unsupported.
  */
 bool mount(block_device::Device* device, FileSystem* file_system);
+
+/** Read filesystem-wide capacity counters from a mounted ext2 filesystem. */
+Status statistics(const FileSystem* file_system, Statistics* output);
 
 /** Load one inode by number from a mounted filesystem. */
 Status get_inode(const FileSystem* file_system, uint32_t inode_number, Inode* inode);

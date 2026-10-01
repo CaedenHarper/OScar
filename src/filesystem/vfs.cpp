@@ -164,6 +164,43 @@ bool is_mounted() {
     return g_mounted;
 }
 
+Status statfs(FileSystemStatus* status) {
+    if(!g_mounted) {
+        return Status::NotMounted;
+    }
+    if(status == nullptr) {
+        return Status::InvalidArgument;
+    }
+    ext2::Statistics statistics = {};
+    const Status result = translate_status(ext2::statistics(&g_root_filesystem, &statistics));
+    if(result != Status::Success) {
+        return result;
+    }
+    *status = {
+        .block_size = statistics.block_size,
+        .total_blocks = statistics.total_blocks,
+        .free_blocks = statistics.free_blocks,
+        .total_inodes = statistics.total_inodes,
+        .free_inodes = statistics.free_inodes,
+        .filesystem = {},
+        .device = {},
+        .mount_point = {},
+    };
+    constexpr char kFilesystem[] = "ext2";
+    constexpr char kDevice[] = "virtio0";
+    constexpr char kMountPoint[] = "/";
+    for(uint32_t index = 0; index < sizeof(kFilesystem); ++index) {
+        status->filesystem[index] = kFilesystem[index];
+    }
+    for(uint32_t index = 0; index < sizeof(kDevice); ++index) {
+        status->device[index] = kDevice[index];
+    }
+    for(uint32_t index = 0; index < sizeof(kMountPoint); ++index) {
+        status->mount_point[index] = kMountPoint[index];
+    }
+    return Status::Success;
+}
+
 Status resolve_as(const char* path, Node* node, Credentials credentials) {
     if(!g_mounted) {
         return Status::NotMounted;

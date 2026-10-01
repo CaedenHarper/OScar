@@ -28,6 +28,9 @@ enum class NodeType : uint8_t {
 };
 
 constexpr uint32_t kMaximumNameLength = 255;
+constexpr uint32_t kFilesystemNameCapacity = 16;
+constexpr uint32_t kDeviceNameCapacity = 32;
+constexpr uint32_t kMountPointCapacity = 32;
 
 constexpr uint32_t kOpenRead = 1;
 constexpr uint32_t kOpenWrite = 2;
@@ -63,11 +66,25 @@ struct File {
     bool open;
 };
 
+struct FileSystemStatus {
+    uint32_t block_size;
+    uint64_t total_blocks;
+    uint64_t free_blocks;
+    uint64_t total_inodes;
+    uint64_t free_inodes;
+    char filesystem[kFilesystemNameCapacity];
+    char device[kDeviceNameCapacity];
+    char mount_point[kMountPointCapacity];
+};
+
 /** Mount the ext2 filesystem as the single VFS root. Regular files may be written. */
 bool mount_root(block_device::Device* device);
 
 /** Return whether the VFS root filesystem has been mounted. */
 bool is_mounted();
+
+/** Return capacity counters and descriptive information for the mounted root filesystem. */
+Status statfs(FileSystemStatus* status);
 
 /** Resolve a path through the mounted root filesystem without opening it. */
 Status resolve(const char* path, Node* node);

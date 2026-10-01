@@ -111,6 +111,13 @@ void test_vfs() {
     if(!vfs::mount_root(virtio_block::device()) || !vfs::is_mounted()) {
         panic::halt("VFS smoke test could not mount the root filesystem");
     }
+    vfs::FileSystemStatus filesystem_status = {};
+    if(vfs::statfs(&filesystem_status) != vfs::Status::Success || filesystem_status.block_size != 1024 ||
+       filesystem_status.total_blocks == 0 || filesystem_status.free_blocks == 0 ||
+       filesystem_status.free_blocks >= filesystem_status.total_blocks || filesystem_status.total_inodes == 0 ||
+       filesystem_status.free_inodes == 0 || filesystem_status.free_inodes >= filesystem_status.total_inodes) {
+        panic::halt("VFS filesystem-status query returned invalid capacity counters");
+    }
 
     vfs::File file = {};
     if(vfs::open("/hello.txt", vfs::kOpenRead, &file) != vfs::Status::Success) {

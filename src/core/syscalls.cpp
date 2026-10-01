@@ -42,6 +42,7 @@ constexpr uint64_t kKill = 21;
 constexpr uint64_t kDup = 23;
 constexpr uint64_t kDup2 = 24;
 constexpr uint64_t kPipe = 25;
+constexpr uint64_t kStatfs = 26;
 #ifdef OSCAR_TEST_SUITE
 constexpr uint64_t kTestComplete = 22;
 constexpr uint16_t kTestExitPort = 0xf4;
@@ -74,6 +75,17 @@ struct UserStat {
     uint16_t uid;
     uint16_t gid;
     uint16_t reserved;
+};
+
+struct UserFileSystemStatus {
+    uint32_t block_size;
+    uint64_t total_blocks;
+    uint64_t free_blocks;
+    uint64_t total_inodes;
+    uint64_t free_inodes;
+    char filesystem[vfs::kFilesystemNameCapacity];
+    char device[vfs::kDeviceNameCapacity];
+    char mount_point[vfs::kMountPointCapacity];
 };
 
 struct UserDirectoryEntry {
@@ -552,6 +564,36 @@ int64_t stat_path(const syscalls::Frame* frame) {
     return user_memory::copy_to_user(frame->rsi, &stat, sizeof(stat)) ? 0 : kErrorInvalidArgument;
 }
 
+int64_t stat_filesystem(const syscalls::Frame* frame) {
+    if(frame->rdi == 0 || !user_memory::validate(frame->rdi, sizeof(UserFileSystemStatus), true)) {
+        return kErrorInvalidArgument;
+    }
+    vfs::FileSystemStatus status = {};
+    if(vfs::statfs(&status) != vfs::Status::Success) {
+        return kErrorIo;
+    }
+    UserFileSystemStatus user_status = {
+        .block_size = status.block_size,
+        .total_blocks = status.total_blocks,
+        .free_blocks = status.free_blocks,
+        .total_inodes = status.total_inodes,
+        .free_inodes = status.free_inodes,
+        .filesystem = {},
+        .device = {},
+        .mount_point = {},
+    };
+    for(uint32_t index = 0; index < sizeof(user_status.filesystem); ++index) {
+        user_status.filesystem[index] = status.filesystem[index];
+    }
+    for(uint32_t index = 0; index < sizeof(user_status.device); ++index) {
+        user_status.device[index] = status.device[index];
+    }
+    for(uint32_t index = 0; index < sizeof(user_status.mount_point); ++index) {
+        user_status.mount_point[index] = status.mount_point[index];
+    }
+    return user_memory::copy_to_user(frame->rdi, &user_status, sizeof(user_status)) ? 0 : kErrorInvalidArgument;
+}
+
 int64_t read_directory(const syscalls::Frame* frame) {
     auto* owner = current_process();
     char path[kMaximumPathLength + 1];
@@ -925,6 +967,9 @@ extern "C" void handle(Frame* frame) {
             return;
         case kReaddir:
             frame->rax = static_cast<uint64_t>(read_directory(frame));
+            return;
+        case kStatfs:
+            frame->rax = static_cast<uint64_t>(stat_filesystem(frame));
             return;
         default:
             frame->rax = static_cast<uint64_t>(kErrorUnknownCall);

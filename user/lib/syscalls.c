@@ -25,6 +25,7 @@ enum {
     kGetcwdSystemCall = 17,
     kStatSystemCall = 18,
     kReaddirSystemCall = 19,
+    kStatfsSystemCall = 26,
     kDupSystemCall = 23,
     kDup2SystemCall = 24,
     kPipeSystemCall = 25,
@@ -128,6 +129,12 @@ int64_t oscar_getcwd(char* buffer, uint64_t length) {
 int64_t oscar_stat(const char* path, struct oscar_stat* status) {
     uint64_t call = kStatSystemCall;
     __asm__ volatile("int $0x80" : "+a"(call) : "D"(path), "S"(status) : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+int64_t oscar_statfs(struct oscar_statfs* status) {
+    uint64_t call = kStatfsSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"(status) : "rcx", "r11", "memory");
     return (int64_t)call;
 }
 

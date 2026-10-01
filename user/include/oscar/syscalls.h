@@ -44,6 +44,9 @@ enum {
     OSCAR_NODE_REGULAR = 0,
     OSCAR_NODE_DIRECTORY = 1,
     OSCAR_MAX_NAME_LENGTH = 255,
+    OSCAR_FILESYSTEM_NAME_CAPACITY = 16,
+    OSCAR_DEVICE_NAME_CAPACITY = 32,
+    OSCAR_MOUNT_POINT_CAPACITY = 32,
 };
 
 struct oscar_stat {
@@ -53,6 +56,17 @@ struct oscar_stat {
     uint16_t uid;
     uint16_t gid;
     uint16_t reserved;
+};
+
+struct oscar_statfs {
+    uint32_t block_size;
+    uint64_t total_blocks;
+    uint64_t free_blocks;
+    uint64_t total_inodes;
+    uint64_t free_inodes;
+    char filesystem[OSCAR_FILESYSTEM_NAME_CAPACITY];
+    char device[OSCAR_DEVICE_NAME_CAPACITY];
+    char mount_point[OSCAR_MOUNT_POINT_CAPACITY];
 };
 
 struct oscar_dirent {
@@ -71,6 +85,9 @@ int64_t oscar_getcwd(char* buffer, uint64_t length);
 
 /** Read metadata for a path into caller-owned storage. */
 int64_t oscar_stat(const char* path, struct oscar_stat* status);
+
+/** Read capacity and mount information for the root filesystem. */
+int64_t oscar_statfs(struct oscar_statfs* status);
 
 /** Read one non-dot directory entry by zero-based index. */
 int64_t oscar_readdir(const char* path, uint64_t index, struct oscar_dirent* entry);

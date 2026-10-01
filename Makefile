@@ -3,8 +3,8 @@ SHELL := /bin/sh
 
 BUILD_DIR := build
 USER_BUILD_DIR := $(BUILD_DIR)/user
-RUNTIME_USER_PROGRAM_NAMES := init cash ls top
-TEST_USER_PROGRAM_NAMES := basic prime second filesystem divzero kernel_access invalid_opcode init test_init cash ls top shell_commands argv_test kill_target
+RUNTIME_USER_PROGRAM_NAMES := init cash ls top df du mount
+TEST_USER_PROGRAM_NAMES := basic prime second filesystem divzero kernel_access invalid_opcode init test_init cash ls top df du mount shell_commands argv_test kill_target
 ifeq ($(OSCAR_TEST_SUITE),1)
 USER_PROGRAM_NAMES := $(TEST_USER_PROGRAM_NAMES)
 VIRTIO_DISK := $(BUILD_DIR)/virtio-test.img
@@ -124,9 +124,9 @@ $(BUILD_DIR):
 	mkdir -p $@
 
 ifeq ($(OSCAR_TEST_SUITE),1)
-IMAGE_PROGRAMS := $(USER_BUILD_DIR)/second.elf $(USER_BUILD_DIR)/init.elf $(USER_BUILD_DIR)/test_init.elf $(USER_BUILD_DIR)/cash.elf $(USER_BUILD_DIR)/ls.elf $(USER_BUILD_DIR)/top.elf $(USER_BUILD_DIR)/shell_commands.elf $(USER_BUILD_DIR)/argv_test.elf $(USER_BUILD_DIR)/kill_target.elf
+IMAGE_PROGRAMS := $(USER_BUILD_DIR)/second.elf $(USER_BUILD_DIR)/init.elf $(USER_BUILD_DIR)/test_init.elf $(USER_BUILD_DIR)/cash.elf $(USER_BUILD_DIR)/ls.elf $(USER_BUILD_DIR)/top.elf $(USER_BUILD_DIR)/df.elf $(USER_BUILD_DIR)/du.elf $(USER_BUILD_DIR)/mount.elf $(USER_BUILD_DIR)/shell_commands.elf $(USER_BUILD_DIR)/argv_test.elf $(USER_BUILD_DIR)/kill_target.elf
 else
-IMAGE_PROGRAMS := $(USER_BUILD_DIR)/init.elf $(USER_BUILD_DIR)/cash.elf $(USER_BUILD_DIR)/ls.elf $(USER_BUILD_DIR)/top.elf
+IMAGE_PROGRAMS := $(USER_BUILD_DIR)/init.elf $(USER_BUILD_DIR)/cash.elf $(USER_BUILD_DIR)/ls.elf $(USER_BUILD_DIR)/top.elf $(USER_BUILD_DIR)/df.elf $(USER_BUILD_DIR)/du.elf $(USER_BUILD_DIR)/mount.elf
 endif
 
 $(VIRTIO_DISK): Makefile $(FILESYSTEM_TEST_FILES) $(IMAGE_PROGRAMS) $(if $(filter 1,$(OSCAR_TEST_SUITE)),$(LARGE_FILESYSTEM_TEST_FILE),) | $(BUILD_DIR)
@@ -143,6 +143,9 @@ $(VIRTIO_DISK): Makefile $(FILESYSTEM_TEST_FILES) $(IMAGE_PROGRAMS) $(if $(filte
 	debugfs -w -R 'write $(USER_BUILD_DIR)/cash.elf /bin/cash' $@
 	debugfs -w -R 'write $(USER_BUILD_DIR)/ls.elf /bin/ls' $@
 	debugfs -w -R 'write $(USER_BUILD_DIR)/top.elf /bin/top' $@
+	debugfs -w -R 'write $(USER_BUILD_DIR)/df.elf /bin/df' $@
+	debugfs -w -R 'write $(USER_BUILD_DIR)/du.elf /bin/du' $@
+	debugfs -w -R 'write $(USER_BUILD_DIR)/mount.elf /bin/mount' $@
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),true,debugfs -w -R 'write $(USER_BUILD_DIR)/init.elf /sbin/init' $@)
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/second.elf /bin/second.elf' $@)
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/shell_commands.elf /bin/shell_commands' $@)

@@ -43,7 +43,9 @@ The source tree is organized as follows:
   lookup, regular-file reads/writes through direct and indirect data blocks,
   and basic file/directory mutation. VFS access checks use process credentials;
   ext2 mounting validates filesystem geometry, group metadata, inode metadata,
-  and directory-record bounds before allowing access.
+  and directory-record bounds before allowing access. The VFS also exposes
+  root filesystem capacity and mount-description status for the `df`, `du`,
+  and `mount` user commands; mount lifecycle management is not implemented yet.
 - `src/exec/`: freestanding ELF64 validation and process image loading,
   including filesystem-backed child creation.
 - `src/interrupts/`: interrupt-controller routing and CPU interrupt helpers.
