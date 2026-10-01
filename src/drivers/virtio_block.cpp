@@ -2,6 +2,7 @@
 
 #include "io.hpp"
 #include "memory.hpp"
+#include "pci.hpp"
 #include "virtual_memory.hpp"
 
 #include <stdint.h>
@@ -13,9 +14,6 @@ namespace virtio_block {
 
 namespace {
 
-constexpr uint16_t kPciConfigAddress = 0xcf8;
-constexpr uint16_t kPciConfigData = 0xcfc;
-constexpr uint32_t kPciConfigEnable = 0x80000000U;
 constexpr uint16_t kVirtioVendor = 0x1af4;
 constexpr uint16_t kVirtioLegacyBlock = 0x1001;
 constexpr uint32_t kVirtqueuePages = 4;
@@ -65,55 +63,6 @@ struct State {
 };
 
 State g_state = {};
-
-uint32_t pci_read32(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset) {
-    const uint32_t address = kPciConfigEnable | (static_cast<uint32_t>(bus) << 16U) |
-                             (static_cast<uint32_t>(slot) << 11U) | (static_cast<uint32_t>(function) << 8U) |
-                             (offset & 0xfcU);
-    io::out32(kPciConfigAddress, address);
-    return io::in32(kPciConfigData);
-}
-
-uint16_t pci_read16(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset) {
-    const uint32_t value = pci_read32(bus, slot, function, offset);
-    return static_cast<uint16_t>((value >> ((offset & 2U) * 8U)) & 0xffffU);
-}
-
-void pci_write16(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset, uint16_t value) {
-    const uint32_t address = kPciConfigEnable | (static_cast<uint32_t>(bus) << 16U) |
-                             (static_cast<uint32_t>(slot) << 11U) | (static_cast<uint32_t>(function) << 8U) |
-                             (offset & 0xfcU);
-    io::out32(kPciConfigAddress, address);
-    uint32_t current = io::in32(kPciConfigData);
-    const uint32_t shift = (offset & 2U) * 8U;
-    current = (current & ~(0xffffU << shift)) | (static_cast<uint32_t>(value) << shift);
-    io::out32(kPciConfigAddress, address);
-    io::out32(kPciConfigData, current);
-}
-
-bool find_device(uint8_t* bus_out, uint8_t* slot_out, uint8_t* function_out, uint16_t* io_base_out) {
-    for(uint16_t bus = 0; bus < 256; ++bus) {
-        for(uint8_t slot = 0; slot < 32; ++slot) {
-            for(uint8_t function = 0; function < 8; ++function) {
-                const uint32_t identity = pci_read32(static_cast<uint8_t>(bus), slot, function, 0);
-                if(static_cast<uint16_t>(identity) != kVirtioVendor ||
-                   static_cast<uint16_t>(identity >> 16U) != kVirtioLegacyBlock) {
-                    continue;
-                }
-                const uint32_t bar = pci_read32(static_cast<uint8_t>(bus), slot, function, 0x10);
-                if((bar & 1U) == 0 || (bar & 0xfffffffcU) == 0) {
-                    return false;
-                }
-                *bus_out = static_cast<uint8_t>(bus);
-                *slot_out = slot;
-                *function_out = function;
-                *io_base_out = static_cast<uint16_t>(bar & 0xfffcU);
-                return true;
-            }
-        }
-    }
-    return false;
-}
 
 bool translate_buffer(const void* buffer, uint64_t length, uintptr_t* physical) {
     if(buffer == nullptr || length == 0 || physical == nullptr ||
@@ -187,16 +136,13 @@ bool initialize() {
         return true;
     }
 
-    uint8_t bus = 0;
-    uint8_t slot = 0;
-    uint8_t function = 0;
-    uint16_t io_base = 0;
-    if(!find_device(&bus, &slot, &function, &io_base)) {
+    pci::Device pci_device;
+    if(!pci::find(kVirtioVendor, kVirtioLegacyBlock, &pci_device) || pci_device.bars[0].type != pci::BarType::Io ||
+       pci_device.bars[0].base == 0 || pci_device.bars[0].base > UINT16_MAX || !pci::enable_bus_mastering(pci_device)) {
         return false;
     }
+    const uint16_t io_base = static_cast<uint16_t>(pci_device.bars[0].base);
 
-    uint16_t command = pci_read16(bus, slot, function, 4);
-    pci_write16(bus, slot, function, 4, static_cast<uint16_t>(command | 0x5));
     io::out8(io_base + 18, 0);
     io::out8(io_base + 18, kStatusAcknowledge);
     io::out8(io_base + 18, kStatusAcknowledge | kStatusDriver);

@@ -18,6 +18,7 @@ void run(uintptr_t hhdm_offset) {
     self_tests_detail::test_physical_memory();
     virtual_memory::initialize(hhdm_offset);
     self_tests_detail::test_virtual_memory();
+    self_tests_detail::test_pci();
     self_tests_detail::test_block_device();
     self_tests_detail::test_filesystem();
     self_tests_detail::test_vfs();

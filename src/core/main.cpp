@@ -10,7 +10,7 @@
 #include "self_tests.hpp"
 #endif
 #include "serial.hpp"
-#include "startup.hpp"
+#include "startup.hpp" // NOLINT(misc-include-cleaner) used only in the production boot branch.
 #include "terminal.hpp"
 #include "timer.hpp"
 
