@@ -153,7 +153,8 @@ int64_t oscar_waitpid(uint64_t process_id, int64_t* status);
 
 /**
  * Send one ICMP echo request to an IPv4 address and wait up to timeout_ticks.
- * Returns zero on a matching reply or a negative OSCAR_ERROR_* value.
+ * Returns the round-trip time in milliseconds on a matching reply or a
+ * negative OSCAR_ERROR_* value.
  */
 int64_t oscar_ping(const uint8_t address[4], uint64_t timeout_ticks);
 

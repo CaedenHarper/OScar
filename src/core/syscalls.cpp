@@ -11,6 +11,7 @@
 #include "scheduler.hpp"
 #include "terminal.hpp"
 #include "thread.hpp"
+#include "timer.hpp"
 #include "user_memory.hpp"
 #include "vfs.hpp"
 
@@ -401,10 +402,14 @@ int64_t ping(const syscalls::Frame* frame) {
         return kErrorInvalidArgument;
     }
     const arp::Ipv4Address destination = {{bytes[0], bytes[1], bytes[2], bytes[3]}};
-    const network::PingStatus result = network::ping(destination, frame->rsi, static_cast<uint16_t>(get_pid()));
+    uint64_t elapsed_ticks = 0;
+    const network::PingStatus result =
+        network::ping(destination, frame->rsi, static_cast<uint16_t>(get_pid()), &elapsed_ticks);
     switch(result) {
-        case network::PingStatus::Success:
-            return 0;
+        case network::PingStatus::Success: {
+            const uint32_t frequency = timer::frequency_hz();
+            return frequency == 0 ? kErrorIo : static_cast<int64_t>((elapsed_ticks * 1000) / frequency);
+        }
         case network::PingStatus::NotInitialized:
             return kErrorNetworkUnavailable;
         case network::PingStatus::InvalidArgument:

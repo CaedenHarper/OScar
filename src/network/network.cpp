@@ -128,8 +128,8 @@ bool is_initialized() {
     return g_initialized;
 }
 
-PingStatus ping(arp::Ipv4Address destination, uint64_t timeout_ticks, uint16_t identifier) {
-    if(!g_initialized || g_device == nullptr) {
+PingStatus ping(arp::Ipv4Address destination, uint64_t timeout_ticks, uint16_t identifier, uint64_t* elapsed_ticks) {
+    if(!g_initialized || g_device == nullptr || elapsed_ticks == nullptr) {
         return PingStatus::NotInitialized;
     }
     if(destination.bytes[0] == 0 && destination.bytes[1] == 0 && destination.bytes[2] == 0 &&
@@ -213,6 +213,7 @@ PingStatus ping(arp::Ipv4Address destination, uint64_t timeout_ticks, uint16_t i
            reply.identifier != identifier) {
             continue;
         }
+        *elapsed_ticks = timer::ticks() - start;
         return PingStatus::Success;
     }
     return PingStatus::Timeout;
