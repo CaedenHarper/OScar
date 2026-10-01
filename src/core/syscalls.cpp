@@ -208,9 +208,11 @@ bool copy_spawn_arguments(uintptr_t user_arguments, char* storage, const char** 
     uint32_t storage_length = 0;
     for(uint32_t index = 0; index < loader::kMaximumArguments; ++index) {
         uintptr_t user_argument = 0;
+        if(index > (UINTPTR_MAX - user_arguments) / sizeof(uintptr_t)) {
+            return false;
+        }
         const uintptr_t pointer_address = user_arguments + index * sizeof(uintptr_t);
-        if(pointer_address < user_arguments ||
-           !user_memory::copy_from_user(&user_argument, pointer_address, sizeof(user_argument))) {
+        if(!user_memory::copy_from_user(&user_argument, pointer_address, sizeof(user_argument))) {
             return false;
         }
         if(user_argument == 0) {

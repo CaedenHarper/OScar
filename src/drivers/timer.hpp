@@ -21,4 +21,7 @@ uint64_t ticks();
  */
 uint32_t frequency_hz();
 
+/** Handle the timer's registered external interrupt. */
+void interrupt_handler(uint8_t vector, void* context);
+
 } // namespace timer

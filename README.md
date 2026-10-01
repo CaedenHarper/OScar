@@ -3,7 +3,8 @@
 A deliberately small freestanding C++ kernel. Limine loads the ELF kernel, and
 the kernel initializes COM1, reads the Limine-provided memory map, initializes
 a physical page allocator, manages kernel and process address-space structures and mappings,
-validates user memory ranges, installs an IDT, GDT/TSS, and PIT timer
+validates user memory ranges, installs an IDT, GDT/TSS, a registered external-interrupt
+dispatcher, and PIT timer
 interrupts, creates ring-3 user threads with private kernel stacks, handles an
 initial `int 0x80` system-call ABI (`write`, `exit`, `yield`, `sleep`, `getpid`,
 `getid`, `spawn`, `waitpid`, `dup`, `dup2`, and `pipe`, plus filesystem `open`, `create`, `read`, `write`,
@@ -61,7 +62,7 @@ signal delivery remains a later milestone.
     ├── drivers/      Port I/O, serial, timer, keyboard input, terminal, PS/2, and VirtIO block support
     ├── exec/         ELF64 validation and executable loading
     ├── filesystem/   VFS, ext2 mounting, path lookup, regular-file I/O, and mutation
-    ├── interrupts/   Interrupt routing and CPU interrupt helpers
+    ├── interrupts/   IRQ registration, PIC/IOAPIC routing, and CPU interrupt helpers
     ├── memory/       Physical pages, virtual memory, and kernel heap
     ├── synchronization/ Spinlocks, wait queues, and mutexes
     ├── storage/      Hardware-independent block-device protocol

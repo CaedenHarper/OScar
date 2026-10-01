@@ -2,19 +2,17 @@
 #include "idt.hpp"
 #include "interrupt_controller.hpp"
 #include "interrupts.hpp"
+#include "keyboard_ps2.hpp"
 #include "memory.hpp"
 #include "panic.hpp"
 #include "scheduler.hpp"
 #ifdef OSCAR_TEST_SUITE
 #include "self_tests.hpp"
 #endif
-#ifndef OSCAR_TEST_SUITE
-#include "keyboard_ps2.hpp"
-#include "startup.hpp"
-#include "timer.hpp"
-#endif
 #include "serial.hpp"
+#include "startup.hpp"
 #include "terminal.hpp"
+#include "timer.hpp"
 
 #include <limine.h>
 #include <stdint.h>
@@ -100,6 +98,16 @@ extern "C" [[noreturn]] void kmain() {
         panic::halt("could not initialize the PS/2 keyboard");
     }
 #endif
+    if(!interrupts::register_handler(interrupt_controller::kKeyboardVector, keyboard_ps2::interrupt_handler, nullptr) ||
+       !interrupts::register_handler(interrupt_controller::kSerialVector, serial::interrupt_handler, nullptr) ||
+       !interrupts::register_handler(interrupt_controller::kTimerVector, timer::interrupt_handler, nullptr) ||
+       !interrupt_controller::route_irq(1, interrupt_controller::kKeyboardVector) ||
+       !interrupt_controller::route_irq(4, interrupt_controller::kSerialVector) ||
+       !interrupt_controller::route_irq(0, interrupt_controller::kTimerVector) ||
+       !interrupt_controller::unmask_irq(1) || !interrupt_controller::unmask_irq(4) ||
+       !interrupt_controller::unmask_irq(0)) {
+        panic::halt("could not register or route interrupt handlers");
+    }
     if(!terminal::initialize()) {
         panic::halt("could not initialize the kernel terminal");
     }

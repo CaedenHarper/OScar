@@ -321,6 +321,16 @@ void record_exit(Process* process, int64_t status) {
 
     process->exit_status = status;
     process->state = State::Terminated;
+    // A terminating process cannot remain the parent of live children: doing so
+    // would make both the parent and its children permanently un-reapable. Orphaned
+    // children become detached and will be reclaimed independently when they exit.
+    while(process->child_head != nullptr) {
+        auto* child = process->child_head;
+        process->child_head = child->sibling_next;
+        child->parent = nullptr;
+        child->sibling_next = nullptr;
+    }
+    process->child_tail = nullptr;
     if(process->parent != nullptr) {
         // The terminating thread already holds interrupts disabled. Waking the parent
         // here makes the exit notification atomic with the transition to Terminated.
@@ -377,6 +387,7 @@ int32_t allocate_file_descriptor(Process* process, const vfs::File* file) {
     if(process == nullptr || file == nullptr || !file->open) {
         return -1;
     }
+    const interrupts::State previous_state = interrupts::save_and_disable();
     for(uint32_t descriptor = kFirstFileDescriptor; descriptor < kMaximumFileDescriptors; ++descriptor) {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
         if(!process->descriptors[descriptor].open) {
@@ -384,9 +395,11 @@ int32_t allocate_file_descriptor(Process* process, const vfs::File* file) {
             process->descriptors[descriptor] = {
                 .kind = DescriptorKind::File, .file = *file, .pipe = nullptr, .open = true
             };
+            interrupts::restore(previous_state);
             return static_cast<int32_t>(descriptor);
         }
     }
+    interrupts::restore(previous_state);
     return -1;
 }
 
@@ -396,8 +409,10 @@ bool create_pipe(Process* process, int64_t descriptors[2]) {
     if(process == nullptr || descriptors == nullptr) {
         return false;
     }
+    const interrupts::State previous_state = interrupts::save_and_disable();
     auto* pipe = static_cast<Pipe*>(kernel_heap::allocate(sizeof(Pipe)));
     if(pipe == nullptr) {
+        interrupts::restore(previous_state);
         return false;
     }
     pipe->read_position = 0;
@@ -421,6 +436,7 @@ bool create_pipe(Process* process, int64_t descriptors[2]) {
     }
     if(read_descriptor < 0 || write_descriptor < 0) {
         (void)kernel_heap::free(pipe);
+        interrupts::restore(previous_state);
         return false;
     }
     process->descriptors[read_descriptor] = {.kind = DescriptorKind::PipeRead, .file = {}, .pipe = pipe, .open = true};
@@ -431,6 +447,7 @@ bool create_pipe(Process* process, int64_t descriptors[2]) {
     descriptors[1] = write_descriptor;
     // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index, cppcoreguidelines-pro-bounds-pointer-arithmetic,
     //            cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+    interrupts::restore(previous_state);
     return true;
 }
 
@@ -443,7 +460,9 @@ int32_t duplicate_descriptor(Process* process, uint64_t descriptor, uint64_t tar
     if(descriptor == target) {
         return static_cast<int32_t>(target);
     }
+    const interrupts::State previous_state = interrupts::save_and_disable();
     if(process->descriptors[target].open && !close_file_descriptor(process, target)) {
+        interrupts::restore(previous_state);
         return -1;
     }
     process->descriptors[target] = process->descriptors[descriptor];
@@ -455,6 +474,7 @@ int32_t duplicate_descriptor(Process* process, uint64_t descriptor, uint64_t tar
         }
     }
     // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index)
+    interrupts::restore(previous_state);
     return static_cast<int32_t>(target);
 }
 
@@ -502,10 +522,12 @@ bool close_file_descriptor(Process* process, uint64_t descriptor) {
        !process->descriptors[descriptor].open) {
         return false;
     }
+    const interrupts::State previous_state = interrupts::save_and_disable();
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
     if(process->descriptors[descriptor].kind == DescriptorKind::File &&
        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
        vfs::close(&process->descriptors[descriptor].file) != vfs::Status::Success) {
+        interrupts::restore(previous_state);
         return false;
     }
     auto* pipe = process->descriptors[descriptor].pipe;
@@ -526,6 +548,7 @@ bool close_file_descriptor(Process* process, uint64_t descriptor) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor was validated by helper
     process->descriptors[descriptor] = {};
     // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index)
+    interrupts::restore(previous_state);
     return true;
 }
 

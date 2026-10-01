@@ -182,19 +182,19 @@ namespace idt {
 void initialize() {
     asm volatile("mov %%cs, %0" : "=r"(g_code_selector));
 
-    // Install only the exceptions and timer currently understood by the kernel; leaving
-    // unrelated vectors unconfigured avoids claiming ownership of future device IRQs.
+    // Install all CPU exceptions and the generic external-vector range. Device meaning
+    // is resolved by the registration table, so adding a driver never requires changing
+    // this architecture-specific file.
     constexpr unsigned kExceptionVectorCount = 32;
     for(unsigned vector = 0; vector < kExceptionVectorCount; ++vector) {
         set_gate(vector, isr_stub_table[vector], 0);
     }
 
-    constexpr unsigned kTimerVector = 32;
-    set_gate(kTimerVector, irq_stub_table[0], 0);
-    constexpr unsigned kKeyboardVector = 33;
-    set_gate(kKeyboardVector, irq_stub_table[1], 0);
-    constexpr unsigned kSerialVector = 36;
-    set_gate(kSerialVector, irq_stub_table[4], 0);
+    constexpr unsigned kFirstExternalVector = 32;
+    constexpr unsigned kExternalVectorCount = 223;
+    for(unsigned index = 0; index < kExternalVectorCount; ++index) {
+        set_gate(kFirstExternalVector + index, irq_stub_table[index], 0);
+    }
 
     // Only the syscall vector is callable from ring 3; all hardware and exception gates
     // remain ring-0-only so user code cannot synthesize privileged interrupt paths.

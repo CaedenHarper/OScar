@@ -7,7 +7,8 @@ freestanding C++ with a small amount of assembly. Limine loads the kernel ELF,
 and QEMU provides the primary development and test environment. The kernel
 initializes COM1 serial output, reads the Limine memory map, manages physical
 pages and basic virtual-memory mappings, provides a kernel heap, installs the
-GDT/TSS, Interrupt Descriptor Table, and hardware timer interrupts, creates
+GDT/TSS, Interrupt Descriptor Table, generic external-interrupt dispatcher,
+and hardware timer interrupts, creates
   ring-3 user threads, handles an initial system-call ABI including writable
   regular-file and basic directory operations, working directories, metadata and
   enumeration, descriptor duplication, in-memory pipes, and `spawn`/`waitpid`, loads validated
@@ -48,7 +49,8 @@ The source tree is organized as follows:
   and `mount` user commands; mount lifecycle management is not implemented yet.
 - `src/exec/`: freestanding ELF64 validation and process image loading,
   including filesystem-backed child creation.
-- `src/interrupts/`: interrupt-controller routing and CPU interrupt helpers.
+- `src/interrupts/`: external IRQ registration and vector allocation, PIC/IOAPIC
+  routing, end-of-interrupt handling, and CPU interrupt helpers.
 - `src/memory/`: physical pages, virtual-memory mappings, user-memory copying,
   and kernel heap.
 - `src/synchronization/`: spinlocks, wait queues, and blocking mutexes.

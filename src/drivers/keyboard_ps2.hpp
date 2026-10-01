@@ -13,4 +13,7 @@ bool initialize();
 /** Return whether the PS/2 keyboard initialized successfully. */
 bool is_available();
 
+/** Handle the PS/2 controller's registered external interrupt. */
+void interrupt_handler(uint8_t vector, void* context);
+
 } // namespace keyboard_ps2

@@ -1,6 +1,5 @@
 #include "keyboard_ps2.hpp"
 
-#include "interrupt_controller.hpp"
 #include "io.hpp"
 #include "keyboard.hpp"
 
@@ -132,11 +131,12 @@ void decode_scancode(uint8_t raw_scancode) {
 
 } // namespace
 
-extern "C" void keyboard_ps2_irq_handler() {
+void keyboard_ps2::interrupt_handler(uint8_t vector, void* context) {
+    (void)vector;
+    (void)context;
     if((io::in8(kStatusPort) & kOutputBufferFull) != 0) {
         decode_scancode(io::in8(kDataPort));
     }
-    interrupt_controller::end_of_interrupt(1);
 }
 
 namespace keyboard_ps2 {

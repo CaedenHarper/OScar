@@ -12,10 +12,19 @@ namespace {
 bool copy(void* kernel_address, uintptr_t user_address, const void* source, uint64_t length, bool to_user) {
     auto* thread = scheduler::current();
     auto* address_space = thread == nullptr ? nullptr : thread->address_space;
-    if(kernel_address == nullptr || source == nullptr || address_space == nullptr ||
-       !virtual_memory::validate_user_range(
-           address_space, user_address, length, to_user ? virtual_memory::kWritable : 0
-       )) {
+    if(address_space == nullptr || !virtual_memory::validate_user_range(
+                                       address_space, user_address, length, to_user ? virtual_memory::kWritable : 0
+                                   )) {
+        return false;
+    }
+
+    // A zero-length transfer has no buffer to dereference. Accepting it keeps the
+    // syscall ABI consistent with validate() and avoids rejecting harmless calls with
+    // a null buffer that the caller never intends to access.
+    if(length == 0) {
+        return true;
+    }
+    if(kernel_address == nullptr || source == nullptr) {
         return false;
     }
 

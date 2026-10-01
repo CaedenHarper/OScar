@@ -48,6 +48,7 @@ kernel_thread::Thread* dequeue_locked(WaitQueue* queue) {
     thread->waiting_next = nullptr;
     thread->waiting = false;
     thread->wait_queue = nullptr;
+    thread->wait_reason = kernel_thread::WaitReason::None;
     return thread;
 }
 
@@ -74,6 +75,7 @@ bool remove_locked(WaitQueue* queue, kernel_thread::Thread* thread) {
         candidate->waiting_next = nullptr;
         candidate->waiting = false;
         candidate->wait_queue = nullptr;
+        candidate->wait_reason = kernel_thread::WaitReason::None;
         return true;
     }
     return false;

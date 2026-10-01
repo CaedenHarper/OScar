@@ -19,31 +19,25 @@ constexpr uint8_t kSlaveVectorOffset = 40;
 constexpr uint8_t kMasterCascadeBit = 0x04;
 constexpr uint8_t kSlaveCascadeIdentity = 0x02;
 constexpr uint8_t kEndOfInterrupt = 0x20;
-constexpr uint8_t kTimerKeyboardAndSerialIrqMask = 0xec;
 constexpr uint8_t kAllIrqsMasked = 0xff;
 constexpr uint16_t kIoWaitPort = 0x80;
 constexpr uint8_t kIoWaitValue = 0;
 constexpr uint8_t kSlaveIrqBoundary = 8;
 constexpr uintptr_t kIoApicPhysicalAddress = 0xfec00000;
-constexpr uintptr_t kLocalApicIdOffset = 0x20;
 constexpr uintptr_t kLocalApicEoiOffset = 0xb0;
 constexpr uintptr_t kLocalApicSpuriousOffset = 0xf0;
 constexpr uint8_t kIoApicVersionRegister = 1;
 constexpr uint8_t kIoApicTimerRedirectionLow = 0x10;
 constexpr uint8_t kIoApicTimerGsiOverride = 2;
 constexpr uint8_t kIoApicRedirectionStride = 2;
-constexpr uint8_t kTimerVector = 32;
-constexpr uint8_t kKeyboardVector = 33;
-constexpr uint8_t kSerialVector = 36;
 constexpr uint32_t kInvalidMmioValue = 0xffffffff;
-constexpr unsigned kLapicIdShift = 24U;
 constexpr uint32_t kApicBaseMsr = 0x1b;
 constexpr uint64_t kApicEnableBit = 1ULL << 11U;
 constexpr uint32_t kSpuriousInterruptVector = 0xff;
 constexpr uint32_t kSpuriousInterruptEnable = 1U << 8U;
 constexpr uint32_t kSpuriousInterruptMask = 0xffffff00U;
 constexpr uint32_t kApicAddressMask = 0xfffff000U;
-constexpr uint32_t kByteMask = 0xffU;
+constexpr uint32_t kIoApicInterruptMask = 1U << 16U;
 constexpr unsigned kRegisterWordBits = 32U;
 
 void io_wait() {
@@ -73,6 +67,7 @@ void write_msr(uint32_t register_number, uint64_t value) {
 volatile uint32_t* g_ioapic;
 volatile uint32_t* g_lapic_eoi;
 bool g_use_ioapic;
+uint8_t g_ioapic_max_input;
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
 volatile uint32_t* mmio(uintptr_t hhdm_offset, uintptr_t physical_address) {
@@ -101,6 +96,23 @@ uint32_t ioapic_read(uint8_t register_number) {
 void ioapic_write(uint8_t register_number, uint32_t value) {
     g_ioapic[0] = register_number;
     g_ioapic[4] = value;
+}
+
+void route_ioapic_input(uint8_t input, uint8_t vector) {
+    const uint8_t low_register = kIoApicTimerRedirectionLow + input * kIoApicRedirectionStride;
+    ioapic_write(low_register, kIoApicInterruptMask | vector);
+    ioapic_write(low_register + 1, 0);
+}
+
+void unmask_ioapic_input(uint8_t input) {
+    const uint8_t low_register = kIoApicTimerRedirectionLow + input * kIoApicRedirectionStride;
+    const uint32_t value = ioapic_read(low_register) & ~kIoApicInterruptMask;
+    ioapic_write(low_register, value);
+}
+
+void mask_ioapic_input(uint8_t input) {
+    const uint8_t low_register = kIoApicTimerRedirectionLow + input * kIoApicRedirectionStride;
+    ioapic_write(low_register, ioapic_read(low_register) | kIoApicInterruptMask);
 }
 // NOLINTEND(performance-no-int-to-ptr, cppcoreguidelines-pro-bounds-pointer-arithmetic)
 
@@ -136,7 +148,7 @@ void initialize(uintptr_t hhdm_offset) {
     io::out8(kSlaveDataPort, kMode8086);
     io_wait();
 
-    io::out8(kMasterDataPort, kTimerKeyboardAndSerialIrqMask);
+    io::out8(kMasterDataPort, kAllIrqsMasked);
     io::out8(kSlaveDataPort, kAllIrqsMasked);
 
     const uint64_t apic_base_msr = read_msr(kApicBaseMsr);
@@ -158,17 +170,7 @@ void initialize(uintptr_t hhdm_offset) {
         kSpuriousInterruptVector;
     const uint32_t ioapic_version = ioapic_read(kIoApicVersionRegister);
     if(ioapic_version != 0 && ioapic_version != kInvalidMmioValue) {
-        const uint32_t lapic_id = (local_apic[kLocalApicIdOffset / sizeof(uint32_t)] >> kLapicIdShift) & kByteMask;
-        ioapic_write(kIoApicTimerRedirectionLow, kTimerVector);
-        ioapic_write(kIoApicTimerRedirectionLow + 1, lapic_id << kLapicIdShift);
-        ioapic_write(kIoApicTimerRedirectionLow + 2, kKeyboardVector);
-        ioapic_write(kIoApicTimerRedirectionLow + 3, lapic_id << kLapicIdShift);
-        ioapic_write(kIoApicTimerRedirectionLow + (4 * kIoApicRedirectionStride), kSerialVector);
-        ioapic_write(kIoApicTimerRedirectionLow + (4 * kIoApicRedirectionStride) + 1, lapic_id << kLapicIdShift);
-        const uint8_t override_redirection =
-            kIoApicTimerRedirectionLow + (kIoApicTimerGsiOverride * kIoApicRedirectionStride);
-        ioapic_write(override_redirection, kTimerVector);
-        ioapic_write(override_redirection + 1, lapic_id << kLapicIdShift);
+        g_ioapic_max_input = static_cast<uint8_t>((ioapic_version >> 16U) & 0xffU);
         g_use_ioapic = true;
         serial::write("Interrupt controller: IOAPIC.\n");
         return;
@@ -182,13 +184,81 @@ void initialize(uintptr_t hhdm_offset) {
     serial::write("Interrupt controller: PIC fallback.\n");
 }
 
-void end_of_interrupt(uint8_t irq) {
+bool route_irq(uint8_t irq, uint8_t vector) {
+    if(irq >= 16 || vector < 32 || vector == 255) {
+        return false;
+    }
+    if(!g_use_ioapic) {
+        if(irq < kSlaveIrqBoundary) {
+            return vector == static_cast<uint8_t>(kMasterVectorOffset + irq);
+        }
+        return vector == static_cast<uint8_t>(kSlaveVectorOffset + irq - kSlaveIrqBoundary);
+    }
+
+    if(irq > g_ioapic_max_input) {
+        return false;
+    }
+    route_ioapic_input(irq, vector);
+    // QEMU exposes the legacy PIT through the common ISA interrupt override on GSI 2.
+    // Keep both inputs routed for compatibility with machines that expose either form.
+    if(irq == 0 && kIoApicTimerGsiOverride <= g_ioapic_max_input) {
+        route_ioapic_input(kIoApicTimerGsiOverride, vector);
+    }
+    return true;
+}
+
+bool mask_irq(uint8_t irq) {
+    if(irq >= 16) {
+        return false;
+    }
+    if(g_use_ioapic) {
+        if(irq > g_ioapic_max_input) {
+            return false;
+        }
+        mask_ioapic_input(irq);
+        if(irq == 0 && kIoApicTimerGsiOverride <= g_ioapic_max_input) {
+            mask_ioapic_input(kIoApicTimerGsiOverride);
+        }
+        return true;
+    }
+    const uint16_t port = irq < kSlaveIrqBoundary ? kMasterDataPort : kSlaveDataPort;
+    const uint8_t bit = static_cast<uint8_t>(1U << (irq % kSlaveIrqBoundary));
+    io::out8(port, static_cast<uint8_t>(io::in8(port) | bit));
+    return true;
+}
+
+bool unmask_irq(uint8_t irq) {
+    if(irq >= 16) {
+        return false;
+    }
+    if(g_use_ioapic) {
+        if(irq > g_ioapic_max_input) {
+            return false;
+        }
+        unmask_ioapic_input(irq);
+        if(irq == 0 && kIoApicTimerGsiOverride <= g_ioapic_max_input) {
+            unmask_ioapic_input(kIoApicTimerGsiOverride);
+        }
+        return true;
+    }
+    const uint16_t port = irq < kSlaveIrqBoundary ? kMasterDataPort : kSlaveDataPort;
+    const uint8_t bit = static_cast<uint8_t>(1U << (irq % kSlaveIrqBoundary));
+    io::out8(port, static_cast<uint8_t>(io::in8(port) & ~bit));
+    return true;
+}
+
+void end_of_interrupt(uint8_t vector) {
     // IRQs from the slave PIC require two acknowledgements. The LAPIC EOI is independent
     // of that cascade and is issued whenever APIC routing was selected.
     if(g_use_ioapic) {
         *g_lapic_eoi = 0;
+        return;
     }
 
+    if(vector < kMasterVectorOffset || vector >= kSlaveVectorOffset + kSlaveIrqBoundary) {
+        return;
+    }
+    const uint8_t irq = vector < kSlaveVectorOffset ? vector - kMasterVectorOffset : vector - kSlaveVectorOffset + 8;
     if(irq >= kSlaveIrqBoundary) {
         io::out8(kSlaveCommandPort, kEndOfInterrupt);
     }

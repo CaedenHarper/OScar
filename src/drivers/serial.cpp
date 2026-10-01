@@ -1,6 +1,5 @@
 #include "serial.hpp"
 
-#include "interrupt_controller.hpp"
 #include "io.hpp"
 #include "keyboard.hpp"
 
@@ -297,13 +296,14 @@ void write_hex(uint64_t value) {
 
 } // namespace serial
 
-extern "C" void serial_irq_handler() {
+void serial::interrupt_handler(uint8_t vector, void* context) {
+    (void)vector;
+    (void)context;
     // Drain the UART rather than handling one byte per IRQ; the FIFO may contain a
     // short burst, and leaving bytes behind would retrigger the same IRQ immediately.
     while((io::in8(kCom1 + kLineStatusRegister) & kReceiveDataAvailable) != 0) {
         submit_input_character(static_cast<char>(io::in8(kCom1 + kDataRegister)));
     }
-    interrupt_controller::end_of_interrupt(4);
 }
 
 // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-constant-array-index)

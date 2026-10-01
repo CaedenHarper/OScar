@@ -16,6 +16,9 @@ void initialize();
  */
 void enable_input_interrupts();
 
+/** Handle COM1's registered receive interrupt. */
+void interrupt_handler(uint8_t vector, void* context);
+
 /*
  * Write one character to COM1. Newlines are emitted as CR-LF.
  */
