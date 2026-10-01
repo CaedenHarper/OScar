@@ -15,10 +15,10 @@ namespace {
 
 constexpr uint16_t kVirtioVendor = 0x1af4;
 constexpr uint16_t kVirtioNetworkDevice = 0x1000;
-constexpr uint16_t kQueueEntries = 8;
-// The descriptor and available rings occupy the first page; the legacy
-// queue-alignment rule places the used ring at the second page boundary.
-constexpr uint64_t kQueuePages = 2;
+constexpr uint16_t kMaximumQueueEntries = 256;
+// Four pages cover the largest queue supported here: the descriptor and
+// available rings are followed by an aligned used ring.
+constexpr uint64_t kQueuePages = 4;
 constexpr uint16_t kQueueAlignment = 4096;
 constexpr uint16_t kMaximumFrameLength = 1514;
 constexpr uint16_t kVirtioHeaderLength = 10;
@@ -41,6 +41,7 @@ struct Queue {
     volatile uint16_t* available_index;
     volatile uint16_t* used_index;
     uintptr_t used_offset;
+    uint16_t queue_size;
     uint16_t last_used;
 };
 
@@ -48,8 +49,8 @@ struct State {
     uint16_t io_base;
     Queue rx;
     Queue tx;
-    uintptr_t rx_buffer_physical[kQueueEntries];
-    uint8_t* rx_buffers[kQueueEntries];
+    uintptr_t rx_buffer_physical[kMaximumQueueEntries];
+    uint8_t* rx_buffers[kMaximumQueueEntries];
     uintptr_t tx_buffer_physical;
     uint8_t* tx_buffer;
     MacAddress mac;
@@ -75,7 +76,8 @@ void clear_bytes(void* destination, uint64_t length) {
 
 bool initialize_queue(uint16_t index, Queue* queue) {
     io::out16(static_cast<uint16_t>(g_state.io_base + 14), index);
-    if(io::in16(static_cast<uint16_t>(g_state.io_base + 12)) < kQueueEntries) {
+    const uint16_t queue_size = io::in16(static_cast<uint16_t>(g_state.io_base + 12));
+    if(queue_size == 0 || queue_size > kMaximumQueueEntries) {
         return false;
     }
     uintptr_t physical = 0;
@@ -86,8 +88,13 @@ bool initialize_queue(uint16_t index, Queue* queue) {
     clear_bytes(memory, kQueuePages * virtual_memory::kPageSize);
     queue->physical = physical;
     queue->descriptors = reinterpret_cast<Descriptor*>(memory);
-    queue->available_index = reinterpret_cast<volatile uint16_t*>(memory + 16 * kQueueEntries + 2);
-    queue->used_offset = kQueueAlignment;
+    queue->queue_size = queue_size;
+    const uintptr_t available_end = 16 * queue_size + 4 + 2 * queue_size;
+    queue->used_offset = (available_end + kQueueAlignment - 1) & ~(kQueueAlignment - 1);
+    if(queue->used_offset + 4 + 8 * queue_size > kQueuePages * virtual_memory::kPageSize) {
+        return false;
+    }
+    queue->available_index = reinterpret_cast<volatile uint16_t*>(memory + 16 * queue_size + 2);
     queue->used_index = reinterpret_cast<volatile uint16_t*>(memory + queue->used_offset + 2);
     queue->last_used = 0;
     io::out32(static_cast<uint16_t>(g_state.io_base + 8), static_cast<uint32_t>(physical / kQueueAlignment));
@@ -109,8 +116,8 @@ Status send_frame(void*, const void* frame, uint16_t length) {
     };
     const uint16_t available = *queue.available_index;
     auto* ring =
-        reinterpret_cast<volatile uint16_t*>(reinterpret_cast<uint8_t*>(queue.descriptors) + 16 * kQueueEntries);
-    ring[2 + (available % kQueueEntries)] = 0;
+        reinterpret_cast<volatile uint16_t*>(reinterpret_cast<uint8_t*>(queue.descriptors) + 16 * queue.queue_size);
+    ring[2 + (available % queue.queue_size)] = 0;
     *queue.available_index = available + 1;
     asm volatile("" : : : "memory");
     io::out16(static_cast<uint16_t>(g_state.io_base + 16), 1);
@@ -134,11 +141,12 @@ Status receive_frame(void*, void* frame, uint16_t capacity, uint16_t* length) {
     }
     auto* used_ring = reinterpret_cast<volatile uint8_t*>(queue.descriptors) + queue.used_offset + 4;
     const uint32_t used_length =
-        *reinterpret_cast<volatile uint32_t*>(used_ring + 8 * (queue.last_used % kQueueEntries) + 4);
-    const uint16_t descriptor =
-        static_cast<uint16_t>(*reinterpret_cast<volatile uint32_t*>(used_ring + 8 * (queue.last_used % kQueueEntries)));
+        *reinterpret_cast<volatile uint32_t*>(used_ring + 8 * (queue.last_used % queue.queue_size) + 4);
+    const uint16_t descriptor = static_cast<uint16_t>(
+        *reinterpret_cast<volatile uint32_t*>(used_ring + 8 * (queue.last_used % queue.queue_size))
+    );
     ++queue.last_used;
-    if(descriptor >= kQueueEntries || used_length < kVirtioHeaderLength) {
+    if(descriptor >= queue.queue_size || used_length < kVirtioHeaderLength) {
         return Status::IoError;
     }
     const uint16_t frame_length = static_cast<uint16_t>(used_length - kVirtioHeaderLength);
@@ -147,8 +155,8 @@ Status receive_frame(void*, void* frame, uint16_t capacity, uint16_t* length) {
     *length = copied;
     const uint16_t available = *queue.available_index;
     auto* available_ring =
-        reinterpret_cast<volatile uint16_t*>(reinterpret_cast<uint8_t*>(queue.descriptors) + 16 * kQueueEntries);
-    available_ring[2 + (available % kQueueEntries)] = descriptor;
+        reinterpret_cast<volatile uint16_t*>(reinterpret_cast<uint8_t*>(queue.descriptors) + 16 * queue.queue_size);
+    available_ring[2 + (available % queue.queue_size)] = descriptor;
     *queue.available_index = available + 1;
     asm volatile("" : : : "memory");
     io::out16(static_cast<uint16_t>(g_state.io_base + 16), 0);
@@ -177,7 +185,7 @@ bool initialize() {
     if(!initialize_queue(0, &g_state.rx) || !initialize_queue(1, &g_state.tx)) {
         return false;
     }
-    for(uint16_t index = 0; index < kQueueEntries; ++index) {
+    for(uint16_t index = 0; index < g_state.rx.queue_size; ++index) {
         if(!physical_memory::allocate_page(&g_state.rx_buffer_physical[index])) {
             return false;
         }
@@ -188,7 +196,7 @@ bool initialize() {
             g_state.rx_buffer_physical[index], virtual_memory::kPageSize, kDescriptorWrite, 0
         };
         auto* available = reinterpret_cast<volatile uint16_t*>(
-            reinterpret_cast<uint8_t*>(g_state.rx.descriptors) + 16 * kQueueEntries
+            reinterpret_cast<uint8_t*>(g_state.rx.descriptors) + 16 * g_state.rx.queue_size
         );
         available[2 + index] = index;
     }
@@ -197,8 +205,11 @@ bool initialize() {
     }
     g_state.tx_buffer = static_cast<uint8_t*>(virtual_memory::direct_map(g_state.tx_buffer_physical));
     clear_bytes(g_state.tx_buffer, virtual_memory::kPageSize);
-    *g_state.rx.available_index = kQueueEntries;
+    *g_state.rx.available_index = g_state.rx.queue_size;
     io::out8(static_cast<uint16_t>(g_state.io_base + 18), kStatusAcknowledge | kStatusDriver | kStatusDriverOk);
+    // The device must be notified after the initial receive buffers become
+    // available; otherwise it has no reason to inspect the RX ring.
+    io::out16(static_cast<uint16_t>(g_state.io_base + 16), 0);
     g_state.device = {&g_state, g_state.mac, send_frame, receive_frame};
     return true;
 }

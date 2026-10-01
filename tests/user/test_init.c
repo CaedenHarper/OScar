@@ -34,6 +34,9 @@ void _start(void) {
     static const char kKillTestPassed[] = "test init: cross-process kill test passed.\n";
     static const char kFilesystemStatusFailure[] = "test init: filesystem status command test failed.\n";
     static const char kFilesystemStatusPassed[] = "test init: filesystem status commands passed.\n";
+    static const char kNetworkFailure[] = "test init: network ping test failed.\n";
+    static const char kNetworkPassed[] = "test init: network ping test passed.\n";
+    static const uint8_t kGatewayAddress[] = {10, 0, 2, 2};
     static const char kDfPath[] = "/bin/df";
     static const char kDuPath[] = "/bin/du";
     static const char kMountPath[] = "/bin/mount";
@@ -111,6 +114,11 @@ void _start(void) {
         }
     }
     (void)write_text(kFilesystemStatusPassed);
+    if(oscar_ping(kGatewayAddress, 200) < 0) {
+        (void)write_text(kNetworkFailure);
+        exit_process();
+    }
+    (void)write_text(kNetworkPassed);
     (void)write_text(kPassedMessage);
     oscar_test_complete();
 }

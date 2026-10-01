@@ -4,6 +4,7 @@
 #include "interrupts.hpp"
 #include "keyboard_ps2.hpp"
 #include "memory.hpp"
+#include "network.hpp"
 #include "panic.hpp"
 #include "scheduler.hpp"
 #ifdef OSCAR_TEST_SUITE
@@ -82,6 +83,14 @@ extern "C" [[noreturn]] void kmain() {
 #else
     if(!startup::initialize(g_hhdm_request.response->offset)) {
         panic::halt("could not initialize production kernel subsystems");
+    }
+#endif
+
+#ifdef OSCAR_TEST_SUITE
+    // The test profile initializes the raw VirtIO device in its subsystem tests;
+    // initialize the protocol-facing service only after those prerequisites exist.
+    if(!network::initialize()) {
+        panic::halt("could not initialize the test network service");
     }
 #endif
 
