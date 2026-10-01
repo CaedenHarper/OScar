@@ -66,7 +66,7 @@ The source tree is organized as follows:
   `self_tests_internal.hpp` contains private cross-test declarations.
 - `tests/user/`: source and linker script for successful, filesystem-read,
   computed-output, interactive `cash` shell, filesystem-backed init, shell
-  command, and intentional-crash user ELF smoke images. Init, `cash`, and the
+  command, network `ping`, and intentional-crash user ELF smoke images. Init, `cash`, and the
   shell-command smoke image are mounted from the generated ext2 image; the
   other test images are embedded in the kernel smoke tests. Malformed ELF metadata tests live in
   `src/tests/` because they exercise validation without loading an image.

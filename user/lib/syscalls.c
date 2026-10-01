@@ -29,6 +29,7 @@ enum {
     kDupSystemCall = 23,
     kDup2SystemCall = 24,
     kPipeSystemCall = 25,
+    kPingSystemCall = 27,
 };
 
 int64_t oscar_write(int64_t descriptor, const void* buffer, uint64_t length) {
@@ -203,6 +204,13 @@ int64_t oscar_spawn_args(const char* path, const char* const arguments[]) {
 int64_t oscar_waitpid(uint64_t process_id, int64_t* status) {
     uint64_t call = kWaitPidSystemCall;
     __asm__ volatile("int $0x80" : "+a"(call) : "D"(process_id), "S"(status) : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+// NOLINTNEXTLINE(readability-non-const-parameter) the syscall reads the four-byte address.
+int64_t oscar_ping(const uint8_t address[4], uint64_t timeout_ticks) {
+    uint64_t call = kPingSystemCall;
+    __asm__ volatile("int $0x80" : "+a"(call) : "D"(address), "S"(timeout_ticks) : "rcx", "r11", "memory");
     return (int64_t)call;
 }
 

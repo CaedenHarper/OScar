@@ -5,6 +5,7 @@
 #include "io.hpp"
 #endif
 #include "loader.hpp"
+#include "network.hpp"
 #include "process.hpp"
 #include "process_internal.hpp"
 #include "scheduler.hpp"
@@ -43,6 +44,7 @@ constexpr uint64_t kDup = 23;
 constexpr uint64_t kDup2 = 24;
 constexpr uint64_t kPipe = 25;
 constexpr uint64_t kStatfs = 26;
+constexpr uint64_t kPing = 27;
 #ifdef OSCAR_TEST_SUITE
 constexpr uint64_t kTestComplete = 22;
 constexpr uint16_t kTestExitPort = 0xf4;
@@ -66,6 +68,9 @@ constexpr int64_t kErrorNotEmpty = -9;
 constexpr int64_t kErrorNoSpace = -10;
 constexpr int64_t kErrorBufferTooSmall = -11;
 constexpr int64_t kErrorPermissionDenied = -12;
+constexpr int64_t kErrorNetworkUnavailable = -13;
+constexpr int64_t kErrorNetworkTimeout = -14;
+constexpr int64_t kErrorAddressUnreachable = -15;
 constexpr int64_t kKillExitStatus = 137;
 
 struct UserStat {
@@ -385,6 +390,33 @@ int64_t get_pid() {
 int64_t get_id() {
     auto* thread = scheduler::current();
     return thread == nullptr ? kErrorInvalidArgument : static_cast<int64_t>(kernel_thread::id(thread));
+}
+
+int64_t ping(const syscalls::Frame* frame) {
+    if(frame->rdi == 0 || !user_memory::validate(frame->rdi, 4, false)) {
+        return kErrorInvalidArgument;
+    }
+    uint8_t bytes[4];
+    if(!user_memory::copy_from_user(bytes, frame->rdi, sizeof(bytes))) {
+        return kErrorInvalidArgument;
+    }
+    const arp::Ipv4Address destination = {{bytes[0], bytes[1], bytes[2], bytes[3]}};
+    const network::PingStatus result = network::ping(destination, frame->rsi, static_cast<uint16_t>(get_pid()));
+    switch(result) {
+        case network::PingStatus::Success:
+            return 0;
+        case network::PingStatus::NotInitialized:
+            return kErrorNetworkUnavailable;
+        case network::PingStatus::InvalidArgument:
+            return kErrorInvalidArgument;
+        case network::PingStatus::AddressUnreachable:
+            return kErrorAddressUnreachable;
+        case network::PingStatus::Timeout:
+            return kErrorNetworkTimeout;
+        case network::PingStatus::IoError:
+            return kErrorIo;
+    }
+    return kErrorIo;
 }
 
 int64_t get_process_info(const syscalls::Frame* frame) {
@@ -908,6 +940,9 @@ extern "C" void handle(Frame* frame) {
             return;
         case kGetId:
             frame->rax = static_cast<uint64_t>(get_id());
+            return;
+        case kPing:
+            frame->rax = static_cast<uint64_t>(ping(frame));
             return;
         case kGetProcessInfo:
             frame->rax = static_cast<uint64_t>(get_process_info(frame));

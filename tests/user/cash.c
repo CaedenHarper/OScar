@@ -143,7 +143,8 @@ static void run_help(uint32_t argument_count) {
     static const char usage[] = "cash: usage: help\n";
     static const char commands[] = "built-ins: cd pwd echo help exit\n"
                                    "filesystem: mkdir touch cp mv rm cat ls df du mount\n"
-                                   "processes: ps top kill\n";
+                                   "processes: ps top kill\n"
+                                   "network: ping <ipv4-address>\n";
     if(argument_count != 1) {
         write_string(usage);
         return;

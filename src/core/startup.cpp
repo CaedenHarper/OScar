@@ -2,6 +2,7 @@
 
 #include "kernel_heap.hpp"
 #include "loader.hpp"
+#include "network.hpp"
 #include "process.hpp"
 #include "scheduler.hpp"
 #include "thread.hpp"
@@ -23,6 +24,9 @@ bool initialize(uintptr_t hhdm_offset) {
     if(!virtio_block::initialize() || virtio_block::device() == nullptr || !vfs::mount_root(virtio_block::device())) {
         return false;
     }
+    // Networking is optional during boot; the ping syscall reports an explicit
+    // unavailable status when no VirtIO network function is present.
+    (void)network::initialize();
     return scheduler::initialize();
 }
 

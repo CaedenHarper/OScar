@@ -5,6 +5,9 @@
 enum {
     OSCAR_ERROR_NOT_FOUND = -3,
     OSCAR_ERROR_PERMISSION_DENIED = -12,
+    OSCAR_ERROR_NETWORK_UNAVAILABLE = -13,
+    OSCAR_ERROR_NETWORK_TIMEOUT = -14,
+    OSCAR_ERROR_ADDRESS_UNREACHABLE = -15,
 };
 
 enum {
@@ -147,6 +150,12 @@ int64_t oscar_spawn_args(const char* path, const char* const arguments[]);
 
 /** Wait for the exact child process and optionally receive its exit status. */
 int64_t oscar_waitpid(uint64_t process_id, int64_t* status);
+
+/**
+ * Send one ICMP echo request to an IPv4 address and wait up to timeout_ticks.
+ * Returns zero on a matching reply or a negative OSCAR_ERROR_* value.
+ */
+int64_t oscar_ping(const uint8_t address[4], uint64_t timeout_ticks);
 
 /** Complete the kernel test suite and terminate the test emulator; test runner use only. */
 __attribute__((noreturn)) void oscar_test_complete(void);

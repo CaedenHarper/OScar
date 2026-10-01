@@ -44,7 +44,8 @@ waits for it in user space. `cash` is the initial user-space interactive shell
 with `cd`, `pwd`, `echo`, `help`, and `exit` built-ins. Its current filesystem
 and process commands are implemented in the shell using the public syscall
 API: `mkdir`, `touch`, `cp`, `mv`, `rm`, `cat`, `ps`, and `kill`. The shell also dispatches filesystem-backed `/bin/ls` and
-bounded-refresh `/bin/top`, `/bin/df`, `/bin/du`, and `/bin/mount`. `df` reports
+bounded-refresh `/bin/top`, `/bin/df`, `/bin/du`, and `/bin/mount`, plus
+`/bin/ping` for ICMP echo requests. `df` reports
 root filesystem capacity, `du` recursively reports file usage, and `mount`
 currently describes the active root mount; mount lifecycle management is a
 future milestone. The shell command smoke program exercises the
