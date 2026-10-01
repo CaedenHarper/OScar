@@ -76,7 +76,8 @@ filesystem-backed `init`, `cash`, `ls`, and `top`. Test fixtures and the
 boot-time smoke-test sources are excluded from the normal kernel. Generated
 files go into `build/`.
 
-`make run` creates and attaches the persistent `build/virtio.img` disk to QEMU.
+`make run` creates and attaches the persistent `build/virtio.img` disk and a
+QEMU user-mode VirtIO network device to QEMU.
 The image is ignored by Git and remains across emulator runs; `make clean`
 removes it with the other build products. It contains the runtime programs and
 basic filesystem fixtures.

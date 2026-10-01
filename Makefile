@@ -68,6 +68,7 @@ LDFLAGS := \
 	-Wl,-z,noexecstack
 
 QEMUFLAGS ?= -M q35 -m 256M -serial stdio -display none -no-reboot -no-shutdown
+QEMU_NETWORK_FLAGS := -netdev user,id=net0 -device virtio-net-pci,netdev=net0
 
 .PHONY: all iso run debug test test-run test-exception lint clean distclean help
 
@@ -76,12 +77,12 @@ all: $(KERNEL)
 iso: $(ISO)
 
 run: $(ISO) $(VIRTIO_DISK)
-	$(QEMU) $(QEMUFLAGS) -drive file=$(VIRTIO_DISK),format=raw,if=none,id=virtio-disk -device virtio-blk-pci,disable-modern=on,drive=virtio-disk -cdrom $(ISO) -boot d
+	$(QEMU) $(QEMUFLAGS) $(QEMU_NETWORK_FLAGS) -drive file=$(VIRTIO_DISK),format=raw,if=none,id=virtio-disk -device virtio-blk-pci,disable-modern=on,drive=virtio-disk -cdrom $(ISO) -boot d
 
 debug: $(ISO) $(VIRTIO_DISK)
 	@echo "QEMU is paused. In another terminal, run:"
 	@echo "  gdb $(KERNEL) -ex 'target remote localhost:1234'"
-	$(QEMU) $(QEMUFLAGS) -drive file=$(VIRTIO_DISK),format=raw,if=none,id=virtio-disk -device virtio-blk-pci,disable-modern=on,drive=virtio-disk -cdrom $(ISO) -boot d -S -s
+	$(QEMU) $(QEMUFLAGS) $(QEMU_NETWORK_FLAGS) -drive file=$(VIRTIO_DISK),format=raw,if=none,id=virtio-disk -device virtio-blk-pci,disable-modern=on,drive=virtio-disk -cdrom $(ISO) -boot d -S -s
 
 test-exception:
 	$(MAKE) BUILD_DIR=$(BUILD_DIR)-exception OSCAR_TEST_SUITE=1 CXXFLAGS="$(CXXFLAGS) -DOSCAR_TEST_SUITE -DOSCAR_TEST_EXCEPTION" run
@@ -94,7 +95,7 @@ test-run: $(ISO) $(VIRTIO_DISK)
 	@test_disk=$(BUILD_DIR)/test-run-$$$$.img; cp $(VIRTIO_DISK) $$test_disk; \
 	trap 'rm -f "$$test_disk"' EXIT HUP INT TERM; \
 	qemu_pid=0; completed=0; elapsed=0; \
-	$(QEMU) $(filter-out -serial stdio,$(QEMUFLAGS)) -serial stdio -monitor none -drive file=$$test_disk,format=raw,if=none,id=virtio-disk -device virtio-blk-pci,disable-modern=on,drive=virtio-disk -cdrom $(ISO) -boot d >$(BUILD_DIR)/test-output.log 2>/dev/null & qemu_pid=$$!; \
+	$(QEMU) $(filter-out -serial stdio,$(QEMUFLAGS)) -serial stdio $(QEMU_NETWORK_FLAGS) -monitor none -drive file=$$test_disk,format=raw,if=none,id=virtio-disk -device virtio-blk-pci,disable-modern=on,drive=virtio-disk -cdrom $(ISO) -boot d >$(BUILD_DIR)/test-output.log 2>/dev/null & qemu_pid=$$!; \
 	while [ $$elapsed -lt 150 ]; do \
 		if grep -q "OSCAR TESTS PASSED" $(BUILD_DIR)/test-output.log; then completed=1; kill $$qemu_pid 2>/dev/null || true; break; fi; \
 		if ! kill -0 $$qemu_pid 2>/dev/null; then break; fi; \

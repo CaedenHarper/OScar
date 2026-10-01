@@ -13,6 +13,7 @@ namespace {
 constexpr size_t kDeviceCapacity = 8;
 constexpr uint16_t kVirtioVendor = 0x1af4;
 constexpr uint16_t kVirtioBlockDevice = 0x1001;
+constexpr uint16_t kVirtioNetworkDevice = 0x1000;
 constexpr uint16_t kBusMasterCommandBits = 0x0005;
 
 } // namespace
@@ -40,6 +41,10 @@ void test_pci() {
        (enabled.command & static_cast<uint16_t>(~kBusMasterCommandBits)) !=
            (old_command & static_cast<uint16_t>(~kBusMasterCommandBits))) {
         panic::halt("PCI discovery smoke test changed unrelated command bits");
+    }
+    static pci::Device network;
+    if(!pci::find(kVirtioVendor, kVirtioNetworkDevice, &network)) {
+        panic::halt("PCI discovery smoke test could not find the VirtIO network device");
     }
     serial::write("PCI device-discovery smoke test passed.\n");
 }

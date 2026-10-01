@@ -81,7 +81,8 @@ make test-exception
 ```
 
 `make run` should boot the production kernel in headless QEMU and print serial
-output. It attaches the persistent generated `build/virtio.img` runtime disk;
+output. It attaches the persistent generated `build/virtio.img` runtime disk
+and a QEMU user-mode VirtIO network device;
 `make clean` removes that image. The production kernel excludes `src/tests/`
 and boots the small filesystem-backed `init` without the exhaustive smoke
 suite.
