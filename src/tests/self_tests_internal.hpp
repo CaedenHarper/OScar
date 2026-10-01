@@ -98,6 +98,7 @@ void test_ethernet();
 void test_arp();
 void test_ipv4();
 void test_icmp();
+void test_udp();
 void test_filesystem();
 void test_vfs();
 void test_writable_filesystem();
