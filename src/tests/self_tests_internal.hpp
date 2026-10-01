@@ -95,6 +95,7 @@ void test_block_device();
 void test_virtio_network();
 void test_pci();
 void test_ethernet();
+void test_arp();
 void test_filesystem();
 void test_vfs();
 void test_writable_filesystem();
