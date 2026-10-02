@@ -15,6 +15,7 @@
 namespace {
 
 constexpr uintptr_t kUserStackTop = 0x00007fffffffe000ULL;
+constexpr uint64_t kUserStackPageCount = 8;
 constexpr uint64_t kMaximumExecutableSize = 4ULL * 1024ULL * 1024ULL;
 
 uint64_t segment_flags(const elf::ProgramHeader& segment) {
@@ -74,9 +75,16 @@ bool load_segments(process::Process* process, const void* image) {
             return false;
         }
     }
-    return virtual_memory::map_user_page(
-        address_space, kUserStackTop - virtual_memory::kPageSize, virtual_memory::kWritable | virtual_memory::kNoExecute
-    );
+    for(uint64_t index = 1; index <= kUserStackPageCount; ++index) {
+        if(!virtual_memory::map_user_page(
+               address_space,
+               kUserStackTop - (index * virtual_memory::kPageSize),
+               virtual_memory::kWritable | virtual_memory::kNoExecute
+           )) {
+            return false;
+        }
+    }
+    return true;
 }
 
 // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-constant-array-index,
@@ -120,7 +128,7 @@ bool build_user_stack(
 
     uintptr_t argument_pointers[loader::kMaximumArguments] = {};
     uintptr_t cursor = kUserStackTop;
-    const uintptr_t stack_bottom = kUserStackTop - virtual_memory::kPageSize;
+    const uintptr_t stack_bottom = kUserStackTop - (kUserStackPageCount * virtual_memory::kPageSize);
     uint64_t total_bytes = 0;
     for(uint32_t index = argument_count; index != 0; --index) {
         const char* argument = arguments[index - 1];

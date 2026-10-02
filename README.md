@@ -32,6 +32,7 @@ TCP segment framing/checksums, active polling TCP connections and socket
 syscalls, DNS
 A-record query construction and bounded response parsing through QEMU's
 10.0.2.3 DNS proxy, and the user-space `nslookup` command,
+plus a bounded user-space HTTP/1.0 `httpget` client over TCP,
 including serial ANSI navigation sequences and basic cursor-aware line editing,
 prints diagnostics to QEMU's serial console, and idles.
 
@@ -51,6 +52,8 @@ and process commands are implemented in the shell using the public syscall
 API: `mkdir`, `touch`, `cp`, `mv`, `rm`, `cat`, `ps`, and `kill`. The shell also dispatches filesystem-backed `/bin/ls` and
 bounded-refresh `/bin/top`, `/bin/df`, `/bin/du`, and `/bin/mount`, plus
 `/bin/ping` for ICMP echo requests and `/bin/nslookup` for DNS A-record lookups.
+The `/bin/httpget` command supports bounded, unencrypted HTTP/1.0 GET requests;
+HTTPS, redirects, and chunked transfer encoding are not supported yet.
 DNS currently uses QEMU's user-mode proxy at `10.0.2.3`; a future network
 configuration layer can replace this with DHCP or `/etc/resolv.conf`. `df` reports
 root filesystem capacity, `du` recursively reports file usage, and `mount`

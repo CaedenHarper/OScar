@@ -39,6 +39,9 @@ void _start(void) {
     static const char kNetworkPassed[] = "test init: network ping test passed.\n";
     static const char kSocketFailure[] = "test init: socket syscall test failed.\n";
     static const char kSocketPassed[] = "test init: socket syscall test passed.\n";
+    static const char kHttpParserPath[] = "/bin/http_parser_test";
+    static const char kHttpParserFailure[] = "test init: HTTP parser test failed.\n";
+    static const char kHttpParserPassed[] = "test init: HTTP parser test passed.\n";
     static const uint8_t kGatewayAddress[] = {10, 0, 2, 2};
     static const char kDfPath[] = "/bin/df";
     static const char kDuPath[] = "/bin/du";
@@ -131,6 +134,12 @@ void _start(void) {
         exit_process();
     }
     (void)write_text(kSocketPassed);
+    const int64_t http_parser_id = oscar_spawn(kHttpParserPath);
+    if(http_parser_id < 0 || oscar_waitpid((uint64_t)http_parser_id, &status) < 0 || status != 0) {
+        (void)write_text(kHttpParserFailure);
+        exit_process();
+    }
+    (void)write_text(kHttpParserPassed);
     (void)write_text(kPassedMessage);
     oscar_test_complete();
 }

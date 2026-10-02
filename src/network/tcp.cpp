@@ -76,7 +76,12 @@ uint16_t checksum(arp::Ipv4Address source, arp::Ipv4Address destination, const u
     sum = add_words(sum, source.bytes, sizeof(source.bytes));
     sum = add_words(sum, destination.bytes, sizeof(destination.bytes));
     sum += kProtocolNumber;
-    sum += static_cast<uint16_t>((static_cast<uint16_t>(length) >> 8U) | (length << 8U));
+    // The word accumulator operates on values, while add_words() handles the
+    // byte order of serialized fields. TCP's pseudo-header length is already
+    // a 16-bit word value here; swapping it would make external peers reject
+    // otherwise valid packets even though our own parser would agree with the
+    // same incorrect calculation.
+    sum += length;
     sum = add_words(sum, segment, length);
     return finish_checksum(sum);
 }

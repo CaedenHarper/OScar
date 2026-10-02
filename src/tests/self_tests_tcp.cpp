@@ -26,6 +26,7 @@ constexpr uint32_t kSequence = 0x12345678;
 constexpr uint32_t kAcknowledgment = 0xabcdef01;
 constexpr uint16_t kWindow = 4096;
 constexpr uint16_t kUrgentPointer = 0;
+constexpr uint16_t kExpectedChecksum = 0x9667;
 
 } // namespace
 
@@ -51,6 +52,11 @@ void test_tcp() {
        ) != tcp::Status::Success ||
        segment_length != tcp::kHeaderLength + sizeof(payload)) {
         panic::halt("TCP smoke test could not build a segment");
+    }
+    const uint16_t serialized_checksum =
+        static_cast<uint16_t>((static_cast<uint16_t>(segment[16]) << 8U) | static_cast<uint16_t>(segment[17]));
+    if(serialized_checksum != kExpectedChecksum) {
+        panic::halt("TCP smoke test calculated an incorrect checksum");
     }
 
     tcp::SegmentView parsed = {};

@@ -3,8 +3,8 @@ SHELL := /bin/sh
 
 BUILD_DIR := build
 USER_BUILD_DIR := $(BUILD_DIR)/user
-RUNTIME_USER_PROGRAM_NAMES := init cash ls top df du mount ping nslookup
-TEST_USER_PROGRAM_NAMES := basic prime second filesystem divzero kernel_access invalid_opcode init test_init cash ls top df du mount ping nslookup shell_commands argv_test kill_target
+RUNTIME_USER_PROGRAM_NAMES := init cash ls top df du mount ping nslookup httpget
+TEST_USER_PROGRAM_NAMES := basic prime second filesystem divzero kernel_access invalid_opcode init test_init cash ls top df du mount ping nslookup httpget http_parser_test shell_commands argv_test kill_target
 ifeq ($(OSCAR_TEST_SUITE),1)
 USER_PROGRAM_NAMES := $(TEST_USER_PROGRAM_NAMES)
 VIRTIO_DISK := $(BUILD_DIR)/virtio-test.img
@@ -127,9 +127,9 @@ $(BUILD_DIR):
 	mkdir -p $@
 
 ifeq ($(OSCAR_TEST_SUITE),1)
-IMAGE_PROGRAMS := $(USER_BUILD_DIR)/second.elf $(USER_BUILD_DIR)/init.elf $(USER_BUILD_DIR)/test_init.elf $(USER_BUILD_DIR)/cash.elf $(USER_BUILD_DIR)/ls.elf $(USER_BUILD_DIR)/top.elf $(USER_BUILD_DIR)/df.elf $(USER_BUILD_DIR)/du.elf $(USER_BUILD_DIR)/mount.elf $(USER_BUILD_DIR)/ping.elf $(USER_BUILD_DIR)/nslookup.elf $(USER_BUILD_DIR)/shell_commands.elf $(USER_BUILD_DIR)/argv_test.elf $(USER_BUILD_DIR)/kill_target.elf
+IMAGE_PROGRAMS := $(USER_BUILD_DIR)/second.elf $(USER_BUILD_DIR)/init.elf $(USER_BUILD_DIR)/test_init.elf $(USER_BUILD_DIR)/cash.elf $(USER_BUILD_DIR)/ls.elf $(USER_BUILD_DIR)/top.elf $(USER_BUILD_DIR)/df.elf $(USER_BUILD_DIR)/du.elf $(USER_BUILD_DIR)/mount.elf $(USER_BUILD_DIR)/ping.elf $(USER_BUILD_DIR)/nslookup.elf $(USER_BUILD_DIR)/httpget.elf $(USER_BUILD_DIR)/http_parser_test.elf $(USER_BUILD_DIR)/shell_commands.elf $(USER_BUILD_DIR)/argv_test.elf $(USER_BUILD_DIR)/kill_target.elf
 else
-IMAGE_PROGRAMS := $(USER_BUILD_DIR)/init.elf $(USER_BUILD_DIR)/cash.elf $(USER_BUILD_DIR)/ls.elf $(USER_BUILD_DIR)/top.elf $(USER_BUILD_DIR)/df.elf $(USER_BUILD_DIR)/du.elf $(USER_BUILD_DIR)/mount.elf $(USER_BUILD_DIR)/ping.elf $(USER_BUILD_DIR)/nslookup.elf
+IMAGE_PROGRAMS := $(USER_BUILD_DIR)/init.elf $(USER_BUILD_DIR)/cash.elf $(USER_BUILD_DIR)/ls.elf $(USER_BUILD_DIR)/top.elf $(USER_BUILD_DIR)/df.elf $(USER_BUILD_DIR)/du.elf $(USER_BUILD_DIR)/mount.elf $(USER_BUILD_DIR)/ping.elf $(USER_BUILD_DIR)/nslookup.elf $(USER_BUILD_DIR)/httpget.elf
 endif
 
 $(VIRTIO_DISK): Makefile $(FILESYSTEM_TEST_FILES) $(IMAGE_PROGRAMS) $(if $(filter 1,$(OSCAR_TEST_SUITE)),$(LARGE_FILESYSTEM_TEST_FILE),) | $(BUILD_DIR)
@@ -151,12 +151,14 @@ $(VIRTIO_DISK): Makefile $(FILESYSTEM_TEST_FILES) $(IMAGE_PROGRAMS) $(if $(filte
 	debugfs -w -R 'write $(USER_BUILD_DIR)/mount.elf /bin/mount' $@
 	debugfs -w -R 'write $(USER_BUILD_DIR)/ping.elf /bin/ping' $@
 	debugfs -w -R 'write $(USER_BUILD_DIR)/nslookup.elf /bin/nslookup' $@
+	debugfs -w -R 'write $(USER_BUILD_DIR)/httpget.elf /bin/httpget' $@
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),true,debugfs -w -R 'write $(USER_BUILD_DIR)/init.elf /sbin/init' $@)
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/second.elf /bin/second.elf' $@)
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/shell_commands.elf /bin/shell_commands' $@)
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/argv_test.elf /bin/argv_test' $@)
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/kill_target.elf /bin/kill_target' $@)
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/test_init.elf /sbin/init' $@)
+	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/http_parser_test.elf /bin/http_parser_test' $@)
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(LARGE_FILESYSTEM_TEST_FILE) /large.bin' $@)
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),index=0; while [ $$index -lt 300 ]; do \
 		debugfs -w -R "write tests/filesystem/hello.txt /many/file$$index" $@ >/dev/null || exit 1; \
@@ -202,6 +204,18 @@ $(USER_BUILD_DIR)/%.elf: tests/user/%.c user/include/oscar/syscalls.h user/lib/s
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c tests/user/$*.c -o $(USER_BUILD_DIR)/$*.o
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/syscalls.c -o $(USER_BUILD_DIR)/$*.syscalls.o
 	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/$*.o $(USER_BUILD_DIR)/$*.syscalls.o -o $@
+
+$(USER_BUILD_DIR)/httpget.elf: tests/user/httpget.c user/include/oscar/http.h user/include/oscar/syscalls.h user/lib/http.c user/lib/syscalls.c tests/user/linker.ld | $(USER_BUILD_DIR)
+	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c tests/user/httpget.c -o $(USER_BUILD_DIR)/httpget.o
+	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/http.c -o $(USER_BUILD_DIR)/httpget.http.o
+	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/syscalls.c -o $(USER_BUILD_DIR)/httpget.syscalls.o
+	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/httpget.o $(USER_BUILD_DIR)/httpget.http.o $(USER_BUILD_DIR)/httpget.syscalls.o -o $@
+
+$(USER_BUILD_DIR)/http_parser_test.elf: tests/user/http_parser_test.c user/include/oscar/http.h user/include/oscar/syscalls.h user/lib/http.c user/lib/syscalls.c tests/user/linker.ld | $(USER_BUILD_DIR)
+	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c tests/user/http_parser_test.c -o $(USER_BUILD_DIR)/http_parser_test.o
+	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/http.c -o $(USER_BUILD_DIR)/http_parser_test.http.o
+	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/syscalls.c -o $(USER_BUILD_DIR)/http_parser_test.syscalls.o
+	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/http_parser_test.o $(USER_BUILD_DIR)/http_parser_test.http.o $(USER_BUILD_DIR)/http_parser_test.syscalls.o -o $@
 
 $(BUILD_DIR)/asm/tests/user_program.o: $(USER_BUILD_DIR)/basic.elf
 $(BUILD_DIR)/asm/tests/user_program_prime.o: $(USER_BUILD_DIR)/prime.elf
