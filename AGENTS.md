@@ -43,10 +43,10 @@ The source tree is organized as follows:
   network drivers.
 - `src/network/`: Ethernet framing, IPv4 ARP packet/cache/interface support,
   IPv4 packet parsing/checksums/static routing, ICMP echo handling, UDP
-  datagram framing, stateless TCP segment framing/checksums, and DNS A-record
-  queries through QEMU's resolver.
-  Networking remains polling-based and does not yet provide
-  IP fragmentation, TCP connection state, or socket APIs.
+  datagram framing, TCP segment framing/checksums and active TCP connection
+  state, and DNS A-record queries through QEMU's resolver. The first socket
+  interface provides polling IPv4/TCP stream operations; it does not yet
+  provide listening sockets, nonblocking mode, IPv6, or IP fragmentation.
 - `src/filesystem/`: the generic VFS, ext2 mounting, inode loading, path
   lookup, regular-file reads/writes through direct and indirect data blocks,
   and basic file/directory mutation. VFS access checks use process credentials;

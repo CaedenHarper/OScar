@@ -25,6 +25,9 @@ constexpr arp::Ipv4Address kGateway = {{10, 0, 2, 2}};
 constexpr arp::Ipv4Address kDnsServer = {{10, 0, 2, 3}};
 constexpr ethernet::MacAddress kBroadcast = {{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}};
 constexpr uint16_t kMaximumFrameLength = ethernet::kMaximumFrameLength;
+constexpr uint16_t kMaximumTcpPayload =
+    ethernet::kMaximumPayloadLength - ipv4::kMinimumHeaderLength - tcp::kHeaderLength;
+constexpr uint16_t kFirstTcpEphemeralPort = 49152;
 
 virtio_net::Device* g_device = nullptr;
 arp::Interface g_arp_interface;
@@ -32,6 +35,8 @@ ipv4::Interface g_ipv4_interface;
 bool g_initialized = false;
 uint16_t g_sequence = 0;
 uint16_t g_dns_identifier = 1;
+uint16_t g_next_tcp_port = kFirstTcpEphemeralPort;
+uint32_t g_tcp_sequence = 1;
 
 void copy_mac(ethernet::MacAddress* destination, virtio_net::MacAddress source) {
     for(uint8_t index = 0; index < sizeof(destination->bytes); ++index) {
@@ -50,6 +55,102 @@ bool process_incoming_arp(const ethernet::FrameView& frame, uint64_t now) {
         return true;
     }
     return g_device->send(g_device->context, response, response_length) == virtio_net::Status::Success;
+}
+
+bool send_tcp_segment(
+    void*,
+    const tcp_connection::Connection& connection,
+    uint32_t sequence,
+    uint32_t acknowledgment,
+    uint8_t flags,
+    const void* payload,
+    uint16_t payload_length
+) {
+    if(payload_length > kMaximumTcpPayload) {
+        return false;
+    }
+    static uint8_t packet[ethernet::kMaximumPayloadLength];
+    uint16_t packet_length = 0;
+    if(tcp::build_segment(
+           connection.local_address,
+           connection.remote_address,
+           connection.local_port,
+           connection.remote_port,
+           sequence,
+           acknowledgment,
+           flags,
+           4096,
+           0,
+           payload,
+           payload_length,
+           packet,
+           sizeof(packet),
+           &packet_length
+       ) != tcp::Status::Success) {
+        return false;
+    }
+    static uint8_t frame[kMaximumFrameLength];
+    uint16_t frame_length = 0;
+    return ipv4::build_frame(
+               g_ipv4_interface,
+               connection.remote_address,
+               ipv4::Protocol::Tcp,
+               packet,
+               packet_length,
+               frame,
+               sizeof(frame),
+               &frame_length,
+               timer::ticks()
+           ) == ipv4::FrameStatus::Success &&
+           g_device->send(g_device->context, frame, frame_length) == virtio_net::Status::Success;
+}
+
+bool process_tcp_input(tcp_connection::Connection* connection, uint64_t now, TcpStatus* result) {
+    static uint8_t frame[kMaximumFrameLength];
+    uint16_t length = 0;
+    const virtio_net::Status receive_status = g_device->receive(g_device->context, frame, sizeof(frame), &length);
+    if(receive_status == virtio_net::Status::NotReady) {
+        asm volatile("pause");
+        return false;
+    }
+    if(receive_status != virtio_net::Status::Success) {
+        *result = TcpStatus::IoError;
+        return true;
+    }
+    ethernet::FrameView ethernet_frame;
+    if(!ethernet::parse_frame(frame, length, &ethernet_frame)) {
+        return false;
+    }
+    if(ethernet_frame.type == ethernet::EtherType::Arp) {
+        *result = process_incoming_arp(ethernet_frame, now) ? TcpStatus::Success : TcpStatus::IoError;
+        return false;
+    }
+    if(ethernet_frame.type != ethernet::EtherType::Ipv4 ||
+       !ethernet::is_for_us(ethernet_frame, g_arp_interface.hardware)) {
+        return false;
+    }
+    ipv4::PacketView ipv4_packet;
+    if(!ipv4::parse_packet(ethernet_frame.payload, ethernet_frame.payload_length, &ipv4_packet) ||
+       ipv4_packet.protocol != ipv4::Protocol::Tcp || !ipv4::is_for_us(g_ipv4_interface, ipv4_packet) ||
+       !arp::addresses_equal(ipv4_packet.source, connection->remote_address) ||
+       !arp::addresses_equal(ipv4_packet.destination, connection->local_address)) {
+        return false;
+    }
+    tcp::SegmentView segment;
+    if(!tcp::parse_segment(
+           ipv4_packet.source, ipv4_packet.destination, ipv4_packet.payload, ipv4_packet.payload_length, &segment
+       ) ||
+       segment.source_port != connection->remote_port || segment.destination_port != connection->local_port) {
+        return false;
+    }
+    const tcp_connection::Result connection_result =
+        tcp_connection::process(connection, send_tcp_segment, nullptr, segment, now);
+    if(connection_result == tcp_connection::Result::Reset) {
+        *result = TcpStatus::Reset;
+    } else if(connection_result == tcp_connection::Result::IoError) {
+        *result = TcpStatus::IoError;
+    }
+    return true;
 }
 
 PingStatus resolve(arp::Ipv4Address destination, uint64_t timeout_ticks) {
@@ -334,6 +435,185 @@ ResolveStatus resolve_hostname(const char* hostname, uint64_t timeout_ticks, arp
         }
     }
     return ResolveStatus::Timeout;
+}
+
+TcpStatus tcp_connect(
+    tcp_connection::Connection* connection,
+    arp::Ipv4Address destination,
+    uint16_t destination_port,
+    uint64_t timeout_ticks
+) {
+    if(!g_initialized || g_device == nullptr) {
+        return TcpStatus::NotInitialized;
+    }
+    if(connection == nullptr || destination_port == 0) {
+        return TcpStatus::InvalidArgument;
+    }
+    interrupts::enable();
+    const PingStatus resolution = resolve(destination, timeout_ticks);
+    if(resolution != PingStatus::Success) {
+        return resolution == PingStatus::Timeout              ? TcpStatus::Timeout
+               : resolution == PingStatus::AddressUnreachable ? TcpStatus::AddressUnreachable
+               : resolution == PingStatus::NotInitialized     ? TcpStatus::NotInitialized
+                                                              : TcpStatus::IoError;
+    }
+    const uint16_t local_port = g_next_tcp_port++;
+    if(g_next_tcp_port == 0) {
+        g_next_tcp_port = kFirstTcpEphemeralPort;
+    }
+    tcp_connection::initialize(
+        connection, g_ipv4_interface.address, destination, local_port, destination_port, g_tcp_sequence
+    );
+    g_tcp_sequence += 0x10001U;
+    const uint64_t start = timer::ticks();
+    if(tcp_connection::open(connection, send_tcp_segment, nullptr, start) != tcp_connection::Result::Success) {
+        return TcpStatus::IoError;
+    }
+    while(time_remaining(start, timeout_ticks)) {
+        const uint64_t now = timer::ticks();
+        const tcp_connection::Result retry = tcp_connection::poll(connection, send_tcp_segment, nullptr, now);
+        if(retry == tcp_connection::Result::Timeout) {
+            return TcpStatus::Timeout;
+        }
+        TcpStatus input_result = TcpStatus::Success;
+        (void)process_tcp_input(connection, now, &input_result);
+        if(input_result != TcpStatus::Success) {
+            return input_result;
+        }
+        if(connection->state == tcp_connection::State::Established) {
+            return TcpStatus::Success;
+        }
+        if(connection->state == tcp_connection::State::Reset) {
+            return TcpStatus::Reset;
+        }
+    }
+    return TcpStatus::Timeout;
+}
+
+TcpStatus tcp_send(tcp_connection::Connection* connection, const void* data, uint16_t length, uint64_t timeout_ticks) {
+    if(!g_initialized || g_device == nullptr) {
+        return TcpStatus::NotInitialized;
+    }
+    if(connection == nullptr || data == nullptr || length == 0) {
+        return TcpStatus::InvalidArgument;
+    }
+    if(connection->state != tcp_connection::State::Established) {
+        return TcpStatus::NotConnected;
+    }
+    interrupts::enable();
+    const auto* bytes = static_cast<const uint8_t*>(data);
+    uint16_t sent = 0;
+    const uint64_t start = timer::ticks();
+    while(sent < length) {
+        const uint16_t chunk = length - sent > kMaximumTcpPayload ? kMaximumTcpPayload : length - sent;
+        const tcp_connection::Result send_result =
+            tcp_connection::send(connection, send_tcp_segment, nullptr, bytes + sent, chunk, timer::ticks());
+        if(send_result == tcp_connection::Result::Reset) {
+            return TcpStatus::Reset;
+        }
+        if(send_result != tcp_connection::Result::Success) {
+            return send_result == tcp_connection::Result::WouldBlock ? TcpStatus::IoError : TcpStatus::IoError;
+        }
+        while(connection->send_unacknowledged != connection->send_next) {
+            if(!time_remaining(start, timeout_ticks)) {
+                return TcpStatus::Timeout;
+            }
+            const uint64_t now = timer::ticks();
+            if(tcp_connection::poll(connection, send_tcp_segment, nullptr, now) == tcp_connection::Result::Timeout) {
+                return TcpStatus::Timeout;
+            }
+            TcpStatus input_result = TcpStatus::Success;
+            (void)process_tcp_input(connection, now, &input_result);
+            if(input_result != TcpStatus::Success) {
+                return input_result;
+            }
+            if(connection->state == tcp_connection::State::Reset) {
+                return TcpStatus::Reset;
+            }
+        }
+        sent = static_cast<uint16_t>(sent + chunk);
+    }
+    return TcpStatus::Success;
+}
+
+TcpStatus tcp_receive(
+    tcp_connection::Connection* connection,
+    void* output,
+    uint16_t capacity,
+    uint16_t* length,
+    uint64_t timeout_ticks
+) {
+    if(!g_initialized || g_device == nullptr) {
+        return TcpStatus::NotInitialized;
+    }
+    if(connection == nullptr || output == nullptr || length == nullptr || capacity == 0) {
+        return TcpStatus::InvalidArgument;
+    }
+    if(connection->state != tcp_connection::State::Established && connection->state != tcp_connection::State::FinWait &&
+       connection->state != tcp_connection::State::TimeWait) {
+        return TcpStatus::NotConnected;
+    }
+    interrupts::enable();
+    *length = 0;
+    const uint64_t start = timer::ticks();
+    while(time_remaining(start, timeout_ticks)) {
+        const tcp_connection::Result receive_result = tcp_connection::receive(connection, output, capacity, length);
+        if(receive_result == tcp_connection::Result::Success) {
+            return TcpStatus::Success;
+        }
+        if(receive_result == tcp_connection::Result::Closed) {
+            return TcpStatus::Success;
+        }
+        if(receive_result == tcp_connection::Result::Reset) {
+            return TcpStatus::Reset;
+        }
+        const uint64_t now = timer::ticks();
+        if(tcp_connection::poll(connection, send_tcp_segment, nullptr, now) == tcp_connection::Result::Timeout) {
+            return TcpStatus::Timeout;
+        }
+        TcpStatus input_result = TcpStatus::Success;
+        (void)process_tcp_input(connection, now, &input_result);
+        if(input_result != TcpStatus::Success) {
+            return input_result;
+        }
+    }
+    return TcpStatus::Timeout;
+}
+
+TcpStatus tcp_close(tcp_connection::Connection* connection, uint64_t timeout_ticks) {
+    if(!g_initialized || g_device == nullptr) {
+        return TcpStatus::NotInitialized;
+    }
+    if(connection == nullptr) {
+        return TcpStatus::InvalidArgument;
+    }
+    if(connection->state == tcp_connection::State::Closed) {
+        return TcpStatus::Success;
+    }
+    interrupts::enable();
+    const uint64_t start = timer::ticks();
+    if(connection->state == tcp_connection::State::Established &&
+       tcp_connection::close(connection, send_tcp_segment, nullptr, start) != tcp_connection::Result::Success) {
+        return TcpStatus::IoError;
+    }
+    while(time_remaining(start, timeout_ticks)) {
+        if(connection->state == tcp_connection::State::Closed || connection->state == tcp_connection::State::TimeWait) {
+            return TcpStatus::Success;
+        }
+        const uint64_t now = timer::ticks();
+        if(tcp_connection::poll(connection, send_tcp_segment, nullptr, now) == tcp_connection::Result::Timeout) {
+            return TcpStatus::Timeout;
+        }
+        TcpStatus input_result = TcpStatus::Success;
+        (void)process_tcp_input(connection, now, &input_result);
+        if(input_result == TcpStatus::Reset) {
+            return TcpStatus::Reset;
+        }
+        if(input_result == TcpStatus::IoError) {
+            return TcpStatus::IoError;
+        }
+    }
+    return TcpStatus::Timeout;
 }
 
 } // namespace network

@@ -37,6 +37,8 @@ void _start(void) {
     static const char kFilesystemStatusPassed[] = "test init: filesystem status commands passed.\n";
     static const char kNetworkFailure[] = "test init: network ping test failed.\n";
     static const char kNetworkPassed[] = "test init: network ping test passed.\n";
+    static const char kSocketFailure[] = "test init: socket syscall test failed.\n";
+    static const char kSocketPassed[] = "test init: socket syscall test passed.\n";
     static const uint8_t kGatewayAddress[] = {10, 0, 2, 2};
     static const char kDfPath[] = "/bin/df";
     static const char kDuPath[] = "/bin/du";
@@ -120,6 +122,15 @@ void _start(void) {
         exit_process();
     }
     (void)write_text(kNetworkPassed);
+    const int64_t socket_descriptor = oscar_socket(OSCAR_AF_INET, OSCAR_SOCK_STREAM, OSCAR_IPPROTO_TCP);
+    const char socket_data[] = "not connected";
+    if(socket_descriptor < 0 ||
+       oscar_send(socket_descriptor, socket_data, sizeof(socket_data) - 1) != OSCAR_ERROR_NOT_CONNECTED ||
+       oscar_close(socket_descriptor) < 0) {
+        (void)write_text(kSocketFailure);
+        exit_process();
+    }
+    (void)write_text(kSocketPassed);
     (void)write_text(kPassedMessage);
     oscar_test_complete();
 }

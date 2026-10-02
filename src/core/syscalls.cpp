@@ -2,6 +2,7 @@
 
 #include "arp.hpp"
 #include "interrupts.hpp"
+#include "kernel_heap.hpp"
 #ifdef OSCAR_TEST_SUITE
 #include "io.hpp"
 #endif
@@ -10,6 +11,7 @@
 #include "process.hpp"
 #include "process_internal.hpp"
 #include "scheduler.hpp"
+#include "tcp_connection.hpp"
 #include "terminal.hpp"
 #include "thread.hpp"
 #include "timer.hpp"
@@ -48,6 +50,10 @@ constexpr uint64_t kPipe = 25;
 constexpr uint64_t kStatfs = 26;
 constexpr uint64_t kPing = 27;
 constexpr uint64_t kResolve = 28;
+constexpr uint64_t kSocket = 29;
+constexpr uint64_t kConnect = 30;
+constexpr uint64_t kSend = 31;
+constexpr uint64_t kRecv = 32;
 #ifdef OSCAR_TEST_SUITE
 constexpr uint64_t kTestComplete = 22;
 constexpr uint16_t kTestExitPort = 0xf4;
@@ -61,6 +67,11 @@ constexpr uint64_t kMaximumHostnameLength = 253;
 constexpr uint64_t kMaximumPathComponents = 256;
 constexpr uint64_t kReadBufferSize = 128;
 constexpr uint64_t kMillisecondsPerSecond = 1000;
+constexpr uint64_t kSocketTimeoutTicks = 100;
+constexpr uint64_t kMaximumSocketTransfer = 4096;
+constexpr uint64_t kAddressFamilyIpv4 = 2;
+constexpr uint64_t kSocketTypeStream = 1;
+constexpr uint64_t kProtocolTcp = 6;
 constexpr int64_t kErrorInvalidArgument = -1;
 constexpr int64_t kErrorUnknownCall = -2;
 constexpr int64_t kErrorNotFound = -3;
@@ -77,6 +88,8 @@ constexpr int64_t kErrorNetworkUnavailable = -13;
 constexpr int64_t kErrorNetworkTimeout = -14;
 constexpr int64_t kErrorAddressUnreachable = -15;
 constexpr int64_t kErrorNameNotFound = -16;
+constexpr int64_t kErrorConnectionReset = -17;
+constexpr int64_t kErrorNotConnected = -18;
 constexpr int64_t kKillExitStatus = 137;
 
 struct UserStat {
@@ -782,6 +795,7 @@ int64_t read(const syscalls::Frame* frame) {
         case process::DescriptorKind::StandardOutput:
         case process::DescriptorKind::StandardError:
         case process::DescriptorKind::PipeWrite:
+        case process::DescriptorKind::Socket:
             return kErrorBadDescriptor;
     }
     return kErrorBadDescriptor;
@@ -866,8 +880,126 @@ int64_t create_pipe(const syscalls::Frame* frame) {
     return 0;
 }
 
+int64_t socket_create(const syscalls::Frame* frame) {
+    auto* owner = current_process();
+    if(owner == nullptr || frame->rdi != kAddressFamilyIpv4 || frame->rsi != kSocketTypeStream ||
+       (frame->rdx != 0 && frame->rdx != kProtocolTcp)) {
+        return kErrorInvalidArgument;
+    }
+    auto* socket = static_cast<process::Socket*>(kernel_heap::allocate(sizeof(process::Socket)));
+    if(socket == nullptr) {
+        return kErrorIo;
+    }
+    tcp_connection::initialize(&socket->connection, {}, {}, 0, 0, 0);
+    socket->references = 1;
+    const int32_t descriptor = process::allocate_socket(owner, socket);
+    if(descriptor < 0) {
+        (void)kernel_heap::free(socket);
+        return kErrorIo;
+    }
+    return descriptor;
+}
+
+int64_t socket_connect(const syscalls::Frame* frame) {
+    auto* owner = current_process();
+    auto* socket = owner == nullptr ? nullptr : process::socket_descriptor(owner, frame->rdi);
+    if(socket == nullptr || frame->rsi == 0 || frame->rdx == 0 || frame->rdx > UINT16_MAX ||
+       !user_memory::validate(frame->rsi, sizeof(arp::Ipv4Address), false)) {
+        return kErrorInvalidArgument;
+    }
+    arp::Ipv4Address address = {};
+    if(!user_memory::copy_from_user(&address, frame->rsi, sizeof(address))) {
+        return kErrorInvalidArgument;
+    }
+    switch(network::tcp_connect(&socket->connection, address, static_cast<uint16_t>(frame->rdx), kSocketTimeoutTicks)) {
+        case network::TcpStatus::Success:
+            return 0;
+        case network::TcpStatus::AddressUnreachable:
+            return kErrorAddressUnreachable;
+        case network::TcpStatus::Timeout:
+            return kErrorNetworkTimeout;
+        case network::TcpStatus::Reset:
+            return kErrorConnectionReset;
+        case network::TcpStatus::NotConnected:
+            return kErrorNotConnected;
+        case network::TcpStatus::NotInitialized:
+            return kErrorNetworkUnavailable;
+        case network::TcpStatus::InvalidArgument:
+        case network::TcpStatus::IoError:
+            return kErrorIo;
+    }
+    return kErrorIo;
+}
+
+int64_t socket_send(const syscalls::Frame* frame) {
+    auto* owner = current_process();
+    auto* socket = owner == nullptr ? nullptr : process::socket_descriptor(owner, frame->rdi);
+    if(socket == nullptr || frame->rdx == 0 || frame->rdx > kMaximumSocketTransfer ||
+       !user_memory::validate(frame->rsi, frame->rdx, false)) {
+        return kErrorInvalidArgument;
+    }
+    uint8_t buffer[kMaximumSocketTransfer];
+    if(!user_memory::copy_from_user(&buffer[0], frame->rsi, frame->rdx)) {
+        return kErrorInvalidArgument;
+    }
+    switch(network::tcp_send(&socket->connection, &buffer[0], static_cast<uint16_t>(frame->rdx), kSocketTimeoutTicks)) {
+        case network::TcpStatus::Success:
+            return static_cast<int64_t>(frame->rdx);
+        case network::TcpStatus::Reset:
+            return kErrorConnectionReset;
+        case network::TcpStatus::NotConnected:
+            return kErrorNotConnected;
+        case network::TcpStatus::Timeout:
+            return kErrorNetworkTimeout;
+        case network::TcpStatus::NotInitialized:
+            return kErrorNetworkUnavailable;
+        case network::TcpStatus::InvalidArgument:
+        case network::TcpStatus::AddressUnreachable:
+        case network::TcpStatus::IoError:
+            return kErrorIo;
+    }
+    return kErrorIo;
+}
+
+int64_t socket_receive(const syscalls::Frame* frame) {
+    auto* owner = current_process();
+    auto* socket = owner == nullptr ? nullptr : process::socket_descriptor(owner, frame->rdi);
+    if(socket == nullptr || frame->rdx == 0 || frame->rdx > kMaximumSocketTransfer ||
+       !user_memory::validate(frame->rsi, frame->rdx, true)) {
+        return kErrorInvalidArgument;
+    }
+    uint8_t buffer[kMaximumSocketTransfer];
+    uint16_t received = 0;
+    switch(network::tcp_receive(
+        &socket->connection, &buffer[0], static_cast<uint16_t>(frame->rdx), &received, kSocketTimeoutTicks
+    )) {
+        case network::TcpStatus::Success:
+            if(!user_memory::copy_to_user(frame->rsi, &buffer[0], received)) {
+                return kErrorInvalidArgument;
+            }
+            return received;
+        case network::TcpStatus::Reset:
+            return kErrorConnectionReset;
+        case network::TcpStatus::NotConnected:
+            return kErrorNotConnected;
+        case network::TcpStatus::Timeout:
+            return kErrorNetworkTimeout;
+        case network::TcpStatus::NotInitialized:
+            return kErrorNetworkUnavailable;
+        case network::TcpStatus::InvalidArgument:
+        case network::TcpStatus::AddressUnreachable:
+        case network::TcpStatus::IoError:
+            return kErrorIo;
+    }
+    return kErrorIo;
+}
+
 int64_t close(const syscalls::Frame* frame) {
     auto* owner = current_process();
+    auto* socket = owner == nullptr ? nullptr : process::socket_descriptor(owner, frame->rdi);
+    if(socket != nullptr && socket->references == 1) {
+        (void)network::tcp_close(&socket->connection, kSocketTimeoutTicks);
+    }
     if(owner == nullptr || !process::close_file_descriptor(owner, frame->rdi)) {
         return kErrorBadDescriptor;
     }
@@ -1004,6 +1136,18 @@ extern "C" void handle(Frame* frame) {
             return;
         case kResolve:
             frame->rax = static_cast<uint64_t>(resolve_hostname(frame));
+            return;
+        case kSocket:
+            frame->rax = static_cast<uint64_t>(socket_create(frame));
+            return;
+        case kConnect:
+            frame->rax = static_cast<uint64_t>(socket_connect(frame));
+            return;
+        case kSend:
+            frame->rax = static_cast<uint64_t>(socket_send(frame));
+            return;
+        case kRecv:
+            frame->rax = static_cast<uint64_t>(socket_receive(frame));
             return;
         case kGetProcessInfo:
             frame->rax = static_cast<uint64_t>(get_process_info(frame));

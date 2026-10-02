@@ -31,6 +31,10 @@ enum {
     kPipeSystemCall = 25,
     kPingSystemCall = 27,
     kResolveSystemCall = 28,
+    kSocketSystemCall = 29,
+    kConnectSystemCall = 30,
+    kSendSystemCall = 31,
+    kRecvSystemCall = 32,
 };
 
 int64_t oscar_write(int64_t descriptor, const void* buffer, uint64_t length) {
@@ -231,4 +235,41 @@ __attribute__((noreturn)) void oscar_test_complete(void) {
     for(;;) {
         __asm__ volatile("pause");
     }
+}
+
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters) matches the socket ABI's standard argument order.
+int64_t oscar_socket(uint32_t domain, uint32_t type, uint32_t protocol) {
+    uint64_t call = kSocketSystemCall;
+    __asm__ volatile("int $0x80"
+                     : "+a"(call)
+                     : "D"((uint64_t)domain), "S"((uint64_t)type), "d"((uint64_t)protocol)
+                     : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+int64_t oscar_connect(int64_t descriptor, const uint8_t address[4], uint16_t port) {
+    uint64_t call = kConnectSystemCall;
+    __asm__ volatile("int $0x80"
+                     : "+a"(call)
+                     : "D"((uint64_t)descriptor), "S"(address), "d"((uint64_t)port)
+                     : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+int64_t oscar_send(int64_t descriptor, const void* buffer, uint64_t length) {
+    uint64_t call = kSendSystemCall;
+    __asm__ volatile("int $0x80"
+                     : "+a"(call)
+                     : "D"((uint64_t)descriptor), "S"(buffer), "d"(length)
+                     : "rcx", "r11", "memory");
+    return (int64_t)call;
+}
+
+int64_t oscar_recv(int64_t descriptor, void* buffer, uint64_t length) {
+    uint64_t call = kRecvSystemCall;
+    __asm__ volatile("int $0x80"
+                     : "+a"(call)
+                     : "D"((uint64_t)descriptor), "S"(buffer), "d"(length)
+                     : "rcx", "r11", "memory");
+    return (int64_t)call;
 }

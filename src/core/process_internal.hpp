@@ -1,6 +1,7 @@
 #pragma once
 
 #include "process.hpp"
+#include "tcp_connection.hpp"
 #include "thread.hpp"
 #include "vfs.hpp"
 #include "virtual_memory.hpp"
@@ -25,6 +26,7 @@ enum class DescriptorKind : uint8_t {
     File,
     PipeRead,
     PipeWrite,
+    Socket,
 };
 
 constexpr uint32_t kPipeCapacity = 4096;
@@ -40,10 +42,16 @@ struct Pipe {
     synchronization::WaitQueue write_waiters;
 };
 
+struct Socket {
+    tcp_connection::Connection connection;
+    uint32_t references;
+};
+
 struct FileDescriptor {
     DescriptorKind kind;
     vfs::File file;
     Pipe* pipe;
+    Socket* socket;
     bool open;
 };
 
@@ -83,11 +91,17 @@ int32_t allocate_file_descriptor(Process* process, const vfs::File* file);
 /** Create a reference-counted in-memory pipe and return its read/write descriptors. */
 bool create_pipe(Process* process, int64_t descriptors[2]);
 
+/** Allocate the lowest unused descriptor for a reference-counted TCP socket. */
+int32_t allocate_socket(Process* process, Socket* socket);
+
 /** Duplicate a descriptor into target, closing the previous target when open. */
 int32_t duplicate_descriptor(Process* process, uint64_t descriptor, uint64_t target);
 
 /** Return a pipe endpoint and optionally its read/write kind. */
 Pipe* pipe_descriptor(Process* process, uint64_t descriptor, DescriptorKind* kind);
+
+/** Return a process-owned TCP socket descriptor, or null for another kind. */
+Socket* socket_descriptor(Process* process, uint64_t descriptor);
 
 /** Return a writable pointer to a regular-file descriptor, or null for other kinds. */
 vfs::File* file_descriptor(Process* process, uint64_t descriptor);

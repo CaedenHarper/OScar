@@ -9,6 +9,14 @@ enum {
     OSCAR_ERROR_NETWORK_TIMEOUT = -14,
     OSCAR_ERROR_ADDRESS_UNREACHABLE = -15,
     OSCAR_ERROR_NAME_NOT_FOUND = -16,
+    OSCAR_ERROR_CONNECTION_RESET = -17,
+    OSCAR_ERROR_NOT_CONNECTED = -18,
+};
+
+enum {
+    OSCAR_AF_INET = 2,
+    OSCAR_SOCK_STREAM = 1,
+    OSCAR_IPPROTO_TCP = 6,
 };
 
 enum {
@@ -161,6 +169,18 @@ int64_t oscar_ping(const uint8_t address[4], uint64_t timeout_ticks);
 
 /** Resolve a hostname through the configured DNS service into a four-byte IPv4 address. */
 int64_t oscar_resolve(const char* hostname, uint8_t address[4], uint64_t timeout_ticks);
+
+/** Create an IPv4 TCP stream socket. */
+int64_t oscar_socket(uint32_t domain, uint32_t type, uint32_t protocol);
+
+/** Connect a TCP socket to an IPv4 address and port. */
+int64_t oscar_connect(int64_t descriptor, const uint8_t address[4], uint16_t port);
+
+/** Send bytes on a connected TCP socket. */
+int64_t oscar_send(int64_t descriptor, const void* buffer, uint64_t length);
+
+/** Receive bytes from a connected TCP socket. */
+int64_t oscar_recv(int64_t descriptor, void* buffer, uint64_t length);
 
 /** Complete the kernel test suite and terminate the test emulator; test runner use only. */
 __attribute__((noreturn)) void oscar_test_complete(void);
