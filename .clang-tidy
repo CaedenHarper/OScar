@@ -21,6 +21,6 @@ Checks:
   # ...
 
   # --- Should change one day ---
-  # ...
+  - '-misc-use-internal-linkage' # Clang marks all C programs 'main()' functions; find a fix at some point
 
 WarningsAsErrors: 'modernize-*'  # VSCode shows this as deprecated; enabling error makes them more visible in the IDE
