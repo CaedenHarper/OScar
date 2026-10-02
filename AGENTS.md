@@ -157,6 +157,14 @@ logical block, or the whole file. Disable a check project-wide only when the
 rule is consistently inappropriate for OScar, and document that decision in
 `.clang-tidy`.
 
+Prefer `NOLINTNEXTLINE(check-name)` or an inline `NOLINT(check-name)` for
+intentional, localized exceptions. File-wide `NOLINTBEGIN`/`NOLINTEND` blocks
+are discouraged because they can hide unrelated future diagnostics; use one
+only for a genuinely uniform generated or architecture-mandated block, list
+the exact checks, and explain the reason immediately above it. Never use a
+bare `NOLINT`, `NOLINT(*)`, or a broad suppression as a substitute for fixing
+new warnings.
+
 Lint diagnostics must never be ignored, hidden, or bypassed. Every diagnostic
 must result in a code fix or a narrow, documented suppression with a concrete
 reason; do not weaken `make lint`, omit files, or leave warnings unresolved.

@@ -3,9 +3,7 @@
 #include <oscar/syscalls.h>
 #include <stdint.h>
 
-// NOLINTBEGIN(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
-//             cppcoreguidelines-pro-bounds-array-to-pointer-decay)
-
+// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
 void _start(int argc, char** argv) {
     static const char usage[] = "httpget: usage: httpget http://host[:port]/path\n";
     static const char failure[] = "httpget: request failed, error=";
@@ -36,6 +34,3 @@ void _start(int argc, char** argv) {
     }
     oscar_exit(0);
 }
-
-// NOLINTEND(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
-//           cppcoreguidelines-pro-bounds-array-to-pointer-decay)

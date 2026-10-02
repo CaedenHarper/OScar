@@ -2,9 +2,6 @@
 #include <oscar/syscalls.h>
 #include <stdint.h>
 
-// NOLINTBEGIN(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
-//             cppcoreguidelines-pro-bounds-array-to-pointer-decay)
-
 static void write_address(const uint8_t address[4]) {
     for(uint32_t index = 0; index < 4; ++index) {
         if(index != 0) {
@@ -14,6 +11,7 @@ static void write_address(const uint8_t address[4]) {
     }
 }
 
+// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
 void _start(int argc, char** argv) {
     static const char usage[] = "nslookup: usage: nslookup <hostname>\n";
     static const char failure[] = "nslookup: lookup failed.\n";
@@ -35,6 +33,3 @@ void _start(int argc, char** argv) {
     oscar_write_string("\n");
     oscar_exit(0);
 }
-
-// NOLINTEND(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
-//           cppcoreguidelines-pro-bounds-array-to-pointer-decay)

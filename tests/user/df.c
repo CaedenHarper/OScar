@@ -2,9 +2,7 @@
 #include <oscar/syscalls.h>
 #include <stdint.h>
 
-// NOLINTBEGIN(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
-//             cppcoreguidelines-pro-bounds-array-to-pointer-decay)
-
+// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
 void _start(void) {
     struct oscar_statfs status;
     if(oscar_statfs(&status) < 0) {
@@ -29,6 +27,3 @@ void _start(void) {
     oscar_write_string("\n");
     oscar_exit(0);
 }
-
-// NOLINTEND(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
-//           cppcoreguidelines-pro-bounds-array-to-pointer-decay)

@@ -3,12 +3,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-// NOLINTBEGIN(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
-//             cppcoreguidelines-pro-bounds-array-to-pointer-decay,
-//             cppcoreguidelines-pro-type-member-init)
-
+// The recursive traversal needs shared failure state so one failed child stops
+// the final result without changing the public command interface.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static bool failed;
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static bool join_path(const char* parent, const char* name, char* output, uint64_t capacity) {
     uint64_t position = 0;
     while(parent[position] != '\0') {
@@ -34,6 +34,7 @@ static bool join_path(const char* parent, const char* name, char* output, uint64
     return true;
 }
 
+// NOLINTNEXTLINE(misc-no-recursion)
 static uint64_t directory_size(const char* path) {
     uint64_t total = 0;
     for(uint64_t index = 0;; ++index) {
@@ -46,7 +47,8 @@ static uint64_t directory_size(const char* path) {
             failed = true;
             return 0;
         }
-        char child_path[512];
+        enum { kPathCapacity = 512 };
+        char child_path[kPathCapacity];
         if(!join_path(path, entry.name, child_path, sizeof(child_path))) {
             failed = true;
             return 0;
@@ -60,6 +62,7 @@ static uint64_t directory_size(const char* path) {
     return total;
 }
 
+// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
 void _start(void) {
     static const char root[] = "/";
     const uint64_t size = directory_size(root);
@@ -73,7 +76,3 @@ void _start(void) {
     oscar_write_string("\n");
     oscar_exit(0);
 }
-
-// NOLINTEND(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
-//           cppcoreguidelines-pro-bounds-array-to-pointer-decay,
-//           cppcoreguidelines-pro-type-member-init)

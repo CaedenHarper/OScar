@@ -2,13 +2,11 @@
 #include <oscar/syscalls.h>
 #include <stdint.h>
 
-// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables, bugprone-reserved-identifier,
-//             cert-dcl37-c, cert-dcl51-cpp, cppcoreguidelines-pro-bounds-array-to-pointer-decay)
-
 __attribute__((noreturn)) static void exit_process(void) {
     oscar_exit(0);
 }
 
+// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
 void _start(void) {
     static const char kStartedMessage[] = "init: user-space initialization started.\n";
     static const char kShellPath[] = "/bin/cash";
@@ -26,6 +24,3 @@ void _start(void) {
     oscar_write_string(kExitMessage);
     exit_process();
 }
-
-// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables, bugprone-reserved-identifier,
-//           cert-dcl37-c, cert-dcl51-cpp, cppcoreguidelines-pro-bounds-array-to-pointer-decay)

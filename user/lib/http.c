@@ -2,10 +2,13 @@
 #include <oscar/syscalls.h>
 #include <stdint.h>
 
-// The parser uses protocol offsets and status-code ranges whose names would obscure the wire format.
+// HTTP wire parsing uses protocol offsets and deliberately branches through
+// several bounded receive states. These checks are intentionally limited to
+// this protocol implementation; unrelated diagnostics must remain visible.
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, readability-function-cognitive-complexity,
 //             readability-magic-numbers, readability-math-missing-parentheses)
 
+// The parser uses protocol offsets and status-code ranges whose names would obscure the wire format.
 enum {
     kHttpDefaultPort = 80,
     kHttpTimeoutTicks = 200,

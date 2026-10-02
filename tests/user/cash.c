@@ -3,14 +3,12 @@
 #include <oscar/syscalls.h>
 #include <stdint.h>
 
-// NOLINTBEGIN(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
-//             cppcoreguidelines-pro-bounds-array-to-pointer-decay)
-
 enum {
     kLineCapacity = 128,
     kMaximumArguments = 16,
     kCommandPathCapacity = 128,
     kIoBufferCapacity = 256,
+    kDecimalBase = 10,
 };
 
 #define write_string oscar_write_string
@@ -79,7 +77,7 @@ static int parse_status(const char* text, int64_t* status) {
         if(text[index] < '0' || text[index] > '9') {
             return 0;
         }
-        value = value * 10 + (uint64_t)(text[index] - '0');
+        value = (value * kDecimalBase) + (uint64_t)(text[index] - '0');
         ++index;
     }
     *status = negative ? -(int64_t)value : (int64_t)value;
@@ -282,11 +280,13 @@ static void run_ps(uint32_t argument_count) {
             return;
         }
         write_number(info.id);
-        write_string(
-            info.state == OSCAR_PROCESS_RUNNING      ? " run "
-            : info.state == OSCAR_PROCESS_TERMINATED ? " done "
-                                                     : " new "
-        );
+        const char* state_text = " new ";
+        if(info.state == OSCAR_PROCESS_RUNNING) {
+            state_text = " run ";
+        } else if(info.state == OSCAR_PROCESS_TERMINATED) {
+            state_text = " done ";
+        }
+        write_string(state_text);
         write_number(info.thread_count);
         write_string(" ");
         write_number(info.user_page_count);
@@ -407,6 +407,7 @@ __attribute__((noreturn)) static void exit_shell(void) {
     oscar_exit(0);
 }
 
+// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
 void _start(void) {
     static const char read_failure[] = "cash: input read failed.\n";
     static char line[kLineCapacity];
@@ -425,6 +426,3 @@ void _start(void) {
         execute_line(line, (uint64_t)count);
     }
 }
-
-// NOLINTEND(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
-//           cppcoreguidelines-pro-bounds-array-to-pointer-decay)

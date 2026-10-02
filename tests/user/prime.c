@@ -1,9 +1,6 @@
 #include <oscar/syscalls.h>
 #include <stdint.h>
 
-// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables, cppcoreguidelines-avoid-magic-numbers,
-//             readability-magic-numbers, readability-math-missing-parentheses, bugprone-reserved-identifier,
-//             cert-dcl37-c, cert-dcl51-cpp)
 enum {
     kOutputCapacity = 512,
     kDecimalBase = 10,
@@ -11,7 +8,10 @@ enum {
     kLastPrimeCandidate = 97,
 };
 
+// These buffers are process-local state used while constructing the output.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static char output[kOutputCapacity];
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static uint64_t output_length;
 
 static int is_prime(uint32_t value) {
@@ -51,6 +51,7 @@ __attribute__((noreturn)) static void exit_program(void) {
     oscar_exit(0);
 }
 
+// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
 void _start(void) {
     const char prefix[] = "Primes: ";
     for(uint64_t index = 0; index < sizeof(prefix) - 1; ++index) {
@@ -73,7 +74,3 @@ void _start(void) {
     (void)write_output(output, output_length);
     exit_program();
 }
-
-// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables, cppcoreguidelines-avoid-magic-numbers,
-//           readability-magic-numbers, readability-math-missing-parentheses, bugprone-reserved-identifier,
-//           cert-dcl37-c, cert-dcl51-cpp)

@@ -2,10 +2,7 @@
 #include <oscar/syscalls.h>
 #include <stdint.h>
 
-// NOLINTBEGIN(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
-//             cppcoreguidelines-pro-bounds-array-to-pointer-decay,
-//             cppcoreguidelines-pro-type-member-init)
-
+// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
 void _start(void) {
     static const char failure[] = "ls: could not read directory.\n";
     struct oscar_dirent entry;
@@ -25,7 +22,3 @@ void _start(void) {
     }
     oscar_exit(0);
 }
-
-// NOLINTEND(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
-//           cppcoreguidelines-pro-bounds-array-to-pointer-decay,
-//           cppcoreguidelines-pro-type-member-init)

@@ -3,9 +3,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-// NOLINTBEGIN(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
-//             cppcoreguidelines-pro-bounds-array-to-pointer-decay,
-//             cppcoreguidelines-pro-type-member-init)
+enum {
+    kFileContentsCapacity = 64,
+    kMaximumProcessEntries = 32,
+};
 
 static void fail(void) {
     oscar_write_string("shell command test failed.\n");
@@ -27,11 +28,12 @@ static bool bytes_equal(const char* left, const char* right, uint64_t length) {
     return true;
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static void expect_file_contents(const char* path, const char* expected, uint64_t expected_length) {
     const int64_t descriptor = oscar_open(path, OSCAR_OPEN_READ);
     expect(descriptor >= 0);
 
-    char contents[64];
+    char contents[kFileContentsCapacity];
     const int64_t result = oscar_read(descriptor, contents, sizeof(contents));
     expect(result == (int64_t)expected_length);
     expect(bytes_equal(contents, expected, expected_length));
@@ -46,6 +48,7 @@ static void remove_old_fixture(void) {
     (void)oscar_rmdir("/shell-test-dir");
 }
 
+// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
 void _start(void) {
     static const char kContents[] = "shell command data\n";
     static const char kDirectory[] = "/shell-test-dir";
@@ -77,7 +80,7 @@ void _start(void) {
     const int64_t copy_input = oscar_open(kSource, OSCAR_OPEN_READ);
     const int64_t copy_output = oscar_open(kCopy, OSCAR_OPEN_WRITE);
     expect(copy_input >= 0 && copy_output >= 0);
-    char buffer[64];
+    char buffer[kFileContentsCapacity];
     const int64_t bytes_read = oscar_read(copy_input, buffer, sizeof(buffer));
     expect(bytes_read == (int64_t)(sizeof(kContents) - 1));
     expect(oscar_write(copy_output, buffer, (uint64_t)bytes_read) == bytes_read);
@@ -104,7 +107,7 @@ void _start(void) {
     const int64_t process_id = oscar_getpid();
     expect(process_id >= 0);
     bool found_process = false;
-    for(uint64_t index = 0; index < 32; ++index) {
+    for(uint64_t index = 0; index < kMaximumProcessEntries; ++index) {
         struct oscar_process_info info;
         const int64_t result = oscar_get_process_info(index, &info);
         if(result == OSCAR_ERROR_NOT_FOUND) {
@@ -124,7 +127,3 @@ void _start(void) {
     expect(oscar_kill((uint64_t)process_id) == 0);
     fail();
 }
-
-// NOLINTEND(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
-//           cppcoreguidelines-pro-bounds-array-to-pointer-decay,
-//           cppcoreguidelines-pro-type-member-init)

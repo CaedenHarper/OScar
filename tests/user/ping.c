@@ -2,17 +2,18 @@
 #include <oscar/syscalls.h>
 #include <stdint.h>
 
-// NOLINTBEGIN(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
-//             cppcoreguidelines-pro-bounds-array-to-pointer-decay)
-
 static int parse_address(const char* text, uint8_t address[4]) {
+    enum {
+        kDecimalBase = 10,
+        kMaximumIpv4Octet = 255,
+    };
     uint32_t component = 0;
     uint32_t component_index = 0;
     for(uint64_t index = 0;; ++index) {
         const char character = text[index];
         if(character >= '0' && character <= '9') {
-            component = component * 10 + (uint32_t)(character - '0');
-            if(component > 255) {
+            component = (component * kDecimalBase) + (uint32_t)(character - '0');
+            if(component > kMaximumIpv4Octet) {
                 return 0;
             }
             continue;
@@ -29,6 +30,7 @@ static int parse_address(const char* text, uint8_t address[4]) {
     }
 }
 
+// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
 void _start(int argc, char** argv) {
     static const char usage[] = "ping: usage: ping <ipv4-address-or-hostname>\n";
     static const char timeout[] = "ping: request timed out.\n";
@@ -36,6 +38,7 @@ void _start(int argc, char** argv) {
     static const uint64_t kProbeCount = 4;
     static const uint64_t kTimeoutTicks = 200;
     static const uint64_t kProbeIntervalTicks = 100;
+    static const uint64_t kPercentageBase = 100;
     if(argc != 2 || argv == 0) {
         oscar_write_string(usage);
         oscar_exit(1);
@@ -86,7 +89,7 @@ void _start(int argc, char** argv) {
     oscar_write_string(" packets transmitted, ");
     oscar_write_uint(received);
     oscar_write_string(" received, ");
-    oscar_write_uint(((kProbeCount - received) * 100) / kProbeCount);
+    oscar_write_uint(((kProbeCount - received) * kPercentageBase) / kProbeCount);
     oscar_write_string("% packet loss\n");
     if(received != 0) {
         oscar_write_string("rtt min/avg/max = ");
@@ -102,6 +105,3 @@ void _start(int argc, char** argv) {
     }
     oscar_exit(0);
 }
-
-// NOLINTEND(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
-//           cppcoreguidelines-pro-bounds-array-to-pointer-decay)

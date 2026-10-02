@@ -3,14 +3,13 @@
 #include <oscar/syscalls.h>
 #include <stdint.h>
 
-// NOLINTBEGIN(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
-
 enum {
     kExpectedPort = 8080,
     kExpectedStatus = 200,
     kExpectedBodyLength = 5,
 };
 
+// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
 void _start(void) {
     struct oscar_http_url url;
     uint16_t status = 0;
@@ -30,5 +29,3 @@ void _start(void) {
     }
     oscar_exit(0);
 }
-
-// NOLINTEND(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)

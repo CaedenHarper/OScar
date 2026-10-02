@@ -2,8 +2,6 @@
 #include <oscar/syscalls.h>
 #include <stdint.h>
 
-// NOLINTBEGIN(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp, readability-magic-numbers)
-
 static const int64_t kKilledStatus = 137;
 static const int64_t kPipeTargetDescriptor = 7;
 static const uint64_t kPingTimeoutMilliseconds = 200;
@@ -13,6 +11,7 @@ __attribute__((noreturn)) static void exit_process(void) {
 }
 
 // NOLINTNEXTLINE(misc-use-internal-linkage) ELF entry point required by linker
+// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
 void _start(void) {
     static const char kStartedMessage[] = "test init: user-space test suite started.\n";
     static const char kShellCommandTestPath[] = "/bin/shell_commands";
@@ -136,5 +135,3 @@ void _start(void) {
     oscar_write_string(kPassedMessage);
     oscar_test_complete();
 }
-
-// NOLINTEND(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp, readability-magic-numbers)

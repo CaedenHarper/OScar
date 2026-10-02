@@ -2,9 +2,6 @@
 #include <oscar/syscalls.h>
 #include <stdint.h>
 
-// NOLINTBEGIN(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
-//             cppcoreguidelines-pro-bounds-array-to-pointer-decay)
-
 enum {
     kMaximumProcesses = 32,
     kRefreshCount = 5,
@@ -62,6 +59,7 @@ static void print_snapshot(void) {
     }
 }
 
+// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
 void _start(void) {
     for(uint32_t refresh = 0; refresh < kRefreshCount; ++refresh) {
         print_snapshot();
@@ -69,6 +67,3 @@ void _start(void) {
     }
     oscar_exit(0);
 }
-
-// NOLINTEND(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp,
-//           cppcoreguidelines-pro-bounds-array-to-pointer-decay)

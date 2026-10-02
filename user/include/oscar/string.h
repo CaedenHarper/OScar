@@ -1,5 +1,4 @@
-#ifndef OSCAR_STRING_H
-#define OSCAR_STRING_H
+#pragma once
 
 #include <stdint.h>
 
@@ -8,5 +7,3 @@ uint64_t oscar_strlen(const char* string);
 
 /** Return nonzero when two null-terminated strings contain the same text. */
 int oscar_streq(const char* left, const char* right);
-
-#endif
