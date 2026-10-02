@@ -1,67 +1,54 @@
 # OScar x86-64 C++ kernel
 
-A deliberately small freestanding C++ kernel. Limine loads the ELF kernel, and
-the kernel initializes COM1, reads the Limine-provided memory map, initializes
-a physical page allocator, manages kernel and process address-space structures and mappings,
-validates user memory ranges, installs an IDT, GDT/TSS, a registered external-interrupt
-dispatcher, and PIT timer
-interrupts, creates ring-3 user threads with private kernel stacks, handles an
-initial `int 0x80` system-call ABI (`write`, `exit`, `yield`, `sleep`, `getpid`,
-`getid`, `spawn`, `waitpid`, `dup`, `dup2`, and `pipe`, plus filesystem `open`, `create`, `read`, `write`,
-`seek`, `close`, `mkdir`, `unlink`, and `rmdir`),
-`chdir`, `getcwd`, `stat`, and `readdir`,
-filesystem-wide `statfs`,
-IPv4/TCP stream `socket`, `connect`, `send`, and `recv`,
-loads validated in-memory ELF64 executables with `PT_LOAD` segments, including
-zero-filled memory and an initial user stack,
-provides a kernel heap, creates and runs kernel-thread stacks, schedules kernel
-threads cooperatively and from timer interrupts, supports tick-based waiting
-and waking, provides interrupt-safe spinlocks, wait queues, and blocking
-mutexes, exposes PCI device enumeration with validated BAR discovery, a block-device protocol with polling legacy VirtIO block and network drivers
-driver, mounts an ext2 filesystem, resolves paths, and reads/writes regular
-files through direct, single-indirect, and double-indirect data blocks,
-including sparse holes, enforces inode permissions and ownership during VFS
-access, validates filesystem geometry and metadata against corruption, initializes
-an IRQ-driven PS/2 keyboard driver behind a
-hardware-independent keyboard event queue, serial receive interrupts, and a serial-backed kernel terminal,
-standalone Ethernet framing plus IPv4 ARP packet parsing, request/reply
-construction, and a bounded ARP cache, plus IPv4 packet construction,
-checksum validation, static routing, ARP-backed Ethernet framing, ICMP
-echo request/reply packet handling, UDP datagram framing/checksums, stateless
-TCP segment framing/checksums, active polling TCP connections and socket
-syscalls, DNS
-A-record query construction and bounded response parsing through QEMU's
-10.0.2.3 DNS proxy, and the user-space `nslookup` command,
-plus a bounded user-space HTTP/1.0 `httpget` client over TCP,
-including serial ANSI navigation sequences and basic cursor-aware line editing,
-prints diagnostics to QEMU's serial console, and idles.
+A deliberately small freestanding C++ kernel loaded by Limine and tested in
+QEMU. It is an educational kernel seed rather than a complete operating
+system.
 
-This is a kernel seed, not yet an operating system. C user programs can use
-the public freestanding API in `user/include/oscar/syscalls.h`; its library
-implementation hides the raw `int 0x80` ABI. It does not yet provide
-`fork`, dynamic linking, or rename support. `spawn` now constructs an initial
-`argc`/`argv` user stack and inherits the parent's descriptor table. The
-filesystem now supports regular-file
-creation, `mkdir`, `unlink`, empty-directory removal, working-directory navigation,
-metadata lookup, and directory enumeration. `spawn` loads a validated ELF from the mounted filesystem, and `waitpid` waits for
-that exact child and returns its exit status. After kernel startup, the kernel
-loads `/sbin/init` from the filesystem; `init` then starts `/bin/cash` and
-waits for it in user space. `cash` is the initial user-space interactive shell
-with `cd`, `pwd`, `echo`, `help`, and `exit` built-ins. Its current filesystem
-and process commands are implemented in the shell using the public syscall
-API: `mkdir`, `touch`, `cp`, `mv`, `rm`, `cat`, `ps`, and `kill`. The shell also dispatches filesystem-backed `/bin/ls` and
-bounded-refresh `/bin/top`, `/bin/df`, `/bin/du`, and `/bin/mount`, plus
-`/bin/ping` for ICMP echo requests and `/bin/nslookup` for DNS A-record lookups.
-The `/bin/httpget` command supports bounded, unencrypted HTTP/1.0 GET requests;
-HTTPS, redirects, and chunked transfer encoding are not supported yet.
-DNS currently uses QEMU's user-mode proxy at `10.0.2.3`; a future network
-configuration layer can replace this with DHCP or `/etc/resolv.conf`. `df` reports
-root filesystem capacity, `du` recursively reports file usage, and `mount`
-currently describes the active root mount; mount lifecycle management is a
-future milestone. The shell command smoke program exercises the
-filesystem operations and process inspection during init startup; general
-external command dispatch now passes argument vectors to child programs, while
-signal delivery remains a later milestone.
+## Current capabilities
+
+The kernel currently provides:
+
+- Physical and virtual memory management, a kernel heap, and user address spaces.
+- GDT/TSS, IDT, timer interrupts, interrupt dispatch, kernel threads, and a
+  round-robin scheduler.
+- Ring-3 user processes with validated ELF64 loading, private kernel stacks,
+  initial user stacks, `argc`/`argv`, and crash isolation.
+- An `int 0x80` system-call ABI covering process control, descriptors, pipes,
+  filesystem operations, and IPv4/TCP sockets.
+- Synchronization primitives including spinlocks, wait queues, and mutexes.
+- PCI enumeration, polling VirtIO block and network drivers, and an IRQ-driven
+  PS/2 keyboard backend.
+- An ext2 filesystem with VFS path lookup, regular-file I/O, directories,
+  permissions, ownership, metadata, corruption checks, and mutation support.
+- Ethernet, ARP, IPv4, ICMP, UDP, TCP, DNS, and a bounded HTTP/1.0 client.
+- A serial-backed terminal and the user-space `cash` shell.
+
+## User-space environment
+
+After startup, the kernel loads `/sbin/init` from the filesystem. `init` starts
+the interactive `/bin/cash` shell and waits for it in user space.
+
+The shell includes these built-ins:
+
+- `cd`, `pwd`, `echo`, `help`, and `exit`.
+- `mkdir`, `touch`, `cp`, `mv`, `rm`, `cat`, `ps`, and `kill`.
+
+It also launches filesystem-backed programs including `/bin/ls`, `/bin/top`,
+`/bin/df`, `/bin/du`, `/bin/mount`, `/bin/ping`, `/bin/nslookup`, and
+`/bin/httpget`.
+
+C user programs can use the public freestanding API in
+`user/include/oscar/syscalls.h`; its library implementation hides the raw
+`int 0x80` ABI. `spawn` loads a validated ELF from the mounted filesystem,
+inherits the parent's descriptor table, and constructs the child's initial
+arguments. `waitpid` waits for that exact child and returns its exit status.
+
+## Current limitations
+
+OScar does not yet provide `fork`, dynamic linking, rename support, HTTPS,
+redirects, chunked transfer encoding, DHCP, `/etc/resolv.conf`, or full mount
+lifecycle management. Signal delivery and a more complete C library remain
+future milestones.
 
 ## Repository layout
 
