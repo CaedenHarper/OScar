@@ -7,6 +7,13 @@
 
 #include <stdint.h>
 
+// IPv4 tests intentionally construct and corrupt raw packets to verify header
+// validation, checksum handling, and routing decisions at exact byte offsets.
+// NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers,
+//             cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay,
+//             cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-type-member-init,
+//             hicpp-member-init, hicpp-signed-bitwise, fuchsia-default-arguments-calls)
+
 namespace self_tests_detail {
 
 namespace {
@@ -67,8 +74,8 @@ void test_ipv4() {
         panic::halt("IPv4 smoke test selected an incorrect route");
     }
 
-    arp::cache_insert(&arp_interface.cache, kPeerIp, kPeerMac, 10);
-    arp::cache_insert(&arp_interface.cache, kGatewayIp, kGatewayMac, 10);
+    arp::cache_insert(&arp_interface.cache, kPeerIp, kPeerMac, 10, arp::kDefaultCacheLifetime);
+    arp::cache_insert(&arp_interface.cache, kGatewayIp, kGatewayMac, 10, arp::kDefaultCacheLifetime);
     static uint8_t frame[ethernet::kMaximumFrameLength];
     uint16_t frame_length = 0;
     if(ipv4::build_frame(
@@ -105,3 +112,8 @@ void test_ipv4() {
 }
 
 } // namespace self_tests_detail
+
+// NOLINTEND(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers,
+//           cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay,
+//           cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-type-member-init,
+//           hicpp-member-init, hicpp-signed-bitwise, fuchsia-default-arguments-calls)

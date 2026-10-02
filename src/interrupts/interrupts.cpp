@@ -7,6 +7,7 @@
 namespace {
 
 constexpr unsigned kInterruptEnableFlagBit = 9U;
+constexpr unsigned kVectorCount = 256;
 
 struct Registration {
     interrupts::Handler handler;
@@ -14,9 +15,9 @@ struct Registration {
 };
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) registrations live for the kernel lifetime.
-Registration g_handlers[256] = {};
+Registration g_handlers[kVectorCount] = {};
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) allocation state lives for the kernel lifetime.
-bool g_allocated_vectors[256] = {};
+bool g_allocated_vectors[kVectorCount] = {};
 
 } // namespace
 
@@ -54,13 +55,15 @@ bool register_handler(uint8_t vector, Handler handler, void* context) {
     }
 
     const State previous_state = save_and_disable();
-    Registration& registration = g_handlers[vector];
+    // The vector range is validated above; dynamic indexing is the purpose of
+    // this interrupt dispatch table, so a constant-index rule is inapplicable.
+    Registration& registration = g_handlers[vector]; // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
     if(registration.handler != nullptr) {
         restore(previous_state);
         return false;
     }
     registration = {.handler = handler, .context = context};
-    g_allocated_vectors[vector] = true;
+    g_allocated_vectors[vector] = true; // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
     restore(previous_state);
     return true;
 }
@@ -71,13 +74,13 @@ bool unregister_handler(uint8_t vector, Handler handler) {
     }
 
     const State previous_state = save_and_disable();
-    Registration& registration = g_handlers[vector];
+    Registration& registration = g_handlers[vector]; // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
     if(registration.handler != handler) {
         restore(previous_state);
         return false;
     }
     registration = {};
-    g_allocated_vectors[vector] = false;
+    g_allocated_vectors[vector] = false; // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
     restore(previous_state);
     return true;
 }
@@ -89,8 +92,8 @@ bool allocate_vector(uint8_t* vector) {
 
     const State previous_state = save_and_disable();
     for(uint16_t candidate = kFirstExternalVector; candidate <= kLastExternalVector; ++candidate) {
-        if(!g_allocated_vectors[candidate]) {
-            g_allocated_vectors[candidate] = true;
+        if(!g_allocated_vectors[candidate]) { // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+            g_allocated_vectors[candidate] = true; // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
             *vector = static_cast<uint8_t>(candidate);
             restore(previous_state);
             return true;
@@ -106,11 +109,12 @@ bool release_vector(uint8_t vector) {
     }
 
     const State previous_state = save_and_disable();
-    if(g_handlers[vector].handler != nullptr || !g_allocated_vectors[vector]) {
+    if(g_handlers[vector].handler != nullptr || // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+       !g_allocated_vectors[vector]) { // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
         restore(previous_state);
         return false;
     }
-    g_allocated_vectors[vector] = false;
+    g_allocated_vectors[vector] = false; // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
     restore(previous_state);
     return true;
 }
@@ -119,7 +123,7 @@ void dispatch(uint8_t vector) {
     if(vector < kFirstExternalVector || vector > kLastExternalVector) {
         return;
     }
-    const Registration registration = g_handlers[vector];
+    const Registration registration = g_handlers[vector]; // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
     if(registration.handler != nullptr) {
         registration.handler(vector, registration.context);
     }

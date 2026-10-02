@@ -6,6 +6,14 @@
 
 #include <stdint.h>
 
+// These tests intentionally construct raw protocol frames and inspect their
+// byte offsets. The C-style pointers and literals describe the wire format;
+// suppress only those diagnostics for this focused protocol-fixture file.
+// NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers,
+//             cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay,
+//             cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-type-member-init,
+//             hicpp-member-init, hicpp-signed-bitwise, fuchsia-default-arguments-calls)
+
 namespace self_tests_detail {
 
 namespace {
@@ -90,3 +98,8 @@ void test_arp() {
 }
 
 } // namespace self_tests_detail
+
+// NOLINTEND(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers,
+//           cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay,
+//           cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-type-member-init,
+//           hicpp-member-init, hicpp-signed-bitwise, fuchsia-default-arguments-calls)

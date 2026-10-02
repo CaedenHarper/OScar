@@ -154,6 +154,11 @@ logical block, or the whole file. Disable a check project-wide only when the
 rule is consistently inappropriate for OScar, and document that decision in
 `.clang-tidy`.
 
+Lint diagnostics must never be ignored, hidden, or bypassed. Every diagnostic
+must result in a code fix or a narrow, documented suppression with a concrete
+reason; do not weaken `make lint`, omit files, or leave warnings unresolved.
+Treat a failing lint target as incomplete work.
+
 The clangd pass must use the generated `compile_commands.json` and the
 freestanding `x86_64-unknown-none-elf` target. Review any source diagnostics;
 clangd may also report internal code-action test failures, which are editor

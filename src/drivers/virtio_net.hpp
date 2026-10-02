@@ -4,6 +4,8 @@
 
 namespace virtio_net {
 
+constexpr uint8_t kMacAddressLength = 6;
+
 enum class Status : uint8_t {
     Success,
     InvalidArgument,
@@ -12,7 +14,7 @@ enum class Status : uint8_t {
 };
 
 struct MacAddress {
-    uint8_t bytes[6];
+    uint8_t bytes[kMacAddressLength];
 };
 
 struct Device {

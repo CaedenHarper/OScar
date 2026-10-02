@@ -5,6 +5,7 @@
 
 static const int64_t kKilledStatus = 137;
 static const int64_t kPipeTargetDescriptor = 7;
+static const uint64_t kPingTimeoutMilliseconds = 200;
 
 static uint64_t write_text(const char* text) {
     uint64_t length = 0;
@@ -114,7 +115,7 @@ void _start(void) {
         }
     }
     (void)write_text(kFilesystemStatusPassed);
-    if(oscar_ping(kGatewayAddress, 200) < 0) {
+    if(oscar_ping(kGatewayAddress, kPingTimeoutMilliseconds) < 0) {
         (void)write_text(kNetworkFailure);
         exit_process();
     }

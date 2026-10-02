@@ -14,6 +14,9 @@ constexpr uint8_t kIpv4AddressLength = 4;
 constexpr uint16_t kCacheCapacity = 8;
 constexpr uint64_t kDefaultCacheLifetime = 600;
 
+// ARP encodes the opcode as a two-byte network-order field; the wider enum is
+// intentional even though the currently supported values fit in one byte.
+// NOLINTNEXTLINE(performance-enum-size)
 enum class Opcode : uint16_t {
     Request = 1,
     Reply = 2,
@@ -73,13 +76,7 @@ bool build_reply(
 bool cache_lookup(const Cache& cache, Ipv4Address address, uint64_t now, ethernet::MacAddress* hardware);
 
 /** Insert or refresh an IPv4-to-MAC mapping in the fixed-size cache. */
-void cache_insert(
-    Cache* cache,
-    Ipv4Address address,
-    ethernet::MacAddress hardware,
-    uint64_t now,
-    uint64_t lifetime = kDefaultCacheLifetime
-);
+void cache_insert(Cache* cache, Ipv4Address address, ethernet::MacAddress hardware, uint64_t now, uint64_t lifetime);
 
 /**
  * Process an ARP Ethernet frame, updating the cache and optionally producing a

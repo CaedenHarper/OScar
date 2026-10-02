@@ -1,5 +1,6 @@
 #pragma once
 
+#include "arp.hpp"
 #include "ipv4.hpp"
 
 #include <stdint.h>

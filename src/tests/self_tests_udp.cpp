@@ -8,6 +8,13 @@
 
 #include <stdint.h>
 
+// UDP fixtures intentionally use raw datagram offsets and pointer-based packet
+// APIs to verify checksums and port encoding without a hosted runtime.
+// NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers,
+//             cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay,
+//             cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-type-member-init,
+//             hicpp-member-init, hicpp-signed-bitwise, fuchsia-default-arguments-calls)
+
 namespace self_tests_detail {
 
 namespace {
@@ -24,7 +31,7 @@ constexpr arp::Ipv4Address kGateway = {{10, 0, 2, 2}};
 void test_udp() {
     arp::Interface arp_interface;
     arp::initialize(&arp_interface, kLocalMac, kLocalIp);
-    arp::cache_insert(&arp_interface.cache, kPeerIp, kPeerMac, 10);
+    arp::cache_insert(&arp_interface.cache, kPeerIp, kPeerMac, 10, arp::kDefaultCacheLifetime);
     ipv4::Interface interface;
     ipv4::initialize(&interface, &arp_interface, kLocalIp, kNetmask, kGateway);
 
@@ -76,3 +83,8 @@ void test_udp() {
 }
 
 } // namespace self_tests_detail
+
+// NOLINTEND(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers,
+//           cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay,
+//           cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-type-member-init,
+//           hicpp-member-init, hicpp-signed-bitwise, fuchsia-default-arguments-calls)

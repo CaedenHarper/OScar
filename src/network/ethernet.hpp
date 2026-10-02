@@ -4,13 +4,14 @@
 
 namespace ethernet {
 
+constexpr uint8_t kMacAddressLength = 6;
 constexpr uint16_t kHeaderLength = 14;
 constexpr uint16_t kMinimumPayloadLength = 46;
 constexpr uint16_t kMaximumPayloadLength = 1500;
 constexpr uint16_t kMaximumFrameLength = kHeaderLength + kMaximumPayloadLength;
 
 struct MacAddress {
-    uint8_t bytes[6];
+    uint8_t bytes[kMacAddressLength];
 };
 
 enum class EtherType : uint16_t {

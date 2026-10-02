@@ -5,6 +5,11 @@
 
 #include <stdint.h>
 
+// This smoke test passes a raw Ethernet-sized buffer to the driver and checks
+// the hardware-reported octets; those are deliberate protocol-level checks.
+// NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers,
+//             cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
+
 namespace self_tests_detail {
 
 void test_virtio_network() {
@@ -29,3 +34,6 @@ void test_virtio_network() {
 }
 
 } // namespace self_tests_detail
+
+// NOLINTEND(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers,
+//           cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)

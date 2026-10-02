@@ -1,3 +1,4 @@
+#include "arp.hpp"
 #include "dns.hpp"
 #include "panic.hpp"
 #include "self_tests_internal.hpp"
@@ -7,7 +8,9 @@
 
 // The raw packet below intentionally uses wire-format offsets and octets to
 // make each malformed-response case explicit.
-// NOLINTBEGIN(readability-magic-numbers, cppcoreguidelines-avoid-magic-numbers, misc-const-correctness)
+// NOLINTBEGIN(readability-magic-numbers, cppcoreguidelines-avoid-magic-numbers, misc-const-correctness,
+//             cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay,
+//             cppcoreguidelines-pro-bounds-pointer-arithmetic)
 
 namespace self_tests_detail {
 
@@ -55,4 +58,6 @@ void test_dns() {
 
 } // namespace self_tests_detail
 
-// NOLINTEND(readability-magic-numbers, cppcoreguidelines-avoid-magic-numbers, misc-const-correctness)
+// NOLINTEND(readability-magic-numbers, cppcoreguidelines-avoid-magic-numbers, misc-const-correctness,
+//           cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay,
+//           cppcoreguidelines-pro-bounds-pointer-arithmetic)

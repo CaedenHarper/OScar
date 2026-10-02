@@ -60,6 +60,7 @@ constexpr uint64_t kMaximumNameLength = 255;
 constexpr uint64_t kMaximumHostnameLength = 253;
 constexpr uint64_t kMaximumPathComponents = 256;
 constexpr uint64_t kReadBufferSize = 128;
+constexpr uint64_t kMillisecondsPerSecond = 1000;
 constexpr int64_t kErrorInvalidArgument = -1;
 constexpr int64_t kErrorUnknownCall = -2;
 constexpr int64_t kErrorNotFound = -3;
@@ -402,7 +403,7 @@ int64_t ping(const syscalls::Frame* frame) {
         return kErrorInvalidArgument;
     }
     uint8_t bytes[4];
-    if(!user_memory::copy_from_user(bytes, frame->rdi, sizeof(bytes))) {
+    if(!user_memory::copy_from_user(&bytes[0], frame->rdi, sizeof(bytes))) {
         return kErrorInvalidArgument;
     }
     const arp::Ipv4Address destination = {{bytes[0], bytes[1], bytes[2], bytes[3]}};
@@ -412,7 +413,8 @@ int64_t ping(const syscalls::Frame* frame) {
     switch(result) {
         case network::PingStatus::Success: {
             const uint32_t frequency = timer::frequency_hz();
-            return frequency == 0 ? kErrorIo : static_cast<int64_t>((elapsed_ticks * 1000) / frequency);
+            return frequency == 0 ? kErrorIo
+                                  : static_cast<int64_t>((elapsed_ticks * kMillisecondsPerSecond) / frequency);
         }
         case network::PingStatus::NotInitialized:
             return kErrorNetworkUnavailable;

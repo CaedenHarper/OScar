@@ -5,6 +5,13 @@
 
 #include <stdint.h>
 
+// Raw Ethernet fixtures deliberately use byte offsets, array-to-pointer calls,
+// and protocol literals so malformed frames remain explicit and reviewable.
+// NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers,
+//             cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay,
+//             cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-type-member-init,
+//             hicpp-member-init, hicpp-signed-bitwise)
+
 namespace self_tests_detail {
 
 namespace {
@@ -69,3 +76,8 @@ void test_ethernet() {
 }
 
 } // namespace self_tests_detail
+
+// NOLINTEND(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers,
+//           cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay,
+//           cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-type-member-init,
+//           hicpp-member-init, hicpp-signed-bitwise)

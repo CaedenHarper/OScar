@@ -1,7 +1,6 @@
 #pragma once
 
 #include "arp.hpp"
-#include "ethernet.hpp"
 
 #include <stdint.h>
 

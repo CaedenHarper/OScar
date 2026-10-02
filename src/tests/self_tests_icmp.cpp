@@ -8,6 +8,14 @@
 
 #include <stdint.h>
 
+// Raw ICMP/Ethernet fixtures intentionally inspect protocol bytes and use the
+// freestanding pointer-based packet interfaces directly.
+// NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers,
+//             cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay,
+//             cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-type-member-init,
+//             hicpp-member-init, hicpp-signed-bitwise, fuchsia-default-arguments-calls,
+//             readability-simplify-boolean-expr)
+
 namespace self_tests_detail {
 
 namespace {
@@ -31,7 +39,7 @@ void test_icmp() {
     ipv4::initialize(&local, &local_arp, kLocalIp, kNetmask, kGateway);
     ipv4::Interface peer;
     ipv4::initialize(&peer, &peer_arp, kPeerIp, kNetmask, kGateway);
-    arp::cache_insert(&local_arp.cache, kPeerIp, kPeerMac, 10);
+    arp::cache_insert(&local_arp.cache, kPeerIp, kPeerMac, 10, arp::kDefaultCacheLifetime);
 
     static uint8_t echo_payload[] = {0xde, 0xad, 0xbe, 0xef};
     static uint8_t icmp_packet[ipv4::kMaximumPacketLength];
@@ -110,3 +118,9 @@ void test_icmp() {
 }
 
 } // namespace self_tests_detail
+
+// NOLINTEND(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers,
+//           cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay,
+//           cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-type-member-init,
+//           hicpp-member-init, hicpp-signed-bitwise, fuchsia-default-arguments-calls,
+//           readability-simplify-boolean-expr)

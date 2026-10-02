@@ -189,7 +189,7 @@ bool process_frame(
     if(!parse_packet(frame.payload, frame.payload_length, &packet)) {
         return false;
     }
-    cache_insert(&interface->cache, packet.sender_protocol, packet.sender_hardware, now);
+    cache_insert(&interface->cache, packet.sender_protocol, packet.sender_hardware, now, kDefaultCacheLifetime);
     if(packet.opcode != Opcode::Request || !addresses_equal(packet.target_protocol, interface->protocol)) {
         return false;
     }

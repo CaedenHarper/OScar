@@ -30,6 +30,11 @@ constexpr uint8_t kIoApicVersionRegister = 1;
 constexpr uint8_t kIoApicTimerRedirectionLow = 0x10;
 constexpr uint8_t kIoApicTimerGsiOverride = 2;
 constexpr uint8_t kIoApicRedirectionStride = 2;
+constexpr uint8_t kPicIrqCount = 16;
+constexpr uint8_t kFirstExceptionVector = 32;
+constexpr uint8_t kSpuriousVector = 255;
+constexpr uint32_t kIoApicVersionShift = 16U;
+constexpr uint32_t kByteMask = 0xffU;
 constexpr uint32_t kInvalidMmioValue = 0xffffffff;
 constexpr uint32_t kApicBaseMsr = 0x1b;
 constexpr uint64_t kApicEnableBit = 1ULL << 11U;
@@ -98,20 +103,21 @@ void ioapic_write(uint8_t register_number, uint32_t value) {
     g_ioapic[4] = value;
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 void route_ioapic_input(uint8_t input, uint8_t vector) {
-    const uint8_t low_register = kIoApicTimerRedirectionLow + input * kIoApicRedirectionStride;
+    const uint8_t low_register = kIoApicTimerRedirectionLow + (input * kIoApicRedirectionStride);
     ioapic_write(low_register, kIoApicInterruptMask | vector);
     ioapic_write(low_register + 1, 0);
 }
 
 void unmask_ioapic_input(uint8_t input) {
-    const uint8_t low_register = kIoApicTimerRedirectionLow + input * kIoApicRedirectionStride;
+    const uint8_t low_register = kIoApicTimerRedirectionLow + (input * kIoApicRedirectionStride);
     const uint32_t value = ioapic_read(low_register) & ~kIoApicInterruptMask;
     ioapic_write(low_register, value);
 }
 
 void mask_ioapic_input(uint8_t input) {
-    const uint8_t low_register = kIoApicTimerRedirectionLow + input * kIoApicRedirectionStride;
+    const uint8_t low_register = kIoApicTimerRedirectionLow + (input * kIoApicRedirectionStride);
     ioapic_write(low_register, ioapic_read(low_register) | kIoApicInterruptMask);
 }
 // NOLINTEND(performance-no-int-to-ptr, cppcoreguidelines-pro-bounds-pointer-arithmetic)
@@ -170,7 +176,7 @@ void initialize(uintptr_t hhdm_offset) {
         kSpuriousInterruptVector;
     const uint32_t ioapic_version = ioapic_read(kIoApicVersionRegister);
     if(ioapic_version != 0 && ioapic_version != kInvalidMmioValue) {
-        g_ioapic_max_input = static_cast<uint8_t>((ioapic_version >> 16U) & 0xffU);
+        g_ioapic_max_input = static_cast<uint8_t>((ioapic_version >> kIoApicVersionShift) & kByteMask);
         g_use_ioapic = true;
         serial::write("Interrupt controller: IOAPIC.\n");
         return;
@@ -185,7 +191,7 @@ void initialize(uintptr_t hhdm_offset) {
 }
 
 bool route_irq(uint8_t irq, uint8_t vector) {
-    if(irq >= 16 || vector < 32 || vector == 255) {
+    if(irq >= kPicIrqCount || vector < kFirstExceptionVector || vector == kSpuriousVector) {
         return false;
     }
     if(!g_use_ioapic) {
@@ -208,7 +214,7 @@ bool route_irq(uint8_t irq, uint8_t vector) {
 }
 
 bool mask_irq(uint8_t irq) {
-    if(irq >= 16) {
+    if(irq >= kPicIrqCount) {
         return false;
     }
     if(g_use_ioapic) {
@@ -222,13 +228,13 @@ bool mask_irq(uint8_t irq) {
         return true;
     }
     const uint16_t port = irq < kSlaveIrqBoundary ? kMasterDataPort : kSlaveDataPort;
-    const uint8_t bit = static_cast<uint8_t>(1U << (irq % kSlaveIrqBoundary));
+    const auto bit = static_cast<uint8_t>(static_cast<uint32_t>(1U) << static_cast<uint32_t>(irq % kSlaveIrqBoundary));
     io::out8(port, static_cast<uint8_t>(io::in8(port) | bit));
     return true;
 }
 
 bool unmask_irq(uint8_t irq) {
-    if(irq >= 16) {
+    if(irq >= kPicIrqCount) {
         return false;
     }
     if(g_use_ioapic) {
@@ -242,8 +248,8 @@ bool unmask_irq(uint8_t irq) {
         return true;
     }
     const uint16_t port = irq < kSlaveIrqBoundary ? kMasterDataPort : kSlaveDataPort;
-    const uint8_t bit = static_cast<uint8_t>(1U << (irq % kSlaveIrqBoundary));
-    io::out8(port, static_cast<uint8_t>(io::in8(port) & ~bit));
+    const auto bit = static_cast<uint8_t>(static_cast<uint32_t>(1U) << static_cast<uint32_t>(irq % kSlaveIrqBoundary));
+    io::out8(port, static_cast<uint8_t>(io::in8(port) & static_cast<uint8_t>(~bit)));
     return true;
 }
 
