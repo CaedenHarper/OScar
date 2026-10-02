@@ -9,9 +9,7 @@ static void exit_failure(void) {
     oscar_exit(1);
 }
 
-// The linker requires this exact externally visible entry point for a user ELF.
-// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
-void _start(int argc, char** argv) {
+int main(int argc, char** argv) {
     static const char kExpectedFile[] = "Hello from the OScar filesystem.\n";
     char buffer[sizeof(kExpectedFile)];
     if(argc != 3 || argv == 0 || !oscar_streq(argv[0], "argv_test") || !oscar_streq(argv[1], "alpha") ||

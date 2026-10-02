@@ -30,8 +30,7 @@ static int parse_address(const char* text, uint8_t address[4]) {
     }
 }
 
-// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
-void _start(int argc, char** argv) {
+int main(int argc, char** argv) {
     static const char usage[] = "ping: usage: ping <ipv4-address-or-hostname>\n";
     static const char timeout[] = "ping: request timed out.\n";
     static const char resolve_failure[] = "ping: could not resolve host.\n";

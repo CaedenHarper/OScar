@@ -8,7 +8,7 @@ enum {
     kMaximumProcessEntries = 32,
 };
 
-static void fail(void) {
+__attribute__((noreturn)) static void fail(void) {
     oscar_write_string("shell command test failed.\n");
     oscar_exit(1);
 }
@@ -48,8 +48,7 @@ static void remove_old_fixture(void) {
     (void)oscar_rmdir("/shell-test-dir");
 }
 
-// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
-void _start(void) {
+int main(void) {
     static const char kContents[] = "shell command data\n";
     static const char kDirectory[] = "/shell-test-dir";
     static const char kSource[] = "/shell-test-source";

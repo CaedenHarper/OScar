@@ -59,8 +59,7 @@ static void print_snapshot(void) {
     }
 }
 
-// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
-void _start(void) {
+int main(void) {
     for(uint32_t refresh = 0; refresh < kRefreshCount; ++refresh) {
         print_snapshot();
         oscar_sleep(kRefreshTicks);

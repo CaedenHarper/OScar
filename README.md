@@ -39,7 +39,9 @@ It also launches filesystem-backed programs including `/bin/ls`, `/bin/top`,
 
 C user programs can use the public freestanding API in
 `user/include/oscar/syscalls.h`; its library implementation hides the raw
-`int 0x80` ABI. `spawn` loads a validated ELF from the mounted filesystem,
+`int 0x80` ABI. C programs use a conventional `main()` entry point;
+`user/lib/crt0.c` supplies the ELF `_start` shim and converts `main`'s return
+value into `oscar_exit`. `spawn` loads a validated ELF from the mounted filesystem,
 inherits the parent's descriptor table, and constructs the child's initial
 arguments. `waitpid` waits for that exact child and returns its exit status.
 

@@ -2,8 +2,7 @@
 #include <oscar/syscalls.h>
 #include <stdint.h>
 
-// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
-void _start(void) {
+int main(void) {
     struct oscar_statfs status;
     if(oscar_statfs(&status) < 0) {
         oscar_write_string("mount: unable to read mount table.\n");

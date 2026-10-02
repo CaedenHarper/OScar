@@ -10,9 +10,7 @@ __attribute__((noreturn)) static void exit_process(void) {
     oscar_exit(0);
 }
 
-// NOLINTNEXTLINE(misc-use-internal-linkage) ELF entry point required by linker
-// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
-void _start(void) {
+int main(void) {
     static const char kStartedMessage[] = "test init: user-space test suite started.\n";
     static const char kShellCommandTestPath[] = "/bin/shell_commands";
     static const char kShellCommandTestFailure[] = "test init: shell command test failed.\n";

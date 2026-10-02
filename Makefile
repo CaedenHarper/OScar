@@ -30,7 +30,7 @@ LINT_C_FILES := $(shell find src tests user -type f -name '*.c')
 LINT_C_HEADERS := $(shell find src tests user -type f -name '*.h')
 LINT_ALL_FILES := $(LINT_CPP_FILES) $(LINT_C_FILES) $(LINT_C_HEADERS)
 USER_COMMON_HEADERS := user/include/oscar/syscalls.h user/include/oscar/string.h user/include/oscar/stdio.h
-USER_COMMON_SOURCES := user/lib/syscalls.c user/lib/string.c user/lib/stdio.c
+USER_COMMON_SOURCES := user/lib/crt0.c user/lib/syscalls.c user/lib/string.c user/lib/stdio.c
 OBJECTS := $(patsubst src/%.cpp,$(BUILD_DIR)/%.o,$(CPP_SOURCES)) \
 	$(patsubst src/%.S,$(BUILD_DIR)/asm/%.o,$(ASM_SOURCES))
 
@@ -204,26 +204,29 @@ $(USER_BUILD_DIR)/%.elf: tests/user/%.S tests/user/linker.ld | $(USER_BUILD_DIR)
 
 $(USER_BUILD_DIR)/%.elf: tests/user/%.c $(USER_COMMON_HEADERS) $(USER_COMMON_SOURCES) tests/user/linker.ld | $(USER_BUILD_DIR)
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c tests/user/$*.c -o $(USER_BUILD_DIR)/$*.o
+	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/crt0.c -o $(USER_BUILD_DIR)/$*.crt0.o
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/syscalls.c -o $(USER_BUILD_DIR)/$*.syscalls.o
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/string.c -o $(USER_BUILD_DIR)/$*.string.o
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/stdio.c -o $(USER_BUILD_DIR)/$*.stdio.o
-	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/$*.o $(USER_BUILD_DIR)/$*.syscalls.o $(USER_BUILD_DIR)/$*.string.o $(USER_BUILD_DIR)/$*.stdio.o -o $@
+	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/$*.o $(USER_BUILD_DIR)/$*.crt0.o $(USER_BUILD_DIR)/$*.syscalls.o $(USER_BUILD_DIR)/$*.string.o $(USER_BUILD_DIR)/$*.stdio.o -o $@
 
-$(USER_BUILD_DIR)/httpget.elf: tests/user/httpget.c user/include/oscar/http.h user/include/oscar/syscalls.h user/lib/http.c user/lib/syscalls.c tests/user/linker.ld | $(USER_BUILD_DIR)
+$(USER_BUILD_DIR)/httpget.elf: tests/user/httpget.c user/include/oscar/http.h $(USER_COMMON_HEADERS) $(USER_COMMON_SOURCES) user/lib/http.c tests/user/linker.ld | $(USER_BUILD_DIR)
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c tests/user/httpget.c -o $(USER_BUILD_DIR)/httpget.o
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/http.c -o $(USER_BUILD_DIR)/httpget.http.o
+	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/crt0.c -o $(USER_BUILD_DIR)/httpget.crt0.o
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/syscalls.c -o $(USER_BUILD_DIR)/httpget.syscalls.o
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/string.c -o $(USER_BUILD_DIR)/httpget.string.o
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/stdio.c -o $(USER_BUILD_DIR)/httpget.stdio.o
-	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/httpget.o $(USER_BUILD_DIR)/httpget.http.o $(USER_BUILD_DIR)/httpget.syscalls.o $(USER_BUILD_DIR)/httpget.string.o $(USER_BUILD_DIR)/httpget.stdio.o -o $@
+	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/httpget.o $(USER_BUILD_DIR)/httpget.http.o $(USER_BUILD_DIR)/httpget.crt0.o $(USER_BUILD_DIR)/httpget.syscalls.o $(USER_BUILD_DIR)/httpget.string.o $(USER_BUILD_DIR)/httpget.stdio.o -o $@
 
-$(USER_BUILD_DIR)/http_parser_test.elf: tests/user/http_parser_test.c user/include/oscar/http.h user/include/oscar/syscalls.h user/lib/http.c user/lib/syscalls.c tests/user/linker.ld | $(USER_BUILD_DIR)
+$(USER_BUILD_DIR)/http_parser_test.elf: tests/user/http_parser_test.c user/include/oscar/http.h $(USER_COMMON_HEADERS) $(USER_COMMON_SOURCES) user/lib/http.c tests/user/linker.ld | $(USER_BUILD_DIR)
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c tests/user/http_parser_test.c -o $(USER_BUILD_DIR)/http_parser_test.o
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/http.c -o $(USER_BUILD_DIR)/http_parser_test.http.o
+	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/crt0.c -o $(USER_BUILD_DIR)/http_parser_test.crt0.o
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/syscalls.c -o $(USER_BUILD_DIR)/http_parser_test.syscalls.o
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/string.c -o $(USER_BUILD_DIR)/http_parser_test.string.o
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/stdio.c -o $(USER_BUILD_DIR)/http_parser_test.stdio.o
-	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/http_parser_test.o $(USER_BUILD_DIR)/http_parser_test.http.o $(USER_BUILD_DIR)/http_parser_test.syscalls.o $(USER_BUILD_DIR)/http_parser_test.string.o $(USER_BUILD_DIR)/http_parser_test.stdio.o -o $@
+	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/http_parser_test.o $(USER_BUILD_DIR)/http_parser_test.http.o $(USER_BUILD_DIR)/http_parser_test.crt0.o $(USER_BUILD_DIR)/http_parser_test.syscalls.o $(USER_BUILD_DIR)/http_parser_test.string.o $(USER_BUILD_DIR)/http_parser_test.stdio.o -o $@
 
 $(BUILD_DIR)/asm/tests/user_program.o: $(USER_BUILD_DIR)/basic.elf
 $(BUILD_DIR)/asm/tests/user_program_prime.o: $(USER_BUILD_DIR)/prime.elf

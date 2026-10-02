@@ -2,8 +2,7 @@
 #include <oscar/syscalls.h>
 #include <stdint.h>
 
-// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
-void _start(void) {
+int main(void) {
     static const char failure[] = "ls: could not read directory.\n";
     struct oscar_dirent entry;
     uint64_t index = 0;

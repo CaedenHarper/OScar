@@ -11,8 +11,7 @@ static void write_address(const uint8_t address[4]) {
     }
 }
 
-// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
-void _start(int argc, char** argv) {
+int main(int argc, char** argv) {
     static const char usage[] = "nslookup: usage: nslookup <hostname>\n";
     static const char failure[] = "nslookup: lookup failed.\n";
     static const uint64_t kTimeoutTicks = 200;

@@ -407,8 +407,7 @@ __attribute__((noreturn)) static void exit_shell(void) {
     oscar_exit(0);
 }
 
-// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
-void _start(void) {
+int main(void) {
     static const char read_failure[] = "cash: input read failed.\n";
     static char line[kLineCapacity];
 

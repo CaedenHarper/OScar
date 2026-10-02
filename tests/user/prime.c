@@ -51,8 +51,7 @@ __attribute__((noreturn)) static void exit_program(void) {
     oscar_exit(0);
 }
 
-// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
-void _start(void) {
+int main(void) {
     const char prefix[] = "Primes: ";
     for(uint64_t index = 0; index < sizeof(prefix) - 1; ++index) {
         append_char(prefix[index]);

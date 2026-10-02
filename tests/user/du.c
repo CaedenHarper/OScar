@@ -62,8 +62,7 @@ static uint64_t directory_size(const char* path) {
     return total;
 }
 
-// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
-void _start(void) {
+int main(void) {
     static const char root[] = "/";
     const uint64_t size = directory_size(root);
     if(failed) {

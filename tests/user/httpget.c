@@ -3,8 +3,7 @@
 #include <oscar/syscalls.h>
 #include <stdint.h>
 
-// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
-void _start(int argc, char** argv) {
+int main(int argc, char** argv) {
     static const char usage[] = "httpget: usage: httpget http://host[:port]/path\n";
     static const char failure[] = "httpget: request failed, error=";
     static const char status_suffix[] = ", status=";

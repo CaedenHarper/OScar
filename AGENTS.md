@@ -75,7 +75,10 @@ The source tree is organized as follows:
 - `user/include/oscar/`: public C headers for the user-space syscall API and
   small freestanding user libraries.
 - `user/lib/`: freestanding C implementations of syscall wrappers, string
-  utilities, output formatting, and the bounded HTTP client library.
+  utilities, output formatting, the C `main()` startup shim, and the bounded
+  HTTP client library. The shim owns the ELF `_start` entry point and converts
+  a program's `main()` return value into `oscar_exit`; user programs should not
+  define `_start` themselves unless they are deliberately assembly-only tests.
 - `tests/filesystem/`: source files copied into the generated ext2 test image.
 
 ## Build and test

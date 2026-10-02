@@ -6,8 +6,7 @@ __attribute__((noreturn)) static void exit_process(void) {
     oscar_exit(0);
 }
 
-// NOLINTNEXTLINE(bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp)
-void _start(void) {
+int main(void) {
     static const char kStartedMessage[] = "init: user-space initialization started.\n";
     static const char kShellPath[] = "/bin/cash";
     static const char kShellFailure[] = "init: could not start cash.\n";
