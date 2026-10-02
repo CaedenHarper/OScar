@@ -26,7 +26,8 @@ hardware-independent keyboard event queue, serial receive interrupts, and a seri
 standalone Ethernet framing plus IPv4 ARP packet parsing, request/reply
 construction, and a bounded ARP cache, plus IPv4 packet construction,
 checksum validation, static routing, ARP-backed Ethernet framing, ICMP
-echo request/reply packet handling, UDP datagram framing/checksums, DNS
+echo request/reply packet handling, UDP datagram framing/checksums, stateless
+TCP segment framing/checksums, DNS
 A-record query construction and bounded response parsing through QEMU's
 10.0.2.3 DNS proxy, and the user-space `nslookup` command,
 including serial ANSI navigation sequences and basic cursor-aware line editing,
@@ -69,7 +70,7 @@ signal delivery remains a later milestone.
     ├── arch/x86_64/  CPU contexts, GDT/TSS, IDT, and entry stubs
     ├── core/         Entry point, processes, threads, scheduler, and syscalls
     ├── drivers/      Port I/O, PCI discovery, serial, timer, keyboard input, terminal, PS/2, and VirtIO block/network support
-    ├── network/      Ethernet framing, ARP/IPv4, ICMP, UDP, and DNS support
+    ├── network/      Ethernet framing, ARP/IPv4, ICMP, UDP, stateless TCP, and DNS support
     ├── exec/         ELF64 validation and executable loading
     ├── filesystem/   VFS, ext2 mounting, path lookup, regular-file I/O, and mutation
     ├── interrupts/   IRQ registration, PIC/IOAPIC routing, and CPU interrupt helpers

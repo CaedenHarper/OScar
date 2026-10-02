@@ -24,6 +24,7 @@ void run(uintptr_t hhdm_offset) {
     self_tests_detail::test_ipv4();
     self_tests_detail::test_icmp();
     self_tests_detail::test_udp();
+    self_tests_detail::test_tcp();
     self_tests_detail::test_dns();
     self_tests_detail::test_block_device();
     self_tests_detail::test_virtio_network();
