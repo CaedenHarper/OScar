@@ -1,3 +1,5 @@
+#include <oscar/stdio.h>
+#include <oscar/string.h>
 #include <oscar/syscalls.h>
 #include <stdint.h>
 
@@ -11,17 +13,9 @@ enum {
     kIoBufferCapacity = 256,
 };
 
-static uint64_t string_length(const char* string) {
-    uint64_t length = 0;
-    while(string[length] != '\0') {
-        ++length;
-    }
-    return length;
-}
-
-static void write_string(const char* string) {
-    (void)oscar_write(1, string, string_length(string));
-}
+#define write_string oscar_write_string
+#define write_number oscar_write_uint
+#define compare_strings oscar_streq
 
 static void write_prompt(void) {
     static const char shell_color[] = "\033[1;36m";
@@ -46,14 +40,6 @@ static void write_prompt(void) {
     }
     write_string(reset_color);
     write_string(suffix);
-}
-
-static int compare_strings(const char* left, const char* right) {
-    uint64_t index = 0;
-    while(left[index] != '\0' && left[index] == right[index]) {
-        ++index;
-    }
-    return left[index] == right[index];
 }
 
 static int is_separator(char character) {
@@ -274,18 +260,6 @@ static void run_cat(char* const arguments[], uint32_t argument_count) {
     (void)oscar_close(input);
     if(!success) {
         write_string(failure);
-    }
-}
-
-static void write_number(uint64_t value) {
-    char digits[20];
-    uint32_t length = 0;
-    do {
-        digits[length++] = (char)('0' + (value % 10));
-        value /= 10;
-    } while(value != 0);
-    while(length != 0) {
-        (void)oscar_write(1, &digits[--length], 1);
     }
 }
 

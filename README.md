@@ -57,7 +57,7 @@ future milestones.
 ├── Makefile          Builds the ELF, bootable ISO, and QEMU targets
 ├── linker.ld         Places the kernel in the x86-64 higher half
 ├── limine.conf       Limine boot entry
-├── user/              Public C syscall headers and freestanding wrappers
+├── user/              Public C headers and freestanding user-space libraries
 └── src/
     ├── arch/x86_64/  CPU contexts, GDT/TSS, IDT, and entry stubs
     ├── core/         Entry point, processes, threads, scheduler, and syscalls
@@ -75,7 +75,8 @@ future milestones.
 
 Limine and its protocol header are downloaded into `deps/` on the first build.
 The normal build compiles only the runtime user programs in `tests/user/`:
-filesystem-backed `init`, `cash`, `ls`, and `top`. Test fixtures and the
+filesystem-backed `init`, `cash`, `ls`, and `top`. These programs link the
+reusable freestanding libraries in `user/lib/`. Test fixtures and the
 boot-time smoke-test sources are excluded from the normal kernel. Generated
 files go into `build/`.
 

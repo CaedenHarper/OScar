@@ -1,3 +1,4 @@
+#include <oscar/stdio.h>
 #include <oscar/syscalls.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -6,20 +7,8 @@
 //             cppcoreguidelines-pro-bounds-array-to-pointer-decay,
 //             cppcoreguidelines-pro-type-member-init)
 
-static uint64_t string_length(const char* string) {
-    uint64_t length = 0;
-    while(string[length] != '\0') {
-        ++length;
-    }
-    return length;
-}
-
-static void write_string(const char* string) {
-    (void)oscar_write(1, string, string_length(string));
-}
-
 static void fail(void) {
-    write_string("shell command test failed.\n");
+    oscar_write_string("shell command test failed.\n");
     oscar_exit(1);
 }
 
@@ -131,7 +120,7 @@ void _start(void) {
 
     expect(oscar_unlink(kMoved) == 0);
     expect(oscar_rmdir(kDirectory) == 0);
-    write_string("shell command test passed; terminating with kill.\n");
+    oscar_write_string("shell command test passed; terminating with kill.\n");
     expect(oscar_kill((uint64_t)process_id) == 0);
     fail();
 }

@@ -1,4 +1,5 @@
 #include <oscar/http.h>
+#include <oscar/string.h>
 #include <oscar/syscalls.h>
 #include <stdint.h>
 
@@ -10,14 +11,6 @@ enum {
     kExpectedBodyLength = 5,
 };
 
-static int equal(const char* left, const char* right) {
-    uint64_t index = 0;
-    while(left[index] != '\0' && left[index] == right[index]) {
-        ++index;
-    }
-    return left[index] == right[index];
-}
-
 void _start(void) {
     struct oscar_http_url url;
     uint16_t status = 0;
@@ -26,8 +19,8 @@ void _start(void) {
     uint32_t has_content_length = 0;
     static const char response[] = "HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nhello";
     if(oscar_http_parse_url("https://example.com/path", &url) >= 0 ||
-       oscar_http_parse_url("http://example.com:8080/path", &url) < 0 || !equal(url.host, "example.com") ||
-       !equal(url.path, "/path") || url.port != kExpectedPort ||
+       oscar_http_parse_url("http://example.com:8080/path", &url) < 0 || !oscar_streq(url.host, "example.com") ||
+       !oscar_streq(url.path, "/path") || url.port != kExpectedPort ||
        oscar_http_parse_response(
            response, sizeof(response) - 1, &status, &header_length, &content_length, &has_content_length
        ) < 0 ||

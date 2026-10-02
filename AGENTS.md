@@ -72,9 +72,10 @@ The source tree is organized as follows:
   shell-command smoke image are mounted from the generated ext2 image; the
   other test images are embedded in the kernel smoke tests. Malformed ELF metadata tests live in
   `src/tests/` because they exercise validation without loading an image.
-- `user/include/oscar/`: public C headers for the user-space syscall API.
-- `user/lib/`: freestanding C implementations of the user-space syscall wrappers
-  and the bounded HTTP client library.
+- `user/include/oscar/`: public C headers for the user-space syscall API and
+  small freestanding user libraries.
+- `user/lib/`: freestanding C implementations of syscall wrappers, string
+  utilities, output formatting, and the bounded HTTP client library.
 - `tests/filesystem/`: source files copied into the generated ext2 test image.
 
 ## Build and test
