@@ -31,11 +31,10 @@ the interactive `/bin/cash` shell and waits for it in user space.
 The shell includes these built-ins:
 
 - `cd`, `pwd`, `echo`, `help`, and `exit`.
-- `mkdir`, `touch`, `cp`, `mv`, `rm`, `cat`, `ps`, and `kill`.
 
-It also launches filesystem-backed programs including `/bin/ls`, `/bin/top`,
-`/bin/df`, `/bin/du`, `/bin/mount`, `/bin/ping`, `/bin/nslookup`, and
-`/bin/httpget`.
+Other commands are ordinary filesystem-backed user programs, including
+`mkdir`, `touch`, `cp`, `mv`, `rm`, `cat`, `ls`, `ps`, `top`, `df`, `du`,
+`mount`, `kill`, `ping`, `nslookup`, and `httpget`.
 
 C user programs can use the public freestanding API in
 `user/include/oscar/syscalls.h`; its library implementation hides the raw
@@ -76,8 +75,8 @@ future milestones.
 ```
 
 Limine and its protocol header are downloaded into `deps/` on the first build.
-The normal build compiles only the runtime user programs in `tests/user/`:
-filesystem-backed `init`, `cash`, `ls`, and `top`. These programs link the
+The normal build compiles the runtime user programs in `tests/user/`, including
+filesystem-backed `init`, `cash`, and the shell utilities. These programs link the
 reusable freestanding libraries in `user/lib/`. Test fixtures and the
 boot-time smoke-test sources are excluded from the normal kernel. Generated
 files go into `build/`.

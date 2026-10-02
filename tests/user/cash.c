@@ -7,13 +7,14 @@ enum {
     kLineCapacity = 128,
     kMaximumArguments = 16,
     kCommandPathCapacity = 128,
-    kIoBufferCapacity = 256,
-    kDecimalBase = 10,
 };
 
-#define write_string oscar_write_string
-#define write_number oscar_write_uint
-#define compare_strings oscar_streq
+typedef void (*BuiltinHandler)(char* const arguments[], uint32_t argument_count);
+
+struct Builtin {
+    const char* name;
+    BuiltinHandler handler;
+};
 
 static void write_prompt(void) {
     static const char shell_color[] = "\033[1;36m";
@@ -26,18 +27,18 @@ static void write_prompt(void) {
     static char directory[kLineCapacity];
     const int64_t length = oscar_getcwd(directory, sizeof(directory));
 
-    write_string(shell_color);
-    write_string(shell_name);
-    write_string(reset_color);
-    write_string(colon);
-    write_string(directory_color);
+    oscar_write_string(shell_color);
+    oscar_write_string(shell_name);
+    oscar_write_string(reset_color);
+    oscar_write_string(colon);
+    oscar_write_string(directory_color);
     if(length < 0) {
-        write_string(fallback_directory);
+        oscar_write_string(fallback_directory);
     } else {
         (void)oscar_write(1, directory, (uint64_t)length);
     }
-    write_string(reset_color);
-    write_string(suffix);
+    oscar_write_string(reset_color);
+    oscar_write_string(suffix);
 }
 
 static int is_separator(char character) {
@@ -62,259 +63,78 @@ static uint32_t tokenize(char* line, char* arguments[], uint32_t capacity) {
     return count;
 }
 
-static int parse_status(const char* text, int64_t* status) {
-    uint64_t index = 0;
-    uint64_t value = 0;
-    int negative = 0;
-    if(text[0] == '-') {
-        negative = 1;
-        index = 1;
-    }
-    if(text[index] == '\0') {
-        return 0;
-    }
-    while(text[index] != '\0') {
-        if(text[index] < '0' || text[index] > '9') {
-            return 0;
-        }
-        value = (value * kDecimalBase) + (uint64_t)(text[index] - '0');
-        ++index;
-    }
-    *status = negative ? -(int64_t)value : (int64_t)value;
-    return 1;
-}
-
-static void run_pwd(uint32_t argument_count) {
+static void run_pwd(char* const arguments[], uint32_t argument_count) {
     static const char usage[] = "cash: usage: pwd\n";
     static const char failure[] = "cash: pwd: could not read working directory.\n";
     static char directory[kLineCapacity];
+    (void)arguments;
     if(argument_count != 1) {
-        write_string(usage);
+        oscar_write_string(usage);
         return;
     }
     const int64_t length = oscar_getcwd(directory, sizeof(directory));
     if(length < 0) {
-        write_string(failure);
+        oscar_write_string(failure);
         return;
     }
     (void)oscar_write(1, directory, (uint64_t)length);
-    write_string("\n");
+    oscar_write_string("\n");
 }
 
 static void run_cd(char* const arguments[], uint32_t argument_count) {
     static const char usage[] = "cash: usage: cd <directory>\n";
     static const char failure[] = "cash: cd: could not change directory.\n";
     if(argument_count != 2) {
-        write_string(usage);
+        oscar_write_string(usage);
         return;
     }
     if(oscar_chdir(arguments[1]) < 0) {
-        write_string(failure);
+        oscar_write_string(failure);
     }
 }
 
 static void run_echo(char* const arguments[], uint32_t argument_count) {
     for(uint32_t index = 1; index < argument_count; ++index) {
         if(index != 1) {
-            write_string(" ");
+            oscar_write_string(" ");
         }
-        write_string(arguments[index]);
+        oscar_write_string(arguments[index]);
     }
-    write_string("\n");
+    oscar_write_string("\n");
 }
 
-static void run_help(uint32_t argument_count) {
+static void run_help(char* const arguments[], uint32_t argument_count) {
     static const char usage[] = "cash: usage: help\n";
     static const char commands[] = "built-ins: cd pwd echo help exit\n"
                                    "filesystem: mkdir touch cp mv rm cat ls df du mount\n"
                                    "processes: ps top kill\n"
                                    "network: ping <ipv4-address-or-hostname>, nslookup <hostname>,\n"
                                    "          httpget <http-url>\n";
+    (void)arguments;
     if(argument_count != 1) {
-        write_string(usage);
+        oscar_write_string(usage);
         return;
     }
-    write_string(commands);
+    oscar_write_string(commands);
 }
 
-static void run_mkdir(char* const arguments[], uint32_t argument_count) {
-    static const char usage[] = "cash: usage: mkdir <directory>\n";
-    static const char failure[] = "cash: mkdir: could not create directory.\n";
-    if(argument_count != 2 || oscar_mkdir(arguments[1]) < 0) {
-        write_string(argument_count == 2 ? failure : usage);
-    }
-}
-
-static void run_touch(char* const arguments[], uint32_t argument_count) {
-    static const char usage[] = "cash: usage: touch <file>\n";
-    static const char failure[] = "cash: touch: could not create file.\n";
-    struct oscar_stat status;
-    if(argument_count != 2) {
-        write_string(usage);
-        return;
-    }
-    if(oscar_stat(arguments[1], &status) < 0 && oscar_create(arguments[1]) < 0) {
-        write_string(failure);
-    }
-}
-
-static void run_rm(char* const arguments[], uint32_t argument_count) {
-    static const char usage[] = "cash: usage: rm <file>\n";
-    static const char failure[] = "cash: rm: could not remove file.\n";
-    if(argument_count != 2 || oscar_unlink(arguments[1]) < 0) {
-        write_string(argument_count == 2 ? failure : usage);
-    }
-}
-
-static int copy_file(const char* source, const char* destination) {
-    const int64_t input = oscar_open(source, OSCAR_OPEN_READ);
-    if(input < 0) {
-        return 0;
-    }
-
-    int64_t output = oscar_open(destination, OSCAR_OPEN_WRITE);
-    if(output < 0 && oscar_create(destination) == 0) {
-        output = oscar_open(destination, OSCAR_OPEN_WRITE);
-    }
-    if(output < 0) {
-        (void)oscar_close(input);
-        return 0;
-    }
-
-    char buffer[kIoBufferCapacity];
-    int success = 1;
-    for(;;) {
-        const int64_t received = oscar_read(input, buffer, sizeof(buffer));
-        if(received < 0) {
-            success = 0;
-            break;
-        }
-        if(received == 0) {
-            break;
-        }
-        const int64_t written = oscar_write(output, buffer, (uint64_t)received);
-        if(written != received) {
-            success = 0;
-            break;
-        }
-    }
-    (void)oscar_close(input);
-    (void)oscar_close(output);
-    return success;
-}
-
-static void run_cp(char* const arguments[], uint32_t argument_count) {
-    static const char usage[] = "cash: usage: cp <source> <destination>\n";
-    static const char failure[] = "cash: cp: could not copy file.\n";
-    if(argument_count != 3) {
-        write_string(usage);
-        return;
-    }
-    if(!copy_file(arguments[1], arguments[2])) {
-        write_string(failure);
-    }
-}
-
-static void run_mv(char* const arguments[], uint32_t argument_count) {
-    static const char usage[] = "cash: usage: mv <source> <destination>\n";
-    static const char failure[] = "cash: mv: could not move file.\n";
-    if(argument_count != 3) {
-        write_string(usage);
-        return;
-    }
-    if(!copy_file(arguments[1], arguments[2]) || oscar_unlink(arguments[1]) < 0) {
-        write_string(failure);
-    }
-}
-
-static void run_cat(char* const arguments[], uint32_t argument_count) {
-    static const char usage[] = "cash: usage: cat <file>\n";
-    static const char failure[] = "cash: cat: could not read file.\n";
-    if(argument_count != 2) {
-        write_string(usage);
-        return;
-    }
-    const int64_t input = oscar_open(arguments[1], OSCAR_OPEN_READ);
-    if(input < 0) {
-        write_string(failure);
-        return;
-    }
-    char buffer[kIoBufferCapacity];
-    int success = 1;
-    for(;;) {
-        const int64_t received = oscar_read(input, buffer, sizeof(buffer));
-        if(received < 0) {
-            success = 0;
-            break;
-        }
-        if(received == 0) {
-            break;
-        }
-        if(oscar_write(1, buffer, (uint64_t)received) != received) {
-            success = 0;
-            break;
-        }
-    }
-    (void)oscar_close(input);
-    if(!success) {
-        write_string(failure);
-    }
-}
-
-static void run_ps(uint32_t argument_count) {
-    static const char usage[] = "cash: usage: ps\n";
-    static const char header[] = "PID STATE THREADS PAGES IMAGE\n";
-    if(argument_count != 1) {
-        write_string(usage);
-        return;
-    }
-    write_string(header);
-    for(uint64_t index = 0;; ++index) {
-        struct oscar_process_info info;
-        const int64_t result = oscar_get_process_info(index, &info);
-        if(result == OSCAR_ERROR_NOT_FOUND) {
-            return;
-        }
-        if(result < 0) {
-            write_string("cash: ps: could not read process list.\n");
-            return;
-        }
-        write_number(info.id);
-        const char* state_text = " new ";
-        if(info.state == OSCAR_PROCESS_RUNNING) {
-            state_text = " run ";
-        } else if(info.state == OSCAR_PROCESS_TERMINATED) {
-            state_text = " done ";
-        }
-        write_string(state_text);
-        write_number(info.thread_count);
-        write_string(" ");
-        write_number(info.user_page_count);
-        write_string(" ");
-        write_string(info.image_path);
-        write_string("\n");
-    }
-}
-
-static void run_kill(char* const arguments[], uint32_t argument_count) {
-    static const char usage[] = "cash: usage: kill <pid>\n";
-    static const char failure[] = "cash: kill: could not terminate process.\n";
-    int64_t process_id = 0;
-    if(argument_count != 2 || !parse_status(arguments[1], &process_id) || process_id <= 0 ||
-       oscar_kill((uint64_t)process_id) < 0) {
-        write_string(argument_count == 2 ? failure : usage);
-    }
-}
-
-static int run_exit(char* const arguments[], uint32_t argument_count) {
+static void run_exit(char* const arguments[], uint32_t argument_count) {
     static const char usage[] = "cash: usage: exit [status]\n";
     int64_t status = 0;
-    if(argument_count > 2 || (argument_count == 2 && !parse_status(arguments[1], &status))) {
-        write_string(usage);
-        return 0;
+    if(argument_count > 2 || (argument_count == 2 && !oscar_parse_i64(arguments[1], &status))) {
+        oscar_write_string(usage);
+        return;
     }
     oscar_exit(status);
 }
+
+static const struct Builtin kBuiltins[] = {
+    {"pwd", run_pwd},
+    {"cd", run_cd},
+    {"echo", run_echo},
+    {"help", run_help},
+    {"exit", run_exit},
+};
 
 static int build_command_path(const char* command, char* path) {
     uint64_t path_index = 0;
@@ -329,7 +149,6 @@ static int build_command_path(const char* command, char* path) {
             path[path_index] = prefix[path_index];
             ++path_index;
         }
-        command_index = 0;
         while(command[command_index] != '\0' && path_index + 1 < kCommandPathCapacity) {
             path[path_index++] = command[command_index++];
         }
@@ -346,7 +165,7 @@ static void run_external(char* const arguments[], uint32_t argument_count) {
     static const char exited_failure[] = "cash: command exited unsuccessfully.\n";
     char path[kCommandPathCapacity];
     if(!build_command_path(arguments[0], path)) {
-        write_string(failure);
+        oscar_write_string(failure);
         return;
     }
     const char* child_arguments[kMaximumArguments + 1];
@@ -357,9 +176,9 @@ static void run_external(char* const arguments[], uint32_t argument_count) {
     const int64_t child_id = oscar_spawn_args(path, child_arguments);
     int64_t status = 0;
     if(child_id < 0 || oscar_waitpid((uint64_t)child_id, &status) < 0) {
-        write_string(failure);
+        oscar_write_string(failure);
     } else if(status != 0) {
-        write_string(exited_failure);
+        oscar_write_string(exited_failure);
     }
 }
 
@@ -372,39 +191,13 @@ static void execute_line(char* line, uint64_t length) {
         return;
     }
 
-    if(compare_strings(arguments[0], "pwd")) {
-        run_pwd(argument_count);
-    } else if(compare_strings(arguments[0], "cd")) {
-        run_cd(arguments, argument_count);
-    } else if(compare_strings(arguments[0], "echo")) {
-        run_echo(arguments, argument_count);
-    } else if(compare_strings(arguments[0], "help")) {
-        run_help(argument_count);
-    } else if(compare_strings(arguments[0], "exit")) {
-        (void)run_exit(arguments, argument_count);
-    } else if(compare_strings(arguments[0], "mkdir")) {
-        run_mkdir(arguments, argument_count);
-    } else if(compare_strings(arguments[0], "touch")) {
-        run_touch(arguments, argument_count);
-    } else if(compare_strings(arguments[0], "cp")) {
-        run_cp(arguments, argument_count);
-    } else if(compare_strings(arguments[0], "mv")) {
-        run_mv(arguments, argument_count);
-    } else if(compare_strings(arguments[0], "rm")) {
-        run_rm(arguments, argument_count);
-    } else if(compare_strings(arguments[0], "cat")) {
-        run_cat(arguments, argument_count);
-    } else if(compare_strings(arguments[0], "ps")) {
-        run_ps(argument_count);
-    } else if(compare_strings(arguments[0], "kill")) {
-        run_kill(arguments, argument_count);
-    } else {
-        run_external(arguments, argument_count);
+    for(uint64_t index = 0; index < sizeof(kBuiltins) / sizeof(kBuiltins[0]); ++index) {
+        if(oscar_streq(arguments[0], kBuiltins[index].name)) {
+            kBuiltins[index].handler(arguments, argument_count);
+            return;
+        }
     }
-}
-
-__attribute__((noreturn)) static void exit_shell(void) {
-    oscar_exit(0);
+    run_external(arguments, argument_count);
 }
 
 int main(void) {
@@ -416,12 +209,11 @@ int main(void) {
         const int64_t count = oscar_read(0, line, sizeof(line));
         if(count < 0) {
             (void)oscar_write(1, read_failure, sizeof(read_failure) - 1);
-            exit_shell();
+            oscar_exit(0);
         }
         if(count == 0) {
             continue;
         }
-
         execute_line(line, (uint64_t)count);
     }
 }

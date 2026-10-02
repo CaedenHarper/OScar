@@ -68,7 +68,7 @@ The source tree is organized as follows:
   `self_tests_internal.hpp` contains private cross-test declarations.
 - `tests/user/`: source and linker script for successful, filesystem-read,
   computed-output, interactive `cash` shell, filesystem-backed init, shell
-  command, network `ping`, and intentional-crash user ELF smoke images. Init, `cash`, and the
+  utilities, network `ping`, and intentional-crash user ELF smoke images. Init, `cash`, and the
   shell-command smoke image are mounted from the generated ext2 image; the
   other test images are embedded in the kernel smoke tests. Malformed ELF metadata tests live in
   `src/tests/` because they exercise validation without loading an image.
@@ -115,8 +115,8 @@ The mutation test additionally creates and removes regular files and nested
 directories, rejects duplicate names and non-empty directory removal, and
 cleans up its entries for repeatable persistent-image runs.
 The user-space `cash` fixture exercises terminal line input, its `cd`, `pwd`,
-`echo`, `help`, and `exit` built-ins, filesystem commands, external `/bin/ls`
-dispatch, and the bounded-refresh `/bin/top` process monitor. The
+`echo`, `help`, and `exit` built-ins, external filesystem-command dispatch,
+and the bounded-refresh `/bin/top` process monitor. The
 `shell_commands` fixture validates the filesystem-command results and process
 inspection during init startup. The `argv_test` fixture validates initial
 `argc`/`argv` construction, descriptor inheritance, and pipe/descriptor-duplication
