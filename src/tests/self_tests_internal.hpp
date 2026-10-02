@@ -100,6 +100,7 @@ void test_ipv4();
 void test_icmp();
 void test_udp();
 void test_tcp();
+void test_tcp_connection();
 void test_dns();
 void test_filesystem();
 void test_vfs();
