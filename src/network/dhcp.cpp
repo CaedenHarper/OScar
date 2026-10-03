@@ -31,10 +31,6 @@ constexpr uint16_t kClientHardwareOffset = 28;
 constexpr uint16_t kCookieOffset = kFixedHeaderLength;
 constexpr uint16_t kOptionsOffset = kCookieOffset + kCookieLength;
 
-uint16_t read_be16(const uint8_t* bytes) {
-    return static_cast<uint16_t>((static_cast<uint16_t>(bytes[0]) << 8U) | bytes[1]);
-}
-
 uint32_t read_be32(const uint8_t* bytes) {
     return (static_cast<uint32_t>(bytes[0]) << 24U) | (static_cast<uint32_t>(bytes[1]) << 16U) |
            (static_cast<uint32_t>(bytes[2]) << 8U) | bytes[3];

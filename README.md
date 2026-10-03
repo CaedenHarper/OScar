@@ -53,9 +53,10 @@ Memory allocation, buffered `stdio`, directory streams, signals, and
 
 ## Current limitations
 
-OScar does not yet provide `fork`, dynamic linking, rename support, HTTPS,
-redirects, DHCP, `/etc/resolv.conf`, or full mount lifecycle management.
-Signal delivery and a more complete C library remain future milestones.
+OScar does not yet provide `fork`, dynamic linking, native rename support,
+HTTPS, redirects, DHCP lease renewal, `/etc/resolv.conf`, or full mount
+lifecycle management. Signal delivery and a more complete C library remain
+future milestones.
 
 ## Repository layout
 
