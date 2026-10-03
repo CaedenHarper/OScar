@@ -76,7 +76,8 @@ The source tree is organized as follows:
   `user/include/oscar/` extensions for OScar-specific syscalls and helpers.
 - `user/lib/`: freestanding C implementations of syscall wrappers, the initial
   libc string, process, descriptor, errno, and conversion functions, output
-  formatting, the C `main()` startup shim, and the bounded HTTP client library.
+  formatting, the C `main()` startup shim, and the incremental HTTP parser and
+  streaming client library.
   The shim owns the ELF `_start` entry point and converts a program's `main()`
   return value into `oscar_exit`; user programs should not define `_start`
   themselves unless they are deliberately assembly-only tests.

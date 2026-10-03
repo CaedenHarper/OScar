@@ -20,7 +20,8 @@ The kernel currently provides:
   PS/2 keyboard backend.
 - An ext2 filesystem with VFS path lookup, regular-file I/O, directories,
   permissions, ownership, metadata, corruption checks, and mutation support.
-- Ethernet, ARP, IPv4, ICMP, UDP, TCP, DNS, and a bounded HTTP/1.0 client.
+- Ethernet, ARP, IPv4, ICMP, UDP, TCP, DNS, and an HTTP client with incremental
+  response parsing and streaming body delivery.
 - A serial-backed terminal and the user-space `cash` shell.
 
 ## User-space environment
@@ -53,9 +54,8 @@ Memory allocation, buffered `stdio`, directory streams, signals, and
 ## Current limitations
 
 OScar does not yet provide `fork`, dynamic linking, rename support, HTTPS,
-redirects, chunked transfer encoding, DHCP, `/etc/resolv.conf`, or full mount
-lifecycle management. Signal delivery and a more complete C library remain
-future milestones.
+redirects, DHCP, `/etc/resolv.conf`, or full mount lifecycle management.
+Signal delivery and a more complete C library remain future milestones.
 
 ## Repository layout
 

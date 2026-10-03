@@ -14,7 +14,6 @@ enum {
     kHttpDefaultPort = 80,
     kHttpTimeoutTicks = 200,
     kHttpRequestCapacity = 512,
-    kHttpResponseCapacity = 8192,
     kHttpReceiveChunk = 4096,
 };
 
@@ -190,8 +189,247 @@ static int parse_ipv4(const char* text, uint8_t address[4]) {
     }
 }
 
-int64_t oscar_http_get(const char* url_text, char* body, uint64_t capacity, uint64_t* length, uint16_t* status_code) {
-    if(url_text == 0 || body == 0 || length == 0 || status_code == 0 || capacity == 0) {
+enum {
+    kParserHeaders = 0,
+    kParserFixedBody = 1,
+    kParserCloseBody = 2,
+    kParserChunkSize = 3,
+    kParserChunkBody = 4,
+    kParserChunkCrlf = 5,
+    kParserChunkCrlfLf = 6,
+    kParserChunkTrailers = 7,
+    kParserComplete = 8,
+};
+
+static int header_has_chunked_encoding(const char* header, uint64_t length) {
+    static const char name[] = "transfer-encoding";
+    uint64_t line_start = 0;
+    while(line_start + 1 < length) {
+        uint64_t line_end = line_start;
+        while(line_end + 1 < length && !(header[line_end] == '\r' && header[line_end + 1] == '\n')) {
+            ++line_end;
+        }
+        if(line_end + 1 >= length) {
+            return 0;
+        }
+        uint64_t colon = line_start;
+        while(colon < line_end && header[colon] != ':') {
+            ++colon;
+        }
+        if(colon - line_start == sizeof(name) - 1 &&
+           text_equal_insensitive(&header[line_start], name, colon - line_start)) {
+            for(uint64_t index = colon + 1; index < line_end; ++index) {
+                if(index + 7 <= line_end && text_equal_insensitive(&header[index], "chunked", 7)) {
+                    return 1;
+                }
+            }
+        }
+        line_start = line_end + 2;
+    }
+    return 0;
+}
+
+static int64_t parser_emit(
+    struct oscar_http_response_parser* parser,
+    const char* data,
+    uint64_t length,
+    oscar_http_body_callback callback,
+    void* context
+) {
+    if(length == 0) {
+        return 0;
+    }
+    if(callback(data, length, context) < 0) {
+        return OSCAR_HTTP_ERROR_BODY_CALLBACK;
+    }
+    parser->body_received += length;
+    return 0;
+}
+
+static int64_t parser_parse_chunk_size(struct oscar_http_response_parser* parser) {
+    uint64_t index = 0;
+    uint64_t size = 0;
+    while(index < parser->chunk_line_length && parser->chunk_line[index] != ';' && parser->chunk_line[index] != '\r') {
+        const char character = parser->chunk_line[index++];
+        uint64_t digit = 0;
+        if(character >= '0' && character <= '9') {
+            digit = (uint64_t)(character - '0');
+        } else if(character >= 'a' && character <= 'f') {
+            digit = (uint64_t)(character - 'a') + 10;
+        } else if(character >= 'A' && character <= 'F') {
+            digit = (uint64_t)(character - 'A') + 10;
+        } else {
+            return OSCAR_HTTP_ERROR_MALFORMED_RESPONSE;
+        }
+        if(size > (UINT64_MAX - digit) / 16) {
+            return OSCAR_HTTP_ERROR_MALFORMED_RESPONSE;
+        }
+        size = size * 16 + digit;
+    }
+    if(index == 0) {
+        return OSCAR_HTTP_ERROR_MALFORMED_RESPONSE;
+    }
+    parser->chunk_remaining = size;
+    parser->chunk_line_length = 0;
+    parser->state = size == 0 ? kParserChunkTrailers : kParserChunkBody;
+    return 0;
+}
+
+static int64_t parser_feed_chunked(
+    struct oscar_http_response_parser* parser,
+    const char* data,
+    uint64_t length,
+    oscar_http_body_callback callback,
+    void* context
+) {
+    uint64_t index = 0;
+    while(index < length && parser->state != kParserComplete) {
+        if(parser->state == kParserChunkBody) {
+            const uint64_t available = length - index;
+            const uint64_t amount = available < parser->chunk_remaining ? available : parser->chunk_remaining;
+            const int64_t result = parser_emit(parser, &data[index], amount, callback, context);
+            if(result < 0) {
+                return result;
+            }
+            index += amount;
+            parser->chunk_remaining -= amount;
+            if(parser->chunk_remaining == 0) {
+                parser->state = kParserChunkCrlf;
+            }
+            continue;
+        }
+        if(parser->state == kParserChunkCrlf) {
+            if(data[index++] != '\r') {
+                return OSCAR_HTTP_ERROR_MALFORMED_RESPONSE;
+            }
+            parser->state = kParserChunkCrlfLf;
+            continue;
+        }
+        if(parser->state == kParserChunkCrlfLf) {
+            if(data[index++] != '\n') {
+                return OSCAR_HTTP_ERROR_MALFORMED_RESPONSE;
+            }
+            parser->state = kParserChunkSize;
+            continue;
+        }
+        if(parser->chunk_line_length + 1 >= OSCAR_HTTP_CHUNK_LINE_CAPACITY) {
+            return OSCAR_HTTP_ERROR_MALFORMED_RESPONSE;
+        }
+        parser->chunk_line[parser->chunk_line_length++] = data[index++];
+        if(parser->chunk_line_length >= 2 && parser->chunk_line[parser->chunk_line_length - 2] == '\r' &&
+           parser->chunk_line[parser->chunk_line_length - 1] == '\n') {
+            if(parser->state == kParserChunkSize) {
+                const int64_t result = parser_parse_chunk_size(parser);
+                if(result < 0) {
+                    return result;
+                }
+            } else {
+                if(parser->chunk_line_length == 2) {
+                    parser->state = kParserComplete;
+                }
+                parser->chunk_line_length = 0;
+            }
+        }
+    }
+    return 0;
+}
+
+void oscar_http_response_parser_init(struct oscar_http_response_parser* parser) {
+    parser->header_length = 0;
+    parser->content_length = 0;
+    parser->body_received = 0;
+    parser->chunk_remaining = 0;
+    parser->chunk_line_length = 0;
+    parser->status_code = 0;
+    parser->has_content_length = 0;
+    parser->chunked = 0;
+    parser->state = kParserHeaders;
+}
+
+int64_t oscar_http_response_parser_feed(
+    struct oscar_http_response_parser* parser,
+    const void* data_pointer,
+    uint64_t length,
+    oscar_http_body_callback callback,
+    void* context
+) {
+    if(parser == 0 || data_pointer == 0 || callback == 0 || parser->state == kParserComplete) {
+        return parser != 0 && parser->state == kParserComplete ? 0 : OSCAR_HTTP_ERROR_MALFORMED_RESPONSE;
+    }
+    const char* data = (const char*)data_pointer;
+    uint64_t index = 0;
+    if(parser->state == kParserHeaders) {
+        while(index < length && parser->state == kParserHeaders) {
+            if(parser->header_length >= OSCAR_HTTP_HEADER_CAPACITY) {
+                return OSCAR_HTTP_ERROR_RESPONSE_TOO_LARGE;
+            }
+            parser->header[parser->header_length++] = data[index++];
+            uint64_t header_end = 0;
+            if(find_header_end(parser->header, parser->header_length, &header_end)) {
+                if(oscar_http_parse_response(
+                       parser->header,
+                       header_end,
+                       &parser->status_code,
+                       &parser->header_length,
+                       &parser->content_length,
+                       &parser->has_content_length
+                   ) < 0) {
+                    return OSCAR_HTTP_ERROR_MALFORMED_RESPONSE;
+                }
+                parser->chunked = header_has_chunked_encoding(parser->header, parser->header_length);
+                if(parser->chunked) {
+                    parser->state = kParserChunkSize;
+                } else if(parser->has_content_length) {
+                    parser->state = parser->content_length == 0 ? kParserComplete : kParserFixedBody;
+                } else {
+                    parser->state = kParserCloseBody;
+                }
+            }
+        }
+    }
+    if(index < length && parser->state == kParserFixedBody) {
+        const uint64_t remaining = parser->content_length - parser->body_received;
+        const uint64_t amount = length - index < remaining ? length - index : remaining;
+        const int64_t result = parser_emit(parser, &data[index], amount, callback, context);
+        if(result < 0) {
+            return result;
+        }
+        index += amount;
+        if(parser->body_received == parser->content_length) {
+            parser->state = kParserComplete;
+        }
+    }
+    if(index < length && parser->state == kParserCloseBody) {
+        const int64_t result = parser_emit(parser, &data[index], length - index, callback, context);
+        if(result < 0) {
+            return result;
+        }
+    }
+    if(index < length &&
+       (parser->state == kParserChunkSize || parser->state == kParserChunkBody || parser->state == kParserChunkCrlf ||
+        parser->state == kParserChunkCrlfLf || parser->state == kParserChunkTrailers)) {
+        return parser_feed_chunked(parser, &data[index], length - index, callback, context);
+    }
+    return 0;
+}
+
+int64_t oscar_http_response_parser_finish(const struct oscar_http_response_parser* parser) {
+    if(parser == 0) {
+        return OSCAR_HTTP_ERROR_MALFORMED_RESPONSE;
+    }
+    if(parser->state == kParserCloseBody || parser->state == kParserComplete) {
+        return 0;
+    }
+    return OSCAR_HTTP_ERROR_MALFORMED_RESPONSE;
+}
+
+int64_t oscar_http_get_stream(
+    const char* url_text,
+    oscar_http_body_callback callback,
+    void* context,
+    uint16_t* status_code
+) {
+    if(url_text == 0 || callback == 0 || status_code == 0) {
         return OSCAR_HTTP_ERROR_INVALID_URL;
     }
     struct oscar_http_url url;
@@ -207,15 +445,16 @@ int64_t oscar_http_get(const char* url_text, char* body, uint64_t capacity, uint
         return socket;
     }
     int64_t result = 0;
-    const int64_t connect_result = oscar_connect(socket, address, url.port);
-    if(connect_result < 0) {
+    if(oscar_connect(socket, address, url.port) < 0) {
         result = OSCAR_HTTP_ERROR_CONNECT;
     } else {
         char request[kHttpRequestCapacity];
         uint64_t request_length = 0;
         static const char prefix[] = "GET ";
+        // HTTP/1.0 keeps compatibility with very small legacy servers while the
+        // response parser still accepts modern HTTP/1.1 framing.
         static const char middle[] = " HTTP/1.0\r\nHost: ";
-        static const char suffix[] = "\r\nConnection: close\r\n\r\n";
+        static const char suffix[] = "\r\nConnection: close\r\nUser-Agent: OScar-httpget/1.0\r\n\r\n";
         const char* parts[] = {prefix, url.path, middle, url.host, suffix};
         for(uint64_t part = 0; part < sizeof(parts) / sizeof(parts[0]) && result == 0; ++part) {
             for(uint64_t index = 0; parts[part][index] != '\0'; ++index) {
@@ -228,69 +467,61 @@ int64_t oscar_http_get(const char* url_text, char* body, uint64_t capacity, uint
         if(result == 0 && oscar_send(socket, request, request_length) < 0) {
             result = OSCAR_HTTP_ERROR_SEND;
         }
-        char raw[kHttpResponseCapacity];
-        uint64_t raw_length = 0;
-        uint64_t header_length = 0;
-        uint64_t content_length = 0;
-        uint32_t has_content_length = 0;
-        while(result == 0 && header_length == 0) {
-            if(raw_length == sizeof(raw)) {
-                result = OSCAR_HTTP_ERROR_RESPONSE_TOO_LARGE;
-                break;
-            }
-            const uint64_t available = sizeof(raw) - raw_length;
-            const uint64_t receive_length = available < kHttpReceiveChunk ? available : kHttpReceiveChunk;
-            const int64_t received = oscar_recv(socket, &raw[raw_length], receive_length);
-            if(received <= 0) {
-                result = received < 0 ? OSCAR_HTTP_ERROR_RECEIVE : OSCAR_HTTP_ERROR_MALFORMED_RESPONSE;
-                break;
-            }
-            raw_length += (uint64_t)received;
-            if(find_header_end(raw, raw_length, &header_length)) {
-                if(oscar_http_parse_response(
-                       raw, raw_length, status_code, &header_length, &content_length, &has_content_length
-                   ) < 0) {
-                    result = OSCAR_HTTP_ERROR_MALFORMED_RESPONSE;
-                }
-            }
-        }
-        while(result == 0 &&
-              ((has_content_length && raw_length < header_length + content_length) || !has_content_length)) {
-            if(raw_length == sizeof(raw)) {
-                result = OSCAR_HTTP_ERROR_RESPONSE_TOO_LARGE;
-                break;
-            }
-            const uint64_t available = sizeof(raw) - raw_length;
-            const uint64_t receive_length = available < kHttpReceiveChunk ? available : kHttpReceiveChunk;
-            const int64_t received = oscar_recv(socket, &raw[raw_length], receive_length);
+        struct oscar_http_response_parser parser;
+        oscar_http_response_parser_init(&parser);
+        char receive_buffer[kHttpReceiveChunk];
+        while(result == 0 && parser.state != kParserComplete) {
+            const int64_t received = oscar_recv(socket, receive_buffer, sizeof(receive_buffer));
             if(received < 0) {
-                result = received;
+                result = OSCAR_HTTP_ERROR_RECEIVE;
                 break;
             }
             if(received == 0) {
                 break;
             }
-            raw_length += (uint64_t)received;
+            result = oscar_http_response_parser_feed(&parser, receive_buffer, (uint64_t)received, callback, context);
         }
         if(result == 0) {
-            const uint64_t available = raw_length > header_length ? raw_length - header_length : 0;
-            const uint64_t expected = has_content_length ? content_length : available;
-            if(expected > capacity || expected > available) {
-                result =
-                    expected > capacity ? OSCAR_HTTP_ERROR_RESPONSE_TOO_LARGE : OSCAR_HTTP_ERROR_MALFORMED_RESPONSE;
-            } else {
-                for(uint64_t index = 0; index < expected; ++index) {
-                    body[index] = raw[header_length + index];
-                }
-                *length = expected;
-                if(*status_code < 200 || *status_code >= 300) {
-                    result = OSCAR_HTTP_ERROR_UNSUPPORTED_RESPONSE;
-                }
-            }
+            result = oscar_http_response_parser_finish(&parser);
+        }
+        *status_code = parser.status_code;
+        if(result == 0 && (*status_code < 200 || *status_code >= 300)) {
+            result = OSCAR_HTTP_ERROR_UNSUPPORTED_RESPONSE;
         }
     }
     (void)close((int)socket);
     return result;
+}
+
+struct buffered_http_body {
+    char* data;
+    uint64_t capacity;
+    uint64_t length;
+};
+
+// Keep the historical bounded API by collecting callback fragments, while the transport and
+// response framing remain shared with the streaming API. This prevents the compatibility path
+// from silently accepting a different subset of HTTP responses.
+static int collect_http_body(const void* data, uint64_t length, void* context) {
+    struct buffered_http_body* body = (struct buffered_http_body*)context;
+    if(length > body->capacity - body->length) {
+        return -1;
+    }
+    for(uint64_t index = 0; index < length; ++index) {
+        body->data[body->length + index] = ((const char*)data)[index];
+    }
+    body->length += length;
+    return 0;
+}
+
+int64_t oscar_http_get(const char* url_text, char* body, uint64_t capacity, uint64_t* length, uint16_t* status_code) {
+    if(url_text == 0 || body == 0 || length == 0 || status_code == 0 || capacity == 0) {
+        return OSCAR_HTTP_ERROR_INVALID_URL;
+    }
+    struct buffered_http_body buffered = {body, capacity, 0};
+    const int64_t result = oscar_http_get_stream(url_text, collect_http_body, &buffered, status_code);
+    *length = buffered.length;
+    return result == OSCAR_HTTP_ERROR_BODY_CALLBACK ? OSCAR_HTTP_ERROR_RESPONSE_TOO_LARGE : result;
 }
 
 // NOLINTEND(cppcoreguidelines-avoid-magic-numbers, readability-function-cognitive-complexity,
