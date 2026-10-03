@@ -1,7 +1,11 @@
 #include <oscar/stdio.h>
-#include <oscar/string.h>
 #include <oscar/syscalls.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 enum {
     kLineCapacity = 128,
@@ -25,17 +29,17 @@ static void write_prompt(void) {
     static const char suffix[] = "$ ";
     static const char fallback_directory[] = "?";
     static char directory[kLineCapacity];
-    const int64_t length = oscar_getcwd(directory, sizeof(directory));
+    const char* current_directory = getcwd(directory, sizeof(directory));
 
     oscar_write_string(shell_color);
     oscar_write_string(shell_name);
     oscar_write_string(reset_color);
     oscar_write_string(colon);
     oscar_write_string(directory_color);
-    if(length < 0) {
+    if(current_directory == (const char*)0) {
         oscar_write_string(fallback_directory);
     } else {
-        (void)oscar_write(1, directory, (uint64_t)length);
+        (void)write(1, current_directory, strlen(current_directory));
     }
     oscar_write_string(reset_color);
     oscar_write_string(suffix);
@@ -72,12 +76,12 @@ static void run_pwd(char* const arguments[], uint32_t argument_count) {
         oscar_write_string(usage);
         return;
     }
-    const int64_t length = oscar_getcwd(directory, sizeof(directory));
-    if(length < 0) {
+    const char* current_directory = getcwd(directory, sizeof(directory));
+    if(current_directory == (const char*)0) {
         oscar_write_string(failure);
         return;
     }
-    (void)oscar_write(1, directory, (uint64_t)length);
+    (void)write(1, current_directory, strlen(current_directory));
     oscar_write_string("\n");
 }
 
@@ -88,7 +92,7 @@ static void run_cd(char* const arguments[], uint32_t argument_count) {
         oscar_write_string(usage);
         return;
     }
-    if(oscar_chdir(arguments[1]) < 0) {
+    if(chdir(arguments[1]) < 0) {
         oscar_write_string(failure);
     }
 }
@@ -120,12 +124,13 @@ static void run_help(char* const arguments[], uint32_t argument_count) {
 
 static void run_exit(char* const arguments[], uint32_t argument_count) {
     static const char usage[] = "cash: usage: exit [status]\n";
-    int64_t status = 0;
-    if(argument_count > 2 || (argument_count == 2 && !oscar_parse_i64(arguments[1], &status))) {
+    char* end = (char*)0;
+    const long status = argument_count == 2 ? strtol(arguments[1], &end, 10) : 0;
+    if(argument_count > 2 || (argument_count == 2 && (end == arguments[1] || *end != '\0'))) {
         oscar_write_string(usage);
         return;
     }
-    oscar_exit(status);
+    _Exit((int)status);
 }
 
 static const struct Builtin kBuiltins[] = {
@@ -174,8 +179,8 @@ static void run_external(char* const arguments[], uint32_t argument_count) {
     }
     child_arguments[argument_count] = 0;
     const int64_t child_id = oscar_spawn_args(path, child_arguments);
-    int64_t status = 0;
-    if(child_id < 0 || oscar_waitpid((uint64_t)child_id, &status) < 0) {
+    int status = 0;
+    if(child_id < 0 || waitpid((pid_t)child_id, &status, 0) < 0) {
         oscar_write_string(failure);
     } else if(status != 0) {
         oscar_write_string(exited_failure);
@@ -192,7 +197,7 @@ static void execute_line(char* line, uint64_t length) {
     }
 
     for(uint64_t index = 0; index < sizeof(kBuiltins) / sizeof(kBuiltins[0]); ++index) {
-        if(oscar_streq(arguments[0], kBuiltins[index].name)) {
+        if(strcmp(arguments[0], kBuiltins[index].name) == 0) {
             kBuiltins[index].handler(arguments, argument_count);
             return;
         }
@@ -206,10 +211,10 @@ int main(void) {
 
     for(;;) {
         write_prompt();
-        const int64_t count = oscar_read(0, line, sizeof(line));
+        const int64_t count = read(0, line, sizeof(line));
         if(count < 0) {
-            (void)oscar_write(1, read_failure, sizeof(read_failure) - 1);
-            oscar_exit(0);
+            (void)write(1, read_failure, sizeof(read_failure) - 1);
+            _Exit(0);
         }
         if(count == 0) {
             continue;

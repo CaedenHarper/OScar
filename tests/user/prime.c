@@ -1,5 +1,6 @@
-#include <oscar/syscalls.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 enum {
     kOutputCapacity = 512,
@@ -44,11 +45,11 @@ static void append_number(uint32_t value) {
 }
 
 static uint64_t write_output(const char* buffer, uint64_t length) {
-    return (uint64_t)oscar_write(1, buffer, length);
+    return (uint64_t)write(1, buffer, length);
 }
 
 __attribute__((noreturn)) static void exit_program(void) {
-    oscar_exit(0);
+    _Exit(0);
 }
 
 int main(void) {

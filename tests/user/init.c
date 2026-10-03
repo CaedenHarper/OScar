@@ -1,9 +1,12 @@
 #include <oscar/stdio.h>
 #include <oscar/syscalls.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 __attribute__((noreturn)) static void exit_process(void) {
-    oscar_exit(0);
+    _Exit(0);
 }
 
 int main(void) {
@@ -12,10 +15,10 @@ int main(void) {
     static const char kShellFailure[] = "init: could not start cash.\n";
     static const char kShellExit[] = "init: cash exited.\n";
     static const char kExitMessage[] = "init: exiting.\n";
-    int64_t terminal_status = 0;
+    int terminal_status = 0;
     oscar_write_string(kStartedMessage);
     const int64_t shell_id = oscar_spawn(kShellPath);
-    if(shell_id < 0 || oscar_waitpid((uint64_t)shell_id, &terminal_status) < 0) {
+    if(shell_id < 0 || waitpid((pid_t)shell_id, &terminal_status, 0) < 0) {
         oscar_write_string(kShellFailure);
         exit_process();
     }

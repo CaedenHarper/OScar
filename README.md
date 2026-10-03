@@ -44,6 +44,12 @@ value into `oscar_exit`. `spawn` loads a validated ELF from the mounted filesyst
 inherits the parent's descriptor table, and constructs the child's initial
 arguments. `waitpid` waits for that exact child and returns its exit status.
 
+The initial libc also provides POSIX-shaped headers and wrappers for string and
+memory operations, integer conversion, `errno`, file descriptors, paths,
+metadata, pipes, descriptor duplication, process IDs, and basic sleeping.
+Memory allocation, buffered `stdio`, directory streams, signals, and
+`fork`/`exec` are not implemented yet.
+
 ## Current limitations
 
 OScar does not yet provide `fork`, dynamic linking, rename support, HTTPS,

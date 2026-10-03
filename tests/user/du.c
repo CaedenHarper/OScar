@@ -2,6 +2,7 @@
 #include <oscar/syscalls.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 // The recursive traversal needs shared failure state so one failed child stops
 // the final result without changing the public command interface.
@@ -67,11 +68,11 @@ int main(void) {
     const uint64_t size = directory_size(root);
     if(failed) {
         oscar_write_string("du: unable to read directory.\n");
-        oscar_exit(1);
+        _Exit(1);
     }
     oscar_write_uint(size);
     oscar_write_string("\t");
     oscar_write_string(root);
     oscar_write_string("\n");
-    oscar_exit(0);
+    _Exit(0);
 }

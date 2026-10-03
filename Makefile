@@ -4,7 +4,7 @@ SHELL := /bin/sh
 BUILD_DIR := build
 USER_BUILD_DIR := $(BUILD_DIR)/user
 RUNTIME_USER_PROGRAM_NAMES := init cash ls top df du mount mkdir touch cp mv rm cat ps kill ping nslookup httpget
-TEST_USER_PROGRAM_NAMES := basic prime second filesystem divzero kernel_access invalid_opcode init test_init cash ls top df du mount mkdir touch cp mv rm cat ps kill ping nslookup httpget http_parser_test shell_commands argv_test kill_target
+TEST_USER_PROGRAM_NAMES := basic prime second filesystem divzero kernel_access invalid_opcode init test_init cash ls top df du mount mkdir touch cp mv rm cat ps kill ping nslookup httpget http_parser_test shell_commands argv_test kill_target libc_test
 ifeq ($(OSCAR_TEST_SUITE),1)
 USER_PROGRAM_NAMES := $(TEST_USER_PROGRAM_NAMES)
 VIRTIO_DISK := $(BUILD_DIR)/virtio-test.img
@@ -29,8 +29,8 @@ LINT_CPP_FILES := $(shell find src tests user -type f \( -name '*.cpp' -o -name 
 LINT_C_FILES := $(shell find src tests user -type f -name '*.c')
 LINT_C_HEADERS := $(shell find src tests user -type f -name '*.h')
 LINT_ALL_FILES := $(LINT_CPP_FILES) $(LINT_C_FILES) $(LINT_C_HEADERS)
-USER_COMMON_HEADERS := user/include/oscar/syscalls.h user/include/oscar/string.h user/include/oscar/stdio.h user/include/oscar/file.h
-USER_COMMON_SOURCES := user/lib/crt0.c user/lib/syscalls.c user/lib/string.c user/lib/stdio.c user/lib/file.c
+USER_COMMON_HEADERS := user/include/oscar/syscalls.h user/include/oscar/string.h user/include/oscar/stdio.h user/include/oscar/file.h user/include/stddef.h user/include/errno.h user/include/fcntl.h user/include/unistd.h user/include/signal.h user/include/sys/types.h user/include/sys/stat.h user/include/sys/wait.h user/include/string.h user/include/stdlib.h
+USER_COMMON_SOURCES := user/lib/crt0.c user/lib/syscalls.c user/lib/string.c user/lib/stdio.c user/lib/file.c user/lib/errno.c user/lib/posix.c user/lib/stdlib.c
 OBJECTS := $(patsubst src/%.cpp,$(BUILD_DIR)/%.o,$(CPP_SOURCES)) \
 	$(patsubst src/%.S,$(BUILD_DIR)/asm/%.o,$(ASM_SOURCES))
 
@@ -129,7 +129,7 @@ $(BUILD_DIR):
 	mkdir -p $@
 
 ifeq ($(OSCAR_TEST_SUITE),1)
-IMAGE_PROGRAMS := $(USER_BUILD_DIR)/second.elf $(USER_BUILD_DIR)/init.elf $(USER_BUILD_DIR)/test_init.elf $(USER_BUILD_DIR)/cash.elf $(USER_BUILD_DIR)/ls.elf $(USER_BUILD_DIR)/top.elf $(USER_BUILD_DIR)/df.elf $(USER_BUILD_DIR)/du.elf $(USER_BUILD_DIR)/mount.elf $(USER_BUILD_DIR)/mkdir.elf $(USER_BUILD_DIR)/touch.elf $(USER_BUILD_DIR)/cp.elf $(USER_BUILD_DIR)/mv.elf $(USER_BUILD_DIR)/rm.elf $(USER_BUILD_DIR)/cat.elf $(USER_BUILD_DIR)/ps.elf $(USER_BUILD_DIR)/kill.elf $(USER_BUILD_DIR)/ping.elf $(USER_BUILD_DIR)/nslookup.elf $(USER_BUILD_DIR)/httpget.elf $(USER_BUILD_DIR)/http_parser_test.elf $(USER_BUILD_DIR)/shell_commands.elf $(USER_BUILD_DIR)/argv_test.elf $(USER_BUILD_DIR)/kill_target.elf
+IMAGE_PROGRAMS := $(USER_BUILD_DIR)/second.elf $(USER_BUILD_DIR)/init.elf $(USER_BUILD_DIR)/test_init.elf $(USER_BUILD_DIR)/cash.elf $(USER_BUILD_DIR)/ls.elf $(USER_BUILD_DIR)/top.elf $(USER_BUILD_DIR)/df.elf $(USER_BUILD_DIR)/du.elf $(USER_BUILD_DIR)/mount.elf $(USER_BUILD_DIR)/mkdir.elf $(USER_BUILD_DIR)/touch.elf $(USER_BUILD_DIR)/cp.elf $(USER_BUILD_DIR)/mv.elf $(USER_BUILD_DIR)/rm.elf $(USER_BUILD_DIR)/cat.elf $(USER_BUILD_DIR)/ps.elf $(USER_BUILD_DIR)/kill.elf $(USER_BUILD_DIR)/ping.elf $(USER_BUILD_DIR)/nslookup.elf $(USER_BUILD_DIR)/httpget.elf $(USER_BUILD_DIR)/http_parser_test.elf $(USER_BUILD_DIR)/shell_commands.elf $(USER_BUILD_DIR)/argv_test.elf $(USER_BUILD_DIR)/kill_target.elf $(USER_BUILD_DIR)/libc_test.elf
 else
 IMAGE_PROGRAMS := $(USER_BUILD_DIR)/init.elf $(USER_BUILD_DIR)/cash.elf $(USER_BUILD_DIR)/ls.elf $(USER_BUILD_DIR)/top.elf $(USER_BUILD_DIR)/df.elf $(USER_BUILD_DIR)/du.elf $(USER_BUILD_DIR)/mount.elf $(USER_BUILD_DIR)/mkdir.elf $(USER_BUILD_DIR)/touch.elf $(USER_BUILD_DIR)/cp.elf $(USER_BUILD_DIR)/mv.elf $(USER_BUILD_DIR)/rm.elf $(USER_BUILD_DIR)/cat.elf $(USER_BUILD_DIR)/ps.elf $(USER_BUILD_DIR)/kill.elf $(USER_BUILD_DIR)/ping.elf $(USER_BUILD_DIR)/nslookup.elf $(USER_BUILD_DIR)/httpget.elf
 endif
@@ -169,6 +169,7 @@ $(VIRTIO_DISK): Makefile $(FILESYSTEM_TEST_FILES) $(IMAGE_PROGRAMS) $(if $(filte
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/kill_target.elf /bin/kill_target' $@)
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/test_init.elf /sbin/init' $@)
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/http_parser_test.elf /bin/http_parser_test' $@)
+	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/libc_test.elf /bin/libc_test' $@)
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(LARGE_FILESYSTEM_TEST_FILE) /large.bin' $@)
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),index=0; while [ $$index -lt 300 ]; do \
 		debugfs -w -R "write tests/filesystem/hello.txt /many/file$$index" $@ >/dev/null || exit 1; \
@@ -217,7 +218,10 @@ $(USER_BUILD_DIR)/%.elf: tests/user/%.c $(USER_COMMON_HEADERS) $(USER_COMMON_SOU
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/string.c -o $(USER_BUILD_DIR)/$*.string.o
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/stdio.c -o $(USER_BUILD_DIR)/$*.stdio.o
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/file.c -o $(USER_BUILD_DIR)/$*.file.o
-	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/$*.o $(USER_BUILD_DIR)/$*.crt0.o $(USER_BUILD_DIR)/$*.syscalls.o $(USER_BUILD_DIR)/$*.string.o $(USER_BUILD_DIR)/$*.stdio.o $(USER_BUILD_DIR)/$*.file.o -o $@
+	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/errno.c -o $(USER_BUILD_DIR)/$*.errno.o
+	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/posix.c -o $(USER_BUILD_DIR)/$*.posix.o
+	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/stdlib.c -o $(USER_BUILD_DIR)/$*.stdlib.o
+	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/$*.o $(USER_BUILD_DIR)/$*.crt0.o $(USER_BUILD_DIR)/$*.syscalls.o $(USER_BUILD_DIR)/$*.string.o $(USER_BUILD_DIR)/$*.stdio.o $(USER_BUILD_DIR)/$*.file.o $(USER_BUILD_DIR)/$*.errno.o $(USER_BUILD_DIR)/$*.posix.o $(USER_BUILD_DIR)/$*.stdlib.o -o $@
 
 $(USER_BUILD_DIR)/httpget.elf: tests/user/httpget.c user/include/oscar/http.h $(USER_COMMON_HEADERS) $(USER_COMMON_SOURCES) user/lib/http.c tests/user/linker.ld | $(USER_BUILD_DIR)
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c tests/user/httpget.c -o $(USER_BUILD_DIR)/httpget.o
@@ -227,7 +231,10 @@ $(USER_BUILD_DIR)/httpget.elf: tests/user/httpget.c user/include/oscar/http.h $(
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/string.c -o $(USER_BUILD_DIR)/httpget.string.o
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/stdio.c -o $(USER_BUILD_DIR)/httpget.stdio.o
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/file.c -o $(USER_BUILD_DIR)/httpget.file.o
-	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/httpget.o $(USER_BUILD_DIR)/httpget.http.o $(USER_BUILD_DIR)/httpget.crt0.o $(USER_BUILD_DIR)/httpget.syscalls.o $(USER_BUILD_DIR)/httpget.string.o $(USER_BUILD_DIR)/httpget.stdio.o $(USER_BUILD_DIR)/httpget.file.o -o $@
+	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/errno.c -o $(USER_BUILD_DIR)/httpget.errno.o
+	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/posix.c -o $(USER_BUILD_DIR)/httpget.posix.o
+	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/stdlib.c -o $(USER_BUILD_DIR)/httpget.stdlib.o
+	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/httpget.o $(USER_BUILD_DIR)/httpget.http.o $(USER_BUILD_DIR)/httpget.crt0.o $(USER_BUILD_DIR)/httpget.syscalls.o $(USER_BUILD_DIR)/httpget.string.o $(USER_BUILD_DIR)/httpget.stdio.o $(USER_BUILD_DIR)/httpget.file.o $(USER_BUILD_DIR)/httpget.errno.o $(USER_BUILD_DIR)/httpget.posix.o $(USER_BUILD_DIR)/httpget.stdlib.o -o $@
 
 $(USER_BUILD_DIR)/http_parser_test.elf: tests/user/http_parser_test.c user/include/oscar/http.h $(USER_COMMON_HEADERS) $(USER_COMMON_SOURCES) user/lib/http.c tests/user/linker.ld | $(USER_BUILD_DIR)
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c tests/user/http_parser_test.c -o $(USER_BUILD_DIR)/http_parser_test.o
@@ -237,7 +244,10 @@ $(USER_BUILD_DIR)/http_parser_test.elf: tests/user/http_parser_test.c user/inclu
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/string.c -o $(USER_BUILD_DIR)/http_parser_test.string.o
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/stdio.c -o $(USER_BUILD_DIR)/http_parser_test.stdio.o
 	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/file.c -o $(USER_BUILD_DIR)/http_parser_test.file.o
-	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/http_parser_test.o $(USER_BUILD_DIR)/http_parser_test.http.o $(USER_BUILD_DIR)/http_parser_test.crt0.o $(USER_BUILD_DIR)/http_parser_test.syscalls.o $(USER_BUILD_DIR)/http_parser_test.string.o $(USER_BUILD_DIR)/http_parser_test.stdio.o $(USER_BUILD_DIR)/http_parser_test.file.o -o $@
+	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/errno.c -o $(USER_BUILD_DIR)/http_parser_test.errno.o
+	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/posix.c -o $(USER_BUILD_DIR)/http_parser_test.posix.o
+	$(CXX) -x c -target x86_64-unknown-none-elf -Iuser/include -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -mno-red-zone -c user/lib/stdlib.c -o $(USER_BUILD_DIR)/http_parser_test.stdlib.o
+	$(CXX) -target x86_64-unknown-none-elf -fuse-ld=lld -nostdlib -static -Wl,-T,tests/user/linker.ld -Wl,--build-id=none $(USER_BUILD_DIR)/http_parser_test.o $(USER_BUILD_DIR)/http_parser_test.http.o $(USER_BUILD_DIR)/http_parser_test.crt0.o $(USER_BUILD_DIR)/http_parser_test.syscalls.o $(USER_BUILD_DIR)/http_parser_test.string.o $(USER_BUILD_DIR)/http_parser_test.stdio.o $(USER_BUILD_DIR)/http_parser_test.file.o $(USER_BUILD_DIR)/http_parser_test.errno.o $(USER_BUILD_DIR)/http_parser_test.posix.o $(USER_BUILD_DIR)/http_parser_test.stdlib.o -o $@
 
 $(BUILD_DIR)/asm/tests/user_program.o: $(USER_BUILD_DIR)/basic.elf
 $(BUILD_DIR)/asm/tests/user_program_prime.o: $(USER_BUILD_DIR)/prime.elf

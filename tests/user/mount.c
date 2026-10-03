@@ -1,12 +1,13 @@
 #include <oscar/stdio.h>
 #include <oscar/syscalls.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 int main(void) {
     struct oscar_statfs status;
     if(oscar_statfs(&status) < 0) {
         oscar_write_string("mount: unable to read mount table.\n");
-        oscar_exit(1);
+        _Exit(1);
     }
     oscar_write_string(status.device);
     oscar_write_string(" on ");
@@ -14,5 +15,5 @@ int main(void) {
     oscar_write_string(" type ");
     oscar_write_string(status.filesystem);
     oscar_write_string(" (rw)\n");
-    oscar_exit(0);
+    _Exit(0);
 }

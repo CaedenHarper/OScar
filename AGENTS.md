@@ -72,13 +72,14 @@ The source tree is organized as follows:
   shell-command smoke image are mounted from the generated ext2 image; the
   other test images are embedded in the kernel smoke tests. Malformed ELF metadata tests live in
   `src/tests/` because they exercise validation without loading an image.
-- `user/include/oscar/`: public C headers for the user-space syscall API and
-  small freestanding user libraries.
-- `user/lib/`: freestanding C implementations of syscall wrappers, string
-  utilities, output formatting, the C `main()` startup shim, and the bounded
-  HTTP client library. The shim owns the ELF `_start` entry point and converts
-  a program's `main()` return value into `oscar_exit`; user programs should not
-  define `_start` themselves unless they are deliberately assembly-only tests.
+- `user/include/`: public C headers for the POSIX-shaped user API and
+  `user/include/oscar/` extensions for OScar-specific syscalls and helpers.
+- `user/lib/`: freestanding C implementations of syscall wrappers, the initial
+  libc string, process, descriptor, errno, and conversion functions, output
+  formatting, the C `main()` startup shim, and the bounded HTTP client library.
+  The shim owns the ELF `_start` entry point and converts a program's `main()`
+  return value into `oscar_exit`; user programs should not define `_start`
+  themselves unless they are deliberately assembly-only tests.
 - `tests/filesystem/`: source files copied into the generated ext2 test image.
 
 ## Build and test
@@ -123,6 +124,9 @@ inspection during init startup. The `argv_test` fixture validates initial
 semantics. External command
 dispatch now passes argument vectors; signal delivery remains a separate
 shell milestone.
+The `libc_test` fixture validates the initial POSIX-shaped libc layer; memory
+allocation, buffered stdio, directory streams, signals, and fork/exec remain
+future work.
 `make test-exception` builds in a separate `build-exception/` directory,
 executes `ud2`, and should print an invalid-opcode diagnostic with register
 state before halting.

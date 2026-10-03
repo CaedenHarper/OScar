@@ -8,7 +8,7 @@ int main(int argc, char** argv) {
         oscar_write_string(usage);
         return 1;
     }
-    if(!oscar_cat_file(argv[1])) {
+    if(!cat_file(argv[1])) {
         oscar_write_string(failure);
         return 1;
     }

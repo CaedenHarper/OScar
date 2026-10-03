@@ -1,5 +1,5 @@
 #include <oscar/stdio.h>
-#include <oscar/syscalls.h>
+#include <unistd.h>
 
 int main(int argc, char** argv) {
     static const char usage[] = "rm: usage: rm <file>\n";
@@ -8,7 +8,7 @@ int main(int argc, char** argv) {
         oscar_write_string(usage);
         return 1;
     }
-    if(oscar_unlink(argv[1]) < 0) {
+    if(unlink(argv[1]) < 0) {
         oscar_write_string(failure);
         return 1;
     }

@@ -1,6 +1,8 @@
 #include <oscar/stdio.h>
 #include <oscar/syscalls.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 static int parse_address(const char* text, uint8_t address[4]) {
     enum {
@@ -37,17 +39,18 @@ int main(int argc, char** argv) {
     static const uint64_t kProbeCount = 4;
     static const uint64_t kTimeoutTicks = 200;
     static const uint64_t kProbeIntervalTicks = 100;
+    static const uint64_t kMicrosecondsPerTick = 10000;
     static const uint64_t kPercentageBase = 100;
     if(argc != 2 || argv == 0) {
         oscar_write_string(usage);
-        oscar_exit(1);
+        _Exit(1);
     }
 
     uint8_t address[4];
     if(!parse_address(argv[1], address)) {
         if(oscar_resolve(argv[1], address, kTimeoutTicks) < 0) {
             oscar_write_string(resolve_failure);
-            oscar_exit(1);
+            _Exit(1);
         }
     }
     oscar_write_string("PING ");
@@ -77,7 +80,8 @@ int main(int argc, char** argv) {
             oscar_write_string(" ms\n");
         }
         if(sequence != kProbeCount) {
-            oscar_sleep(kProbeIntervalTicks);
+            // NOLINTNEXTLINE(concurrency-mt-unsafe) this is the process scheduler's blocking sleep.
+            (void)usleep(kProbeIntervalTicks * kMicrosecondsPerTick);
         }
     }
 
@@ -100,7 +104,7 @@ int main(int argc, char** argv) {
         oscar_write_string(" ms\n");
     }
     if(received == 0) {
-        oscar_exit(1);
+        _Exit(1);
     }
-    oscar_exit(0);
+    _Exit(0);
 }

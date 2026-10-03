@@ -1,6 +1,7 @@
 #include <oscar/http.h>
 #include <oscar/syscalls.h>
 #include <stdint.h>
+#include <unistd.h>
 
 // HTTP wire parsing uses protocol offsets and deliberately branches through
 // several bounded receive states. These checks are intentionally limited to
@@ -288,7 +289,7 @@ int64_t oscar_http_get(const char* url_text, char* body, uint64_t capacity, uint
             }
         }
     }
-    (void)oscar_close(socket);
+    (void)close((int)socket);
     return result;
 }
 

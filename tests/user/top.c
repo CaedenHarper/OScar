@@ -1,11 +1,14 @@
 #include <oscar/stdio.h>
 #include <oscar/syscalls.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 enum {
     kMaximumProcesses = 32,
     kRefreshCount = 5,
     kRefreshTicks = 20,
+    kMicrosecondsPerTick = 10000,
 };
 
 static void write_state(uint32_t state) {
@@ -41,7 +44,7 @@ static void print_snapshot(void) {
     static const char clear_screen[] = "\033[2J\033[H";
     static const char header[] = "PID\tSTATE\tTHREADS\tMEM\tIMAGE\n";
     static const char failure[] = "top: could not read process table.\n";
-    (void)oscar_write(1, clear_screen, sizeof(clear_screen) - 1);
+    (void)write(1, clear_screen, sizeof(clear_screen) - 1);
     oscar_write_string("OScar top\n\n");
     oscar_write_string(header);
 
@@ -62,7 +65,8 @@ static void print_snapshot(void) {
 int main(void) {
     for(uint32_t refresh = 0; refresh < kRefreshCount; ++refresh) {
         print_snapshot();
-        oscar_sleep(kRefreshTicks);
+        // NOLINTNEXTLINE(concurrency-mt-unsafe) this is the process scheduler's blocking sleep.
+        (void)usleep(kRefreshTicks * kMicrosecondsPerTick);
     }
-    oscar_exit(0);
+    _Exit(0);
 }

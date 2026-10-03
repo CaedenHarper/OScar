@@ -1,30 +1,35 @@
+#include <fcntl.h>
 #include <oscar/file.h>
-#include <oscar/syscalls.h>
+#include <stddef.h>
 #include <stdint.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 enum {
     kFileBufferCapacity = 256,
+    kFileMode = 0644,
+    kWriteCreateFlags = O_WRONLY + O_CREAT,
 };
 
-int oscar_copy_file(const char* source, const char* destination) {
-    const int64_t input = oscar_open(source, OSCAR_OPEN_READ);
+int copy_file(const char* source, const char* destination) {
+    const int input = open(source, O_RDONLY);
     if(input < 0) {
         return 0;
     }
 
-    int64_t output = oscar_open(destination, OSCAR_OPEN_WRITE);
-    if(output < 0 && oscar_create(destination) == 0) {
-        output = oscar_open(destination, OSCAR_OPEN_WRITE);
+    int output = open(destination, O_WRONLY);
+    if(output < 0) {
+        output = open(destination, kWriteCreateFlags, kFileMode);
     }
     if(output < 0) {
-        (void)oscar_close(input);
+        (void)close(input);
         return 0;
     }
 
     char buffer[kFileBufferCapacity];
     int success = 1;
     for(;;) {
-        const int64_t received = oscar_read(input, buffer, sizeof(buffer));
+        const ssize_t received = read(input, buffer, sizeof(buffer));
         if(received < 0) {
             success = 0;
             break;
@@ -32,18 +37,18 @@ int oscar_copy_file(const char* source, const char* destination) {
         if(received == 0) {
             break;
         }
-        if(oscar_write(output, buffer, (uint64_t)received) != received) {
+        if(write(output, buffer, (size_t)received) != received) {
             success = 0;
             break;
         }
     }
-    (void)oscar_close(input);
-    (void)oscar_close(output);
+    (void)close(input);
+    (void)close(output);
     return success;
 }
 
-int oscar_cat_file(const char* path) {
-    const int64_t input = oscar_open(path, OSCAR_OPEN_READ);
+int cat_file(const char* path) {
+    const int input = open(path, O_RDONLY);
     if(input < 0) {
         return 0;
     }
@@ -51,7 +56,7 @@ int oscar_cat_file(const char* path) {
     char buffer[kFileBufferCapacity];
     int success = 1;
     for(;;) {
-        const int64_t received = oscar_read(input, buffer, sizeof(buffer));
+        const ssize_t received = read(input, buffer, sizeof(buffer));
         if(received < 0) {
             success = 0;
             break;
@@ -59,11 +64,11 @@ int oscar_cat_file(const char* path) {
         if(received == 0) {
             break;
         }
-        if(oscar_write(1, buffer, (uint64_t)received) != received) {
+        if(write(1, buffer, (size_t)received) != received) {
             success = 0;
             break;
         }
     }
-    (void)oscar_close(input);
+    (void)close(input);
     return success;
 }

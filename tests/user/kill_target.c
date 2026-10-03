@@ -1,8 +1,9 @@
-#include <oscar/syscalls.h>
 #include <stdint.h>
+#include <unistd.h>
 
 int main(void) {
     for(;;) {
-        oscar_sleep(UINT64_MAX);
+        // NOLINTNEXTLINE(concurrency-mt-unsafe) this deliberately blocks until killed.
+        sleep(UINT64_MAX);
     }
 }

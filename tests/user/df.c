@@ -1,12 +1,13 @@
 #include <oscar/stdio.h>
 #include <oscar/syscalls.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 int main(void) {
     struct oscar_statfs status;
     if(oscar_statfs(&status) < 0) {
         oscar_write_string("df: unable to read filesystem status.\n");
-        oscar_exit(1);
+        _Exit(1);
     }
 
     const uint64_t used_blocks = status.total_blocks - status.free_blocks;
@@ -24,5 +25,5 @@ int main(void) {
     oscar_write_string("%\t");
     oscar_write_string(status.mount_point);
     oscar_write_string("\n");
-    oscar_exit(0);
+    _Exit(0);
 }
