@@ -21,8 +21,8 @@ constexpr arp::Ipv4Address kFallbackAddress = {{10, 0, 2, 15}};
 constexpr arp::Ipv4Address kFallbackNetmask = {{255, 255, 255, 0}};
 constexpr arp::Ipv4Address kFallbackGateway = {{10, 0, 2, 2}};
 // QEMU user-mode networking exposes its forwarding DNS proxy at this address.
-// Keeping it here makes the initial resolver deterministic while leaving room
-// for DHCP or /etc/resolv.conf configuration later.
+// Keeping it here makes the fallback resolver deterministic while leaving room
+// for /etc/resolv.conf configuration later.
 constexpr arp::Ipv4Address kFallbackDnsServer = {{10, 0, 2, 3}};
 constexpr arp::Ipv4Address kZeroAddress = {{0, 0, 0, 0}};
 constexpr arp::Ipv4Address kBroadcastAddress = {{255, 255, 255, 255}};
@@ -163,6 +163,55 @@ bool process_incoming_arp(const ethernet::FrameView& frame, uint64_t now) {
     return g_device->send(g_device->context, response, response_length) == virtio_net::Status::Success;
 }
 
+enum class DispatchStatus : uint8_t {
+    NotReady,
+    Processed,
+    IoError,
+};
+
+using Ipv4Handler = bool (*)(const ipv4::PacketView& packet, uint64_t now, void* context);
+
+/**
+ * Receive one frame and dispatch normal IPv4 traffic to the active operation.
+ *
+ * This is the first ownership boundary for network input: protocol operations
+ * no longer access the VirtIO RX ring directly. DHCP remains a bootstrap
+ * exception because it runs before the normal ARP/IPv4 interface exists.
+ */
+DispatchStatus dispatch_one(Ipv4Handler handler, void* context, uint64_t now) {
+    static uint8_t frame[kMaximumFrameLength];
+    uint16_t length = 0;
+    const virtio_net::Status receive_status = g_device->receive(g_device->context, frame, sizeof(frame), &length);
+    if(receive_status == virtio_net::Status::NotReady) {
+        return DispatchStatus::NotReady;
+    }
+    if(receive_status != virtio_net::Status::Success) {
+        return DispatchStatus::IoError;
+    }
+
+    ethernet::FrameView ethernet_frame;
+    if(!ethernet::parse_frame(frame, length, &ethernet_frame)) {
+        return DispatchStatus::Processed;
+    }
+    if(ethernet_frame.type == ethernet::EtherType::Arp) {
+        return process_incoming_arp(ethernet_frame, now) ? DispatchStatus::Processed : DispatchStatus::IoError;
+    }
+    if(ethernet_frame.type != ethernet::EtherType::Ipv4 ||
+       !ethernet::is_for_us(ethernet_frame, g_arp_interface.hardware)) {
+        return DispatchStatus::Processed;
+    }
+
+    ipv4::PacketView packet;
+    if(!ipv4::parse_packet(ethernet_frame.payload, ethernet_frame.payload_length, &packet) ||
+       !ipv4::is_for_us(g_ipv4_interface, packet)) {
+        return DispatchStatus::Processed;
+    }
+    if(handler != nullptr) {
+        (void)handler(packet, now, context);
+    }
+    return DispatchStatus::Processed;
+}
+
 bool send_tcp_segment(
     void*,
     const tcp_connection::Connection& connection,
@@ -211,33 +260,16 @@ bool send_tcp_segment(
            g_device->send(g_device->context, frame, frame_length) == virtio_net::Status::Success;
 }
 
-bool process_tcp_input(tcp_connection::Connection* connection, uint64_t now, TcpStatus* result) {
-    static uint8_t frame[kMaximumFrameLength];
-    uint16_t length = 0;
-    const virtio_net::Status receive_status = g_device->receive(g_device->context, frame, sizeof(frame), &length);
-    if(receive_status == virtio_net::Status::NotReady) {
-        asm volatile("pause");
-        return false;
-    }
-    if(receive_status != virtio_net::Status::Success) {
-        *result = TcpStatus::IoError;
-        return true;
-    }
-    ethernet::FrameView ethernet_frame;
-    if(!ethernet::parse_frame(frame, length, &ethernet_frame)) {
-        return false;
-    }
-    if(ethernet_frame.type == ethernet::EtherType::Arp) {
-        *result = process_incoming_arp(ethernet_frame, now) ? TcpStatus::Success : TcpStatus::IoError;
-        return false;
-    }
-    if(ethernet_frame.type != ethernet::EtherType::Ipv4 ||
-       !ethernet::is_for_us(ethernet_frame, g_arp_interface.hardware)) {
-        return false;
-    }
-    ipv4::PacketView ipv4_packet;
-    if(!ipv4::parse_packet(ethernet_frame.payload, ethernet_frame.payload_length, &ipv4_packet) ||
-       ipv4_packet.protocol != ipv4::Protocol::Tcp || !ipv4::is_for_us(g_ipv4_interface, ipv4_packet) ||
+struct TcpDispatchContext {
+    tcp_connection::Connection* connection;
+    TcpStatus* result;
+    bool matched;
+};
+
+bool dispatch_tcp_packet(const ipv4::PacketView& ipv4_packet, uint64_t now, void* raw_context) {
+    auto* context = static_cast<TcpDispatchContext*>(raw_context);
+    auto* connection = context->connection;
+    if(ipv4_packet.protocol != ipv4::Protocol::Tcp ||
        !arp::addresses_equal(ipv4_packet.source, connection->remote_address) ||
        !arp::addresses_equal(ipv4_packet.destination, connection->local_address)) {
         return false;
@@ -249,14 +281,29 @@ bool process_tcp_input(tcp_connection::Connection* connection, uint64_t now, Tcp
        segment.source_port != connection->remote_port || segment.destination_port != connection->local_port) {
         return false;
     }
+    context->matched = true;
     const tcp_connection::Result connection_result =
         tcp_connection::process(connection, send_tcp_segment, nullptr, segment, now);
     if(connection_result == tcp_connection::Result::Reset) {
-        *result = TcpStatus::Reset;
+        *context->result = TcpStatus::Reset;
     } else if(connection_result == tcp_connection::Result::IoError) {
-        *result = TcpStatus::IoError;
+        *context->result = TcpStatus::IoError;
     }
     return true;
+}
+
+bool process_tcp_input(tcp_connection::Connection* connection, uint64_t now, TcpStatus* result) {
+    TcpDispatchContext context = {connection, result, false};
+    const DispatchStatus status = dispatch_one(dispatch_tcp_packet, &context, now);
+    if(status == DispatchStatus::NotReady) {
+        asm volatile("pause");
+        return false;
+    }
+    if(status == DispatchStatus::IoError) {
+        *result = TcpStatus::IoError;
+        return true;
+    }
+    return context.matched;
 }
 
 PingStatus resolve(arp::Ipv4Address destination, uint64_t timeout_ticks) {
@@ -293,22 +340,13 @@ PingStatus resolve(arp::Ipv4Address destination, uint64_t timeout_ticks) {
         return PingStatus::IoError;
     }
 
-    static uint8_t frame[kMaximumFrameLength];
     while(time_remaining(start, timeout_ticks)) {
-        uint16_t length = 0;
-        const virtio_net::Status status = g_device->receive(g_device->context, frame, sizeof(frame), &length);
-        if(status == virtio_net::Status::NotReady) {
+        const DispatchStatus status = dispatch_one(nullptr, nullptr, timer::ticks());
+        if(status == DispatchStatus::NotReady) {
             asm volatile("pause");
             continue;
         }
-        if(status != virtio_net::Status::Success) {
-            return PingStatus::IoError;
-        }
-        ethernet::FrameView received;
-        if(!ethernet::parse_frame(frame, length, &received)) {
-            continue;
-        }
-        if(received.type == ethernet::EtherType::Arp && !process_incoming_arp(received, timer::ticks())) {
+        if(status == DispatchStatus::IoError) {
             return PingStatus::IoError;
         }
         if(arp::cache_lookup(g_arp_interface.cache, route.next_hop, timer::ticks(), &cached)) {
@@ -316,6 +354,63 @@ PingStatus resolve(arp::Ipv4Address destination, uint64_t timeout_ticks) {
         }
     }
     return PingStatus::Timeout;
+}
+
+struct PingDispatchContext {
+    arp::Ipv4Address destination;
+    uint16_t identifier;
+    uint16_t sequence;
+    uint64_t start;
+    uint64_t* elapsed_ticks;
+    bool matched;
+};
+
+bool dispatch_ping_packet(const ipv4::PacketView& packet, uint64_t, void* raw_context) {
+    auto* context = static_cast<PingDispatchContext*>(raw_context);
+    if(packet.protocol != ipv4::Protocol::Icmp || !arp::addresses_equal(packet.source, context->destination)) {
+        return false;
+    }
+    icmp::EchoView reply;
+    if(!icmp::parse_echo(packet.payload, packet.payload_length, &reply) || reply.type != icmp::Type::EchoReply ||
+       reply.identifier != context->identifier || reply.sequence != context->sequence) {
+        return false;
+    }
+    *context->elapsed_ticks = timer::ticks() - context->start;
+    context->matched = true;
+    return true;
+}
+
+struct DnsDispatchContext {
+    uint16_t source_port;
+    uint16_t identifier;
+    arp::Ipv4Address* address;
+    ResolveStatus* result;
+    bool matched;
+};
+
+bool dispatch_dns_packet(const ipv4::PacketView& packet, uint64_t, void* raw_context) {
+    auto* context = static_cast<DnsDispatchContext*>(raw_context);
+    if(packet.protocol != ipv4::Protocol::Udp || !arp::addresses_equal(packet.source, g_dns_server)) {
+        return false;
+    }
+    udp::DatagramView datagram;
+    if(!udp::parse_packet(g_dns_server, g_ipv4_interface.address, packet.payload, packet.payload_length, &datagram) ||
+       datagram.source_port != 53 || datagram.destination_port != context->source_port) {
+        return false;
+    }
+    const dns::Status result =
+        dns::parse_response(datagram.payload, datagram.payload_length, context->identifier, context->address);
+    if(result == dns::Status::Success) {
+        *context->result = ResolveStatus::Success;
+    } else if(result == dns::Status::NameNotFound) {
+        *context->result = ResolveStatus::NameNotFound;
+    } else if(result == dns::Status::ServerFailure || result == dns::Status::NoAddress) {
+        *context->result = ResolveStatus::IoError;
+    } else {
+        return false;
+    }
+    context->matched = true;
+    return true;
 }
 
 } // namespace
@@ -411,43 +506,19 @@ PingStatus ping(arp::Ipv4Address destination, uint64_t timeout_ticks, uint16_t i
         return PingStatus::IoError;
     }
 
-    static uint8_t frame[kMaximumFrameLength];
+    PingDispatchContext context = {destination, identifier, sequence, start, elapsed_ticks, false};
     while(time_remaining(start, timeout_ticks)) {
-        uint16_t length = 0;
-        const virtio_net::Status status = g_device->receive(g_device->context, frame, sizeof(frame), &length);
-        if(status == virtio_net::Status::NotReady) {
+        const DispatchStatus status = dispatch_one(dispatch_ping_packet, &context, timer::ticks());
+        if(status == DispatchStatus::NotReady) {
             asm volatile("pause");
             continue;
         }
-        if(status != virtio_net::Status::Success) {
+        if(status == DispatchStatus::IoError) {
             return PingStatus::IoError;
         }
-        ethernet::FrameView received;
-        if(!ethernet::parse_frame(frame, length, &received)) {
-            continue;
+        if(context.matched) {
+            return PingStatus::Success;
         }
-        if(received.type == ethernet::EtherType::Arp) {
-            if(!process_incoming_arp(received, timer::ticks())) {
-                return PingStatus::IoError;
-            }
-            continue;
-        }
-        if(received.type != ethernet::EtherType::Ipv4 || !ethernet::is_for_us(received, g_arp_interface.hardware)) {
-            continue;
-        }
-        ipv4::PacketView packet;
-        if(!ipv4::parse_packet(received.payload, received.payload_length, &packet) ||
-           packet.protocol != ipv4::Protocol::Icmp || !ipv4::is_for_us(g_ipv4_interface, packet) ||
-           !arp::addresses_equal(packet.source, destination)) {
-            continue;
-        }
-        icmp::EchoView reply;
-        if(!icmp::parse_echo(packet.payload, packet.payload_length, &reply) || reply.type != icmp::Type::EchoReply ||
-           reply.identifier != identifier || reply.sequence != sequence) {
-            continue;
-        }
-        *elapsed_ticks = timer::ticks() - start;
-        return PingStatus::Success;
     }
     return PingStatus::Timeout;
 }
@@ -506,52 +577,19 @@ ResolveStatus resolve_hostname(const char* hostname, uint64_t timeout_ticks, arp
     }
 
     const uint64_t start = timer::ticks();
-    static uint8_t frame[kMaximumFrameLength];
+    ResolveStatus result = ResolveStatus::Timeout;
+    DnsDispatchContext context = {kDnsSourcePort, identifier, address, &result, false};
     while(time_remaining(start, timeout_ticks)) {
-        uint16_t length = 0;
-        const virtio_net::Status status = g_device->receive(g_device->context, frame, sizeof(frame), &length);
-        if(status == virtio_net::Status::NotReady) {
+        const DispatchStatus status = dispatch_one(dispatch_dns_packet, &context, timer::ticks());
+        if(status == DispatchStatus::NotReady) {
             asm volatile("pause");
             continue;
         }
-        if(status != virtio_net::Status::Success) {
+        if(status == DispatchStatus::IoError) {
             return ResolveStatus::IoError;
         }
-        ethernet::FrameView received;
-        if(!ethernet::parse_frame(frame, length, &received)) {
-            continue;
-        }
-        if(received.type == ethernet::EtherType::Arp) {
-            if(!process_incoming_arp(received, timer::ticks())) {
-                return ResolveStatus::IoError;
-            }
-            continue;
-        }
-        if(received.type != ethernet::EtherType::Ipv4 || !ethernet::is_for_us(received, g_arp_interface.hardware)) {
-            continue;
-        }
-        ipv4::PacketView packet;
-        if(!ipv4::parse_packet(received.payload, received.payload_length, &packet) ||
-           packet.protocol != ipv4::Protocol::Udp || !ipv4::is_for_us(g_ipv4_interface, packet) ||
-           !arp::addresses_equal(packet.source, g_dns_server)) {
-            continue;
-        }
-        udp::DatagramView datagram;
-        if(!udp::parse_packet(
-               g_dns_server, g_ipv4_interface.address, packet.payload, packet.payload_length, &datagram
-           ) ||
-           datagram.source_port != 53 || datagram.destination_port != kDnsSourcePort) {
-            continue;
-        }
-        const dns::Status result = dns::parse_response(datagram.payload, datagram.payload_length, identifier, address);
-        if(result == dns::Status::Success) {
-            return ResolveStatus::Success;
-        }
-        if(result == dns::Status::NameNotFound) {
-            return ResolveStatus::NameNotFound;
-        }
-        if(result == dns::Status::ServerFailure || result == dns::Status::NoAddress) {
-            return ResolveStatus::IoError;
+        if(context.matched) {
+            return result;
         }
     }
     return ResolveStatus::Timeout;
