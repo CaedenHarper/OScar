@@ -27,6 +27,7 @@ void run(uintptr_t hhdm_offset) {
     self_tests_detail::test_tcp();
     self_tests_detail::test_tcp_connection();
     self_tests_detail::test_dns();
+    self_tests_detail::test_dhcp();
     self_tests_detail::test_block_device();
     self_tests_detail::test_virtio_network();
     self_tests_detail::test_filesystem();

@@ -16,8 +16,8 @@ The kernel currently provides:
 - An `int 0x80` system-call ABI covering process control, descriptors, pipes,
   filesystem operations, and IPv4/TCP sockets.
 - Synchronization primitives including spinlocks, wait queues, and mutexes.
-- PCI enumeration, polling VirtIO block and network drivers, and an IRQ-driven
-  PS/2 keyboard backend.
+- PCI enumeration, polling VirtIO block and network drivers, DHCP network
+  configuration, and an IRQ-driven PS/2 keyboard backend.
 - An ext2 filesystem with VFS path lookup, regular-file I/O, directories,
   permissions, ownership, metadata, corruption checks, and mutation support.
 - Ethernet, ARP, IPv4, ICMP, UDP, TCP, DNS, and an HTTP client with incremental

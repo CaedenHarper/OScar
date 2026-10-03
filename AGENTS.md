@@ -40,7 +40,8 @@ The source tree is organized as follows:
 - `src/drivers/`: x86 port I/O, PCI enumeration and BAR discovery, serial output, timer/PIT support, the generic
   keyboard event layer, the serial-backed terminal, the IRQ-driven PS/2 backend,
   the COM1 receive-interrupt backend, and the polling legacy VirtIO block and
-  network drivers.
+  network drivers. Network initialization includes DHCP with a static QEMU
+  fallback.
 - `src/network/`: Ethernet framing, IPv4 ARP packet/cache/interface support,
   IPv4 packet parsing/checksums/static routing, ICMP echo handling, UDP
   datagram framing, TCP segment framing/checksums and active TCP connection

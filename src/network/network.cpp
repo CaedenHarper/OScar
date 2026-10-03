@@ -1,5 +1,6 @@
 #include "network.hpp"
 
+#include "dhcp.hpp"
 #include "dns.hpp"
 #include "ethernet.hpp"
 #include "icmp.hpp"
@@ -16,13 +17,15 @@ namespace network {
 
 namespace {
 
-constexpr arp::Ipv4Address kLocalAddress = {{10, 0, 2, 15}};
-constexpr arp::Ipv4Address kNetmask = {{255, 255, 255, 0}};
-constexpr arp::Ipv4Address kGateway = {{10, 0, 2, 2}};
+constexpr arp::Ipv4Address kFallbackAddress = {{10, 0, 2, 15}};
+constexpr arp::Ipv4Address kFallbackNetmask = {{255, 255, 255, 0}};
+constexpr arp::Ipv4Address kFallbackGateway = {{10, 0, 2, 2}};
 // QEMU user-mode networking exposes its forwarding DNS proxy at this address.
 // Keeping it here makes the initial resolver deterministic while leaving room
 // for DHCP or /etc/resolv.conf configuration later.
-constexpr arp::Ipv4Address kDnsServer = {{10, 0, 2, 3}};
+constexpr arp::Ipv4Address kFallbackDnsServer = {{10, 0, 2, 3}};
+constexpr arp::Ipv4Address kZeroAddress = {{0, 0, 0, 0}};
+constexpr arp::Ipv4Address kBroadcastAddress = {{255, 255, 255, 255}};
 constexpr ethernet::MacAddress kBroadcast = {{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}};
 constexpr uint16_t kMaximumFrameLength = ethernet::kMaximumFrameLength;
 constexpr uint16_t kMaximumTcpPayload =
@@ -37,11 +40,114 @@ uint16_t g_sequence = 0;
 uint16_t g_dns_identifier = 1;
 uint16_t g_next_tcp_port = kFirstTcpEphemeralPort;
 uint32_t g_tcp_sequence = 1;
+arp::Ipv4Address g_dns_server = kFallbackDnsServer;
 
 void copy_mac(ethernet::MacAddress* destination, virtio_net::MacAddress source) {
     for(uint8_t index = 0; index < sizeof(destination->bytes); ++index) {
         destination->bytes[index] = source.bytes[index];
     }
+}
+
+uint32_t dhcp_transaction_id(ethernet::MacAddress mac) {
+    return 0x4f536361U ^ (static_cast<uint32_t>(mac.bytes[2]) << 24U) ^ (static_cast<uint32_t>(mac.bytes[3]) << 16U) ^
+           (static_cast<uint32_t>(mac.bytes[4]) << 8U) ^ mac.bytes[5];
+}
+
+bool send_dhcp_message(const uint8_t* payload, uint16_t payload_length, const ethernet::MacAddress& mac) {
+    static uint8_t udp_packet[ethernet::kMaximumPayloadLength];
+    static uint8_t ip_packet[ethernet::kMaximumPayloadLength];
+    static uint8_t frame[kMaximumFrameLength];
+    uint16_t udp_length = 0;
+    uint16_t ip_length = 0;
+    uint16_t frame_length = 0;
+    ipv4::Interface bootstrap_interface;
+    ipv4::initialize(&bootstrap_interface, nullptr, kZeroAddress, kZeroAddress, kZeroAddress);
+    if(udp::build_packet(
+           kZeroAddress, kBroadcastAddress, 68, 67, payload, payload_length, udp_packet, sizeof(udp_packet), &udp_length
+       ) != udp::Status::Success ||
+       ipv4::build_packet(
+           bootstrap_interface,
+           kBroadcastAddress,
+           ipv4::Protocol::Udp,
+           udp_packet,
+           udp_length,
+           ip_packet,
+           sizeof(ip_packet),
+           &ip_length
+       ) != ipv4::FrameStatus::Success ||
+       !ethernet::build_frame(
+           frame, sizeof(frame), kBroadcast, mac, ethernet::EtherType::Ipv4, ip_packet, ip_length, &frame_length
+       )) {
+        return false;
+    }
+    return g_device->send(g_device->context, frame, frame_length) == virtio_net::Status::Success;
+}
+
+bool receive_dhcp_response(
+    uint32_t transaction_id,
+    const ethernet::MacAddress& mac,
+    dhcp::MessageType expected_type,
+    dhcp::Configuration* configuration
+) {
+    static uint8_t frame[kMaximumFrameLength];
+    constexpr uint32_t kPollLimit = 1000000;
+    for(uint32_t poll = 0; poll < kPollLimit; ++poll) {
+        uint16_t length = 0;
+        const virtio_net::Status receive_status = g_device->receive(g_device->context, frame, sizeof(frame), &length);
+        if(receive_status == virtio_net::Status::NotReady) {
+            asm volatile("pause");
+            continue;
+        }
+        if(receive_status != virtio_net::Status::Success) {
+            return false;
+        }
+        ethernet::FrameView ethernet_frame;
+        if(!ethernet::parse_frame(frame, length, &ethernet_frame) || ethernet_frame.type != ethernet::EtherType::Ipv4 ||
+           !ethernet::is_for_us(ethernet_frame, mac)) {
+            continue;
+        }
+        ipv4::PacketView ip_packet;
+        if(!ipv4::parse_packet(ethernet_frame.payload, ethernet_frame.payload_length, &ip_packet) ||
+           ip_packet.protocol != ipv4::Protocol::Udp ||
+           !arp::addresses_equal(ip_packet.destination, kBroadcastAddress)) {
+            continue;
+        }
+        udp::DatagramView datagram;
+        if(!udp::parse_packet(
+               ip_packet.source, ip_packet.destination, ip_packet.payload, ip_packet.payload_length, &datagram
+           ) ||
+           datagram.source_port != 67 || datagram.destination_port != 68) {
+            continue;
+        }
+        const dhcp::Status status = dhcp::parse_response(
+            datagram.payload, datagram.payload_length, mac, transaction_id, expected_type, configuration
+        );
+        if(status == dhcp::Status::Success) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool acquire_dhcp(const ethernet::MacAddress& mac, dhcp::Configuration* configuration) {
+    static uint8_t payload[576];
+    uint16_t payload_length = 0;
+    const uint32_t transaction_id = dhcp_transaction_id(mac);
+    if(dhcp::build_discover(mac, transaction_id, payload, sizeof(payload), &payload_length) != dhcp::Status::Success ||
+       !send_dhcp_message(payload, payload_length, mac)) {
+        return false;
+    }
+    dhcp::Configuration offer;
+    if(!receive_dhcp_response(transaction_id, mac, dhcp::MessageType::Offer, &offer)) {
+        return false;
+    }
+    if(dhcp::build_request(
+           mac, transaction_id, offer.address, offer.server_address, payload, sizeof(payload), &payload_length
+       ) != dhcp::Status::Success ||
+       !send_dhcp_message(payload, payload_length, mac)) {
+        return false;
+    }
+    return receive_dhcp_response(transaction_id, mac, dhcp::MessageType::Ack, configuration);
 }
 
 bool time_remaining(uint64_t start, uint64_t timeout) {
@@ -227,8 +333,20 @@ bool initialize() {
     }
     ethernet::MacAddress mac;
     copy_mac(&mac, g_device->mac);
-    arp::initialize(&g_arp_interface, mac, kLocalAddress);
-    ipv4::initialize(&g_ipv4_interface, &g_arp_interface, kLocalAddress, kNetmask, kGateway);
+    dhcp::Configuration configuration;
+    if(acquire_dhcp(mac, &configuration)) {
+        arp::initialize(&g_arp_interface, mac, configuration.address);
+        ipv4::initialize(
+            &g_ipv4_interface, &g_arp_interface, configuration.address, configuration.netmask, configuration.gateway
+        );
+        g_dns_server = configuration.dns_server;
+    } else {
+        // A missing DHCP server should not prevent booting the development image;
+        // retain the historical QEMU lease as a diagnostic fallback.
+        arp::initialize(&g_arp_interface, mac, kFallbackAddress);
+        ipv4::initialize(&g_ipv4_interface, &g_arp_interface, kFallbackAddress, kFallbackNetmask, kFallbackGateway);
+        g_dns_server = kFallbackDnsServer;
+    }
     g_initialized = true;
     return true;
 }
@@ -344,7 +462,7 @@ ResolveStatus resolve_hostname(const char* hostname, uint64_t timeout_ticks, arp
     // Like ping, DNS waits on both packet input and timer-driven deadlines;
     // syscall entry has IF cleared and would otherwise freeze that clock.
     interrupts::enable();
-    const PingStatus resolution = resolve(kDnsServer, timeout_ticks);
+    const PingStatus resolution = resolve(g_dns_server, timeout_ticks);
     if(resolution != PingStatus::Success) {
         switch(resolution) {
             case PingStatus::Timeout:
@@ -373,7 +491,7 @@ ResolveStatus resolve_hostname(const char* hostname, uint64_t timeout_ticks, arp
     constexpr uint16_t kDnsSourcePort = 49152;
     if(udp::build_frame(
            g_ipv4_interface,
-           kDnsServer,
+           g_dns_server,
            kDnsSourcePort,
            53,
            query_payload,
@@ -415,11 +533,13 @@ ResolveStatus resolve_hostname(const char* hostname, uint64_t timeout_ticks, arp
         ipv4::PacketView packet;
         if(!ipv4::parse_packet(received.payload, received.payload_length, &packet) ||
            packet.protocol != ipv4::Protocol::Udp || !ipv4::is_for_us(g_ipv4_interface, packet) ||
-           !arp::addresses_equal(packet.source, kDnsServer)) {
+           !arp::addresses_equal(packet.source, g_dns_server)) {
             continue;
         }
         udp::DatagramView datagram;
-        if(!udp::parse_packet(kDnsServer, g_ipv4_interface.address, packet.payload, packet.payload_length, &datagram) ||
+        if(!udp::parse_packet(
+               g_dns_server, g_ipv4_interface.address, packet.payload, packet.payload_length, &datagram
+           ) ||
            datagram.source_port != 53 || datagram.destination_port != kDnsSourcePort) {
             continue;
         }

@@ -8,6 +8,8 @@
 
 namespace self_tests_detail {
 
+void test_dhcp();
+
 extern "C" const uint8_t user_program_prime_start[];
 extern "C" const uint8_t user_program_prime_end[];
 extern "C" const uint8_t user_program_second_start[];
