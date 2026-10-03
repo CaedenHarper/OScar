@@ -2,6 +2,7 @@
 
 #include "interrupts.hpp"
 #include "kernel_heap.hpp"
+#include "network.hpp"
 #include "process_internal.hpp"
 #include "scheduler.hpp"
 #include "thread.hpp"
@@ -587,6 +588,7 @@ bool close_file_descriptor(Process* process, uint64_t descriptor) {
     if(socket != nullptr) {
         --socket->references;
         if(socket->references == 0) {
+            network::tcp_unregister(&socket->connection);
             (void)kernel_heap::free(socket);
         }
     }

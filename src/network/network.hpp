@@ -56,6 +56,12 @@ TcpStatus tcp_connect(
     uint64_t timeout_ticks
 );
 
+/**
+ * Remove a TCP connection from the network dispatcher before its owning storage is reclaimed.
+ * This does not send a FIN and is intended for descriptor/process teardown.
+ */
+void tcp_unregister(tcp_connection::Connection* connection);
+
 /** Send one bounded TCP segment and wait until it is acknowledged. */
 TcpStatus tcp_send(tcp_connection::Connection* connection, const void* data, uint16_t length, uint64_t timeout_ticks);
 

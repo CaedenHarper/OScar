@@ -31,6 +31,7 @@ constexpr uint16_t kMaximumFrameLength = ethernet::kMaximumFrameLength;
 constexpr uint16_t kMaximumTcpPayload =
     ethernet::kMaximumPayloadLength - ipv4::kMinimumHeaderLength - tcp::kHeaderLength;
 constexpr uint16_t kFirstTcpEphemeralPort = 49152;
+constexpr uint8_t kMaximumRegisteredTcpConnections = 16;
 
 virtio_net::Device* g_device = nullptr;
 arp::Interface g_arp_interface;
@@ -41,6 +42,13 @@ uint16_t g_dns_identifier = 1;
 uint16_t g_next_tcp_port = kFirstTcpEphemeralPort;
 uint32_t g_tcp_sequence = 1;
 arp::Ipv4Address g_dns_server = kFallbackDnsServer;
+
+struct RegisteredTcpConnection {
+    tcp_connection::Connection* connection;
+    bool active;
+};
+
+RegisteredTcpConnection g_tcp_connections[kMaximumRegisteredTcpConnections];
 
 void copy_mac(ethernet::MacAddress* destination, virtio_net::MacAddress source) {
     for(uint8_t index = 0; index < sizeof(destination->bytes); ++index) {
@@ -163,6 +171,60 @@ bool process_incoming_arp(const ethernet::FrameView& frame, uint64_t now) {
     return g_device->send(g_device->context, response, response_length) == virtio_net::Status::Success;
 }
 
+bool same_tcp_endpoint(const tcp_connection::Connection& first, const tcp_connection::Connection& second) {
+    return arp::addresses_equal(first.local_address, second.local_address) &&
+           arp::addresses_equal(first.remote_address, second.remote_address) && first.local_port == second.local_port &&
+           first.remote_port == second.remote_port;
+}
+
+bool register_tcp_connection(tcp_connection::Connection* connection) {
+    if(connection == nullptr) {
+        return false;
+    }
+    uint8_t free_slot = kMaximumRegisteredTcpConnections;
+    for(uint8_t index = 0; index < kMaximumRegisteredTcpConnections; ++index) {
+        if(!g_tcp_connections[index].active) {
+            if(free_slot == kMaximumRegisteredTcpConnections) {
+                free_slot = index;
+            }
+            continue;
+        }
+        if(g_tcp_connections[index].connection == connection ||
+           same_tcp_endpoint(*g_tcp_connections[index].connection, *connection)) {
+            return false;
+        }
+    }
+    if(free_slot == kMaximumRegisteredTcpConnections) {
+        return false;
+    }
+    g_tcp_connections[free_slot] = {.connection = connection, .active = true};
+    return true;
+}
+
+void unregister_tcp_connection(tcp_connection::Connection* connection) {
+    if(connection == nullptr) {
+        return;
+    }
+    for(auto& entry : g_tcp_connections) {
+        if(entry.active && entry.connection == connection) {
+            entry = {};
+            return;
+        }
+    }
+}
+
+bool is_registered_tcp_connection(const tcp_connection::Connection* connection) {
+    if(connection == nullptr) {
+        return false;
+    }
+    for(const auto& entry : g_tcp_connections) {
+        if(entry.active && entry.connection == connection) {
+            return true;
+        }
+    }
+    return false;
+}
+
 enum class DispatchStatus : uint8_t {
     NotReady,
     Processed,
@@ -171,6 +233,14 @@ enum class DispatchStatus : uint8_t {
 
 using Ipv4Handler = bool (*)(const ipv4::PacketView& packet, uint64_t now, void* context);
 
+struct TcpDispatchContext {
+    tcp_connection::Connection* waiting_connection;
+    TcpStatus* result;
+    bool matched;
+};
+
+bool dispatch_tcp_packet(const ipv4::PacketView& packet, uint64_t now, void* raw_context);
+
 /**
  * Receive one frame and dispatch normal IPv4 traffic to the active operation.
  *
@@ -178,7 +248,7 @@ using Ipv4Handler = bool (*)(const ipv4::PacketView& packet, uint64_t now, void*
  * no longer access the VirtIO RX ring directly. DHCP remains a bootstrap
  * exception because it runs before the normal ARP/IPv4 interface exists.
  */
-DispatchStatus dispatch_one(Ipv4Handler handler, void* context, uint64_t now) {
+DispatchStatus dispatch_one(Ipv4Handler handler, void* context, TcpDispatchContext* tcp_context, uint64_t now) {
     static uint8_t frame[kMaximumFrameLength];
     uint16_t length = 0;
     const virtio_net::Status receive_status = g_device->receive(g_device->context, frame, sizeof(frame), &length);
@@ -206,7 +276,9 @@ DispatchStatus dispatch_one(Ipv4Handler handler, void* context, uint64_t now) {
        !ipv4::is_for_us(g_ipv4_interface, packet)) {
         return DispatchStatus::Processed;
     }
-    if(handler != nullptr) {
+    if(packet.protocol == ipv4::Protocol::Tcp) {
+        (void)dispatch_tcp_packet(packet, now, tcp_context);
+    } else if(handler != nullptr) {
         (void)handler(packet, now, context);
     }
     return DispatchStatus::Processed;
@@ -260,41 +332,44 @@ bool send_tcp_segment(
            g_device->send(g_device->context, frame, frame_length) == virtio_net::Status::Success;
 }
 
-struct TcpDispatchContext {
-    tcp_connection::Connection* connection;
-    TcpStatus* result;
-    bool matched;
-};
-
 bool dispatch_tcp_packet(const ipv4::PacketView& ipv4_packet, uint64_t now, void* raw_context) {
     auto* context = static_cast<TcpDispatchContext*>(raw_context);
-    auto* connection = context->connection;
-    if(ipv4_packet.protocol != ipv4::Protocol::Tcp ||
-       !arp::addresses_equal(ipv4_packet.source, connection->remote_address) ||
-       !arp::addresses_equal(ipv4_packet.destination, connection->local_address)) {
+    if(ipv4_packet.protocol != ipv4::Protocol::Tcp) {
         return false;
     }
     tcp::SegmentView segment;
     if(!tcp::parse_segment(
            ipv4_packet.source, ipv4_packet.destination, ipv4_packet.payload, ipv4_packet.payload_length, &segment
-       ) ||
-       segment.source_port != connection->remote_port || segment.destination_port != connection->local_port) {
+       )) {
         return false;
     }
-    context->matched = true;
-    const tcp_connection::Result connection_result =
-        tcp_connection::process(connection, send_tcp_segment, nullptr, segment, now);
-    if(connection_result == tcp_connection::Result::Reset) {
-        *context->result = TcpStatus::Reset;
-    } else if(connection_result == tcp_connection::Result::IoError) {
-        *context->result = TcpStatus::IoError;
+
+    bool matched = false;
+    for(const auto& entry : g_tcp_connections) {
+        if(!entry.active || !arp::addresses_equal(ipv4_packet.source, entry.connection->remote_address) ||
+           !arp::addresses_equal(ipv4_packet.destination, entry.connection->local_address) ||
+           segment.source_port != entry.connection->remote_port ||
+           segment.destination_port != entry.connection->local_port) {
+            continue;
+        }
+        matched = true;
+        const tcp_connection::Result connection_result =
+            tcp_connection::process(entry.connection, send_tcp_segment, nullptr, segment, now);
+        if(context != nullptr && context->waiting_connection == entry.connection) {
+            context->matched = true;
+            if(connection_result == tcp_connection::Result::Reset) {
+                *context->result = TcpStatus::Reset;
+            } else if(connection_result == tcp_connection::Result::IoError) {
+                *context->result = TcpStatus::IoError;
+            }
+        }
     }
-    return true;
+    return matched;
 }
 
 bool process_tcp_input(tcp_connection::Connection* connection, uint64_t now, TcpStatus* result) {
     TcpDispatchContext context = {connection, result, false};
-    const DispatchStatus status = dispatch_one(dispatch_tcp_packet, &context, now);
+    const DispatchStatus status = dispatch_one(nullptr, nullptr, &context, now);
     if(status == DispatchStatus::NotReady) {
         asm volatile("pause");
         return false;
@@ -341,7 +416,7 @@ PingStatus resolve(arp::Ipv4Address destination, uint64_t timeout_ticks) {
     }
 
     while(time_remaining(start, timeout_ticks)) {
-        const DispatchStatus status = dispatch_one(nullptr, nullptr, timer::ticks());
+        const DispatchStatus status = dispatch_one(nullptr, nullptr, nullptr, timer::ticks());
         if(status == DispatchStatus::NotReady) {
             asm volatile("pause");
             continue;
@@ -450,6 +525,10 @@ bool is_initialized() {
     return g_initialized;
 }
 
+void tcp_unregister(tcp_connection::Connection* connection) {
+    unregister_tcp_connection(connection);
+}
+
 PingStatus ping(arp::Ipv4Address destination, uint64_t timeout_ticks, uint16_t identifier, uint64_t* elapsed_ticks) {
     if(!g_initialized || g_device == nullptr || elapsed_ticks == nullptr) {
         return PingStatus::NotInitialized;
@@ -508,7 +587,7 @@ PingStatus ping(arp::Ipv4Address destination, uint64_t timeout_ticks, uint16_t i
 
     PingDispatchContext context = {destination, identifier, sequence, start, elapsed_ticks, false};
     while(time_remaining(start, timeout_ticks)) {
-        const DispatchStatus status = dispatch_one(dispatch_ping_packet, &context, timer::ticks());
+        const DispatchStatus status = dispatch_one(dispatch_ping_packet, &context, nullptr, timer::ticks());
         if(status == DispatchStatus::NotReady) {
             asm volatile("pause");
             continue;
@@ -580,7 +659,7 @@ ResolveStatus resolve_hostname(const char* hostname, uint64_t timeout_ticks, arp
     ResolveStatus result = ResolveStatus::Timeout;
     DnsDispatchContext context = {kDnsSourcePort, identifier, address, &result, false};
     while(time_remaining(start, timeout_ticks)) {
-        const DispatchStatus status = dispatch_one(dispatch_dns_packet, &context, timer::ticks());
+        const DispatchStatus status = dispatch_one(dispatch_dns_packet, &context, nullptr, timer::ticks());
         if(status == DispatchStatus::NotReady) {
             asm volatile("pause");
             continue;
@@ -604,7 +683,7 @@ TcpStatus tcp_connect(
     if(!g_initialized || g_device == nullptr) {
         return TcpStatus::NotInitialized;
     }
-    if(connection == nullptr || destination_port == 0) {
+    if(connection == nullptr || destination_port == 0 || is_registered_tcp_connection(connection)) {
         return TcpStatus::InvalidArgument;
     }
     interrupts::enable();
@@ -622,29 +701,37 @@ TcpStatus tcp_connect(
     tcp_connection::initialize(
         connection, g_ipv4_interface.address, destination, local_port, destination_port, g_tcp_sequence
     );
+    if(!register_tcp_connection(connection)) {
+        return TcpStatus::IoError;
+    }
     g_tcp_sequence += 0x10001U;
     const uint64_t start = timer::ticks();
     if(tcp_connection::open(connection, send_tcp_segment, nullptr, start) != tcp_connection::Result::Success) {
+        unregister_tcp_connection(connection);
         return TcpStatus::IoError;
     }
     while(time_remaining(start, timeout_ticks)) {
         const uint64_t now = timer::ticks();
         const tcp_connection::Result retry = tcp_connection::poll(connection, send_tcp_segment, nullptr, now);
         if(retry == tcp_connection::Result::Timeout) {
+            unregister_tcp_connection(connection);
             return TcpStatus::Timeout;
         }
         TcpStatus input_result = TcpStatus::Success;
         (void)process_tcp_input(connection, now, &input_result);
         if(input_result != TcpStatus::Success) {
+            unregister_tcp_connection(connection);
             return input_result;
         }
         if(connection->state == tcp_connection::State::Established) {
             return TcpStatus::Success;
         }
         if(connection->state == tcp_connection::State::Reset) {
+            unregister_tcp_connection(connection);
             return TcpStatus::Reset;
         }
     }
+    unregister_tcp_connection(connection);
     return TcpStatus::Timeout;
 }
 
@@ -746,31 +833,38 @@ TcpStatus tcp_close(tcp_connection::Connection* connection, uint64_t timeout_tic
         return TcpStatus::InvalidArgument;
     }
     if(connection->state == tcp_connection::State::Closed) {
+        unregister_tcp_connection(connection);
         return TcpStatus::Success;
     }
     interrupts::enable();
     const uint64_t start = timer::ticks();
     if(connection->state == tcp_connection::State::Established &&
        tcp_connection::close(connection, send_tcp_segment, nullptr, start) != tcp_connection::Result::Success) {
+        unregister_tcp_connection(connection);
         return TcpStatus::IoError;
     }
     while(time_remaining(start, timeout_ticks)) {
         if(connection->state == tcp_connection::State::Closed || connection->state == tcp_connection::State::TimeWait) {
+            unregister_tcp_connection(connection);
             return TcpStatus::Success;
         }
         const uint64_t now = timer::ticks();
         if(tcp_connection::poll(connection, send_tcp_segment, nullptr, now) == tcp_connection::Result::Timeout) {
+            unregister_tcp_connection(connection);
             return TcpStatus::Timeout;
         }
         TcpStatus input_result = TcpStatus::Success;
         (void)process_tcp_input(connection, now, &input_result);
         if(input_result == TcpStatus::Reset) {
+            unregister_tcp_connection(connection);
             return TcpStatus::Reset;
         }
         if(input_result == TcpStatus::IoError) {
+            unregister_tcp_connection(connection);
             return TcpStatus::IoError;
         }
     }
+    unregister_tcp_connection(connection);
     return TcpStatus::Timeout;
 }
 
