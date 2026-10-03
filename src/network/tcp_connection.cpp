@@ -98,11 +98,11 @@ void initialize(
     connection->send_next = initial_sequence;
 }
 
-Result open(Connection* connection, SendCallback send, void* context, uint64_t now) {
-    if(connection == nullptr || send == nullptr || connection->state != State::Closed) {
+Result open(Connection* connection, SendCallback callback, void* context, uint64_t now) {
+    if(connection == nullptr || callback == nullptr || connection->state != State::Closed) {
         return Result::InvalidArgument;
     }
-    if(!send_segment(connection, send, context, connection->send_next, tcp::kSyn, nullptr, 0, now, true)) {
+    if(!send_segment(connection, callback, context, connection->send_next, tcp::kSyn, nullptr, 0, now, true)) {
         return Result::IoError;
     }
     ++connection->send_next;
@@ -199,8 +199,11 @@ Result process(
             return Result::BufferFull;
         }
         for(uint16_t index = 0; index < segment.payload_length; ++index) {
-            connection->receive_buffer[connection->receive_length + index] = segment.payload[index];
+            connection->receive_buffer[(connection->receive_write_position + index) % kReceiveBufferSize] =
+                segment.payload[index];
         }
+        connection->receive_write_position =
+            static_cast<uint16_t>((connection->receive_write_position + segment.payload_length) % kReceiveBufferSize);
         connection->receive_length += segment.payload_length;
         connection->receive_next += segment.payload_length;
     }
@@ -233,11 +236,11 @@ Result receive(Connection* connection, void* output, uint16_t capacity, uint16_t
     const uint16_t copied = connection->receive_length < capacity ? connection->receive_length : capacity;
     auto* destination = static_cast<uint8_t*>(output);
     for(uint16_t index = 0; index < copied; ++index) {
-        destination[index] = connection->receive_buffer[index];
+        destination[index] =
+            connection->receive_buffer[(connection->receive_read_position + index) % kReceiveBufferSize];
     }
-    for(uint16_t index = copied; index < connection->receive_length; ++index) {
-        connection->receive_buffer[index - copied] = connection->receive_buffer[index];
-    }
+    connection->receive_read_position =
+        static_cast<uint16_t>((connection->receive_read_position + copied) % kReceiveBufferSize);
     connection->receive_length -= copied;
     *length = copied;
     if(copied != 0) {

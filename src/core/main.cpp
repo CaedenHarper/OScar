@@ -137,6 +137,10 @@ extern "C" [[noreturn]] void kmain() {
     // until the kernel's startup checks have completed.
     scheduler::start_bootstrap();
 
+    if(!network::start_service()) {
+        panic::halt("could not start the network service thread");
+    }
+
     serial::write("Exiting kernel startup.\n");
 #ifdef OSCAR_TEST_SUITE
     if(!self_tests::prepare_init()) {

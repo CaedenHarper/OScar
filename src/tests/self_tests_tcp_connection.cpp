@@ -147,6 +147,64 @@ void test_tcp_connection() {
         panic::halt("TCP connection smoke test did not buffer received data");
     }
 
+    static uint8_t first_queued_chunk[3000];
+    static uint8_t second_queued_chunk[2000];
+    for(uint16_t index = 0; index < sizeof(first_queued_chunk); ++index) {
+        first_queued_chunk[index] = static_cast<uint8_t>(index);
+    }
+    for(uint16_t index = 0; index < sizeof(second_queued_chunk); ++index) {
+        second_queued_chunk[index] = static_cast<uint8_t>(index + 31);
+    }
+    if(tcp_connection::process(
+           &connection,
+           send_fake,
+           &transport,
+           segment(
+               kRemoteSequence + 3, kInitialSequence + 4, tcp::kAck, first_queued_chunk, sizeof(first_queued_chunk)
+           ),
+           4
+       ) != tcp_connection::Result::Success) {
+        panic::halt("TCP connection smoke test could not queue the first receive chunk");
+    }
+    uint8_t first_read[2500];
+    if(tcp_connection::receive(&connection, first_read, sizeof(first_read), &received_length) !=
+           tcp_connection::Result::Success ||
+       received_length != sizeof(first_read)) {
+        panic::halt("TCP connection smoke test could not partially consume queued data");
+    }
+    for(uint16_t index = 0; index < sizeof(first_read); ++index) {
+        if(first_read[index] != first_queued_chunk[index]) {
+            panic::halt("TCP connection smoke test returned corrupted queued data");
+        }
+    }
+    if(tcp_connection::process(
+           &connection,
+           send_fake,
+           &transport,
+           segment(
+               kRemoteSequence + 3003, kInitialSequence + 4, tcp::kAck, second_queued_chunk, sizeof(second_queued_chunk)
+           ),
+           4
+       ) != tcp_connection::Result::Success) {
+        panic::halt("TCP connection smoke test could not wrap the receive queue");
+    }
+    uint8_t second_read[2500];
+    if(tcp_connection::receive(&connection, second_read, sizeof(second_read), &received_length) !=
+           tcp_connection::Result::Success ||
+       received_length != sizeof(second_read)) {
+        panic::halt("TCP connection smoke test could not drain wrapped receive data");
+    }
+    for(uint16_t index = 0; index < 500; ++index) {
+        if(second_read[index] != first_queued_chunk[index + 2500]) {
+            panic::halt("TCP connection smoke test lost queued data at the wrap boundary");
+        }
+    }
+    for(uint16_t index = 500; index < sizeof(second_read); ++index) {
+        if(second_read[index] != second_queued_chunk[index - 500]) {
+            panic::halt("TCP connection smoke test reordered wrapped receive data");
+        }
+    }
+
     if(tcp_connection::send(&connection, send_fake, &transport, request, sizeof(request), 5) !=
        tcp_connection::Result::Success) {
         panic::halt("TCP connection smoke test could not create retransmission");
@@ -163,7 +221,7 @@ void test_tcp_connection() {
            &connection,
            send_fake,
            &transport,
-           segment(kRemoteSequence + 3, kInitialSequence + 7, tcp::kAck, nullptr, 0),
+           segment(kRemoteSequence + 5003, kInitialSequence + 7, tcp::kAck, nullptr, 0),
            7
        ) != tcp_connection::Result::Success ||
        tcp_connection::close(&connection, send_fake, &transport, 8) != tcp_connection::Result::Success ||
@@ -175,7 +233,7 @@ void test_tcp_connection() {
            &connection,
            send_fake,
            &transport,
-           segment(kRemoteSequence + 3, kInitialSequence + 8, tcp::kFin | tcp::kAck, nullptr, 0),
+           segment(kRemoteSequence + 5003, kInitialSequence + 8, tcp::kFin | tcp::kAck, nullptr, 0),
            9
        ) != tcp_connection::Result::Success ||
        connection.state != tcp_connection::State::TimeWait ||

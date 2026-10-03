@@ -61,6 +61,8 @@ struct Connection {
     uint16_t outstanding_length;
     uint8_t outstanding_payload[kReceiveBufferSize];
     uint8_t receive_buffer[kReceiveBufferSize];
+    uint16_t receive_read_position;
+    uint16_t receive_write_position;
     uint16_t receive_length;
     uint64_t time_wait_deadline;
     bool peer_closed;
@@ -77,21 +79,34 @@ void initialize(
 );
 
 /** Send a SYN and enter the SYN-SENT state. */
-Result open(Connection* connection, SendCallback send, void* context, uint64_t now);
+Result open(Connection* connection, SendCallback callback, void* context, uint64_t now);
 
 /** Queue one in-order application segment for transmission. */
-Result send(Connection* connection, SendCallback send, void* context, const void* data, uint16_t length, uint64_t now);
+Result send(
+    Connection* connection,
+    SendCallback callback,
+    void* context,
+    const void* data,
+    uint16_t length,
+    uint64_t now
+);
 
 /** Process one validated TCP segment belonging to this connection. */
-Result process(Connection* connection, SendCallback send, void* context, const tcp::SegmentView& segment, uint64_t now);
+Result process(
+    Connection* connection,
+    SendCallback callback,
+    void* context,
+    const tcp::SegmentView& segment,
+    uint64_t now
+);
 
 /** Copy received in-order bytes into a caller-owned buffer. */
 Result receive(Connection* connection, void* output, uint16_t capacity, uint16_t* length);
 
 /** Send FIN and begin graceful connection shutdown. */
-Result close(Connection* connection, SendCallback send, void* context, uint64_t now);
+Result close(Connection* connection, SendCallback callback, void* context, uint64_t now);
 
 /** Retransmit an expired outstanding segment or expire TIME-WAIT. */
-Result poll(Connection* connection, SendCallback send, void* context, uint64_t now);
+Result poll(Connection* connection, SendCallback callback, void* context, uint64_t now);
 
 } // namespace tcp_connection
