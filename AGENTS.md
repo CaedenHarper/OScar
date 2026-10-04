@@ -67,12 +67,12 @@ The source tree is organized as follows:
   `self_tests.cpp` coordinates the suite, while `self_tests_*.cpp` group
   context, PCI/device, keyboard, memory/process, scheduler, synchronization, and user-mode tests.
   `self_tests_internal.hpp` contains private cross-test declarations.
-- `tests/user/`: source and linker script for successful, filesystem-read,
-  computed-output, interactive `cash` shell, filesystem-backed init, shell
-  utilities, network `ping`, and intentional-crash user ELF smoke images. Init, `cash`, and the
-  shell-command smoke image are mounted from the generated ext2 image; the
-  other test images are embedded in the kernel smoke tests. Malformed ELF metadata tests live in
-  `src/tests/` because they exercise validation without loading an image.
+- `tests/user/`: source for test-only user programs, including
+  argument, libc, shell-command, HTTP-parser, and intentional-crash smoke images.
+  The test init and selected test programs are mounted from the generated ext2
+  image; the other test images are embedded in the kernel smoke tests. Malformed
+  ELF metadata tests live in `src/tests/` because they exercise validation
+  without loading an image.
 - `user/include/`: public C headers for the POSIX-shaped user API and
   `user/include/oscar/` extensions for OScar-specific syscalls and helpers.
 - `user/lib/`: freestanding C implementations of syscall wrappers, the initial
@@ -82,6 +82,9 @@ The source tree is organized as follows:
   The shim owns the ELF `_start` entry point and converts a program's `main()`
   return value into `oscar_exit`; user programs should not define `_start`
   themselves unless they are deliberately assembly-only tests.
+- `user/programs/`: runtime filesystem-backed programs, including `init`, `cash`,
+  and the shell utilities installed in `/bin` and `/sbin`.
+- `user/linker.ld`: shared linker script for freestanding user ELF programs.
 - `tests/filesystem/`: source files copied into the generated ext2 test image.
 
 ## Build and test

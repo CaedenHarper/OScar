@@ -65,7 +65,7 @@ future milestones.
 ├── Makefile          Builds the ELF, bootable ISO, and QEMU targets
 ├── linker.ld         Places the kernel in the x86-64 higher half
 ├── limine.conf       Limine boot entry
-├── user/              Public C headers and freestanding user-space libraries
+├── user/              Public C headers, libraries, linker script, and programs
 └── src/
     ├── arch/x86_64/  CPU contexts, GDT/TSS, IDT, and entry stubs
     ├── core/         Entry point, processes, threads, scheduler, and syscalls
@@ -77,14 +77,15 @@ future milestones.
     ├── memory/       Physical pages, virtual memory, and kernel heap
     ├── synchronization/ Spinlocks, wait queues, and mutexes
     ├── storage/      Hardware-independent block-device protocol
-    ├── tests/        Boot-time subsystem smoke tests and user programs
+    ├── tests/        Boot-time subsystem smoke tests and test-only user programs
     └── tests/filesystem/ Files copied into generated ext2 images
 ```
 
 Limine and its protocol header are downloaded into `deps/` on the first build.
-The normal build compiles the runtime user programs in `tests/user/`, including
+The normal build compiles the runtime user programs in `user/programs/`, including
 filesystem-backed `init`, `cash`, and the shell utilities. These programs link the
-reusable freestanding libraries in `user/lib/`. Test fixtures and the
+reusable freestanding libraries in `user/lib/`. Test-only user programs live in
+`tests/user/` and are compiled only by the test build. Test fixtures and the
 boot-time smoke-test sources are excluded from the normal kernel. Generated
 files go into `build/`.
 
