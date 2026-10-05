@@ -58,6 +58,33 @@ HTTPS, redirects, DHCP lease renewal, `/etc/resolv.conf`, or full mount
 lifecycle management. Signal delivery and a more complete C library remain
 future milestones.
 
+## TODO
+
+Priority work:
+
+- Harden networking:
+  - Audit request cancellation, connection lifetime, and locking.
+  - Add stress coverage for concurrent and timed-out socket operations.
+- Improve process and descriptor abstractions:
+  - Introduce shared open-file descriptions for offsets, duplication, and inheritance.
+  - Define complete process-exit, zombie, orphan, and blocked-I/O cleanup semantics.
+- Strengthen filesystem mutation:
+  - Improve rollback and crash-consistency behavior for metadata updates.
+- Simplify the syscall and build layers:
+  - Split syscall handling by subsystem.
+  - Consolidate duplicated user-program build rules.
+- Expand test coverage:
+  - Add repeated-operation, invalid-user-memory, resource-exhaustion, and failure-path tests.
+
+Future features:
+
+- Signal delivery beyond the current SIGTERM-only support.
+- `fork`/`exec`.
+- TCP listening, `accept`, and nonblocking sockets.
+- Mount lifecycle management and native filesystem rename.
+- A larger C library, including allocation and directory streams.
+- DHCP lease renewal, `/etc/resolv.conf`, HTTPS, and redirects.
+
 ## Repository layout
 
 ```text
