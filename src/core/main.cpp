@@ -1,5 +1,6 @@
 #include "framebuffer.hpp"
 #include "gdt.hpp"
+#include "graphics.hpp"
 #include "idt.hpp"
 #include "interrupt_controller.hpp"
 #include "interrupts.hpp"
@@ -89,6 +90,11 @@ extern "C" [[noreturn]] void kmain() {
             g_framebuffer_request.response->framebuffers[0]; // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
     }
     if(framebuffer::initialize(framebuffer_information)) {
+        graphics::Surface surface = {};
+        if(!framebuffer::surface(&surface) || !graphics::initialize(&surface)) {
+            panic::halt("could not initialize graphics renderer");
+        }
+        graphics::draw_test_pattern();
         serial::write("Framebuffer initialized: ");
         serial::write_u64(framebuffer::width());
         serial::write("x");

@@ -19,7 +19,8 @@ The kernel currently provides:
 - PCI enumeration, polling VirtIO block and network drivers, DHCP network
   configuration, and an IRQ-driven PS/2 keyboard backend.
 - Limine framebuffer discovery with a format-aware boot-time color-bar test
-  pattern in graphical QEMU sessions.
+  pattern, clipped drawing primitives, and bitmap diagnostic text in graphical
+  QEMU sessions.
 - An ext2 filesystem with VFS path lookup, regular-file I/O, directories,
   permissions, ownership, metadata, corruption checks, and mutation support.
 - Ethernet, ARP, IPv4, ICMP, UDP, TCP, DNS, and an HTTP client with incremental
@@ -96,6 +97,7 @@ Future features:
     ├── arch/x86_64/  CPU contexts, GDT/TSS, IDT, and entry stubs
     ├── core/         Entry point, processes, threads, scheduler, and syscalls
     ├── drivers/      Port I/O, PCI discovery, serial, framebuffer, timer, keyboard input, terminal, PS/2, and VirtIO block/network support
+    ├── graphics/     Framebuffer-independent drawing primitives and bitmap text rendering
     ├── network/      Ethernet framing, ARP/IPv4, ICMP, UDP, TCP connections, and DNS support
     ├── exec/         ELF64 validation and executable loading
     ├── filesystem/   VFS, ext2 mounting, path lookup, regular-file I/O, and mutation
