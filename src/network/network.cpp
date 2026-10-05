@@ -54,6 +54,8 @@ struct RegisteredTcpConnection {
 };
 
 RegisteredTcpConnection g_tcp_connections[kMaximumRegisteredTcpConnections];
+synchronization::Spinlock g_tcp_registry_lock;
+synchronization::Spinlock g_tcp_transmit_lock;
 synchronization::Spinlock g_receive_lock;
 kernel_thread::Thread* g_service_thread = nullptr;
 bool g_service_started = false;
@@ -170,6 +172,20 @@ bool time_remaining(uint64_t start, uint64_t timeout) {
     return timer::ticks() - start < timeout;
 }
 
+tcp_connection::State connection_state(tcp_connection::Connection* connection) {
+    const interrupts::State previous_state = synchronization::lock(&connection->state_lock);
+    const tcp_connection::State result = connection->state;
+    synchronization::unlock(&connection->state_lock, previous_state);
+    return result;
+}
+
+bool connection_send_pending(tcp_connection::Connection* connection) {
+    const interrupts::State previous_state = synchronization::lock(&connection->state_lock);
+    const bool result = connection->send_unacknowledged != connection->send_next;
+    synchronization::unlock(&connection->state_lock, previous_state);
+    return result;
+}
+
 bool process_incoming_arp(const ethernet::FrameView& frame, uint64_t now) {
     static uint8_t response[kMaximumFrameLength];
     uint16_t response_length = 0;
@@ -189,24 +205,30 @@ bool register_tcp_connection(tcp_connection::Connection* connection) {
     if(connection == nullptr) {
         return false;
     }
+    const interrupts::State previous_state = synchronization::lock(&g_tcp_registry_lock);
     uint8_t free_slot = kMaximumRegisteredTcpConnections;
     for(uint8_t index = 0; index < kMaximumRegisteredTcpConnections; ++index) {
         if(!g_tcp_connections[index].active) {
-            if(free_slot == kMaximumRegisteredTcpConnections) {
+            if(synchronization::empty(&g_tcp_connections[index].receive_waiters) &&
+               free_slot == kMaximumRegisteredTcpConnections) {
                 free_slot = index;
             }
             continue;
         }
         if(g_tcp_connections[index].connection == connection ||
            same_tcp_endpoint(*g_tcp_connections[index].connection, *connection)) {
+            synchronization::unlock(&g_tcp_registry_lock, previous_state);
             return false;
         }
     }
     if(free_slot == kMaximumRegisteredTcpConnections) {
+        synchronization::unlock(&g_tcp_registry_lock, previous_state);
         return false;
     }
-    g_tcp_connections[free_slot] = {.connection = connection, .receive_waiters = {}, .active = true};
     synchronization::initialize(&g_tcp_connections[free_slot].receive_waiters);
+    g_tcp_connections[free_slot].connection = connection;
+    g_tcp_connections[free_slot].active = true;
+    synchronization::unlock(&g_tcp_registry_lock, previous_state);
     return true;
 }
 
@@ -214,32 +236,43 @@ void unregister_tcp_connection(tcp_connection::Connection* connection) {
     if(connection == nullptr) {
         return;
     }
+    const interrupts::State previous_state = synchronization::lock(&g_tcp_registry_lock);
     for(auto& entry : g_tcp_connections) {
         if(entry.active && entry.connection == connection) {
-            const interrupts::State previous_state = interrupts::save_and_disable();
             (void)scheduler::wake_all(&entry.receive_waiters);
-            entry = {};
-            interrupts::restore(previous_state);
+            // Keep the wait queue intact until all sleepers have removed themselves. This
+            // prevents a newly registered connection from reusing a queue still referenced
+            // by a thread waking from the old connection.
+            entry.connection = nullptr;
+            entry.active = false;
+            synchronization::unlock(&g_tcp_registry_lock, previous_state);
             return;
         }
     }
+    synchronization::unlock(&g_tcp_registry_lock, previous_state);
 }
 
 RegisteredTcpConnection* find_registered_tcp_connection(tcp_connection::Connection* connection) {
+    const interrupts::State previous_state = synchronization::lock(&g_tcp_registry_lock);
     for(auto& entry : g_tcp_connections) {
         if(entry.active && entry.connection == connection) {
+            synchronization::unlock(&g_tcp_registry_lock, previous_state);
             return &entry;
         }
     }
+    synchronization::unlock(&g_tcp_registry_lock, previous_state);
     return nullptr;
 }
 
 bool has_registered_tcp_connections() {
+    const interrupts::State previous_state = synchronization::lock(&g_tcp_registry_lock);
     for(auto& entry : g_tcp_connections) {
         if(entry.active) {
+            synchronization::unlock(&g_tcp_registry_lock, previous_state);
             return true;
         }
     }
+    synchronization::unlock(&g_tcp_registry_lock, previous_state);
     return false;
 }
 
@@ -247,11 +280,14 @@ bool is_registered_tcp_connection(const tcp_connection::Connection* connection) 
     if(connection == nullptr) {
         return false;
     }
+    const interrupts::State previous_state = synchronization::lock(&g_tcp_registry_lock);
     for(const auto& entry : g_tcp_connections) {
         if(entry.active && entry.connection == connection) {
+            synchronization::unlock(&g_tcp_registry_lock, previous_state);
             return true;
         }
     }
+    synchronization::unlock(&g_tcp_registry_lock, previous_state);
     return false;
 }
 
@@ -328,6 +364,7 @@ bool send_tcp_segment(
     if(payload_length > kMaximumTcpPayload) {
         return false;
     }
+    const interrupts::State previous_state = synchronization::lock(&g_tcp_transmit_lock);
     static uint8_t packet[ethernet::kMaximumPayloadLength];
     uint16_t packet_length = 0;
     if(tcp::build_segment(
@@ -346,22 +383,25 @@ bool send_tcp_segment(
            sizeof(packet),
            &packet_length
        ) != tcp::Status::Success) {
+        synchronization::unlock(&g_tcp_transmit_lock, previous_state);
         return false;
     }
     static uint8_t frame[kMaximumFrameLength];
     uint16_t frame_length = 0;
-    return ipv4::build_frame(
-               g_ipv4_interface,
-               connection.remote_address,
-               ipv4::Protocol::Tcp,
-               packet,
-               packet_length,
-               frame,
-               sizeof(frame),
-               &frame_length,
-               timer::ticks()
-           ) == ipv4::FrameStatus::Success &&
-           g_device->send(g_device->context, frame, frame_length) == virtio_net::Status::Success;
+    const bool sent = ipv4::build_frame(
+                          g_ipv4_interface,
+                          connection.remote_address,
+                          ipv4::Protocol::Tcp,
+                          packet,
+                          packet_length,
+                          frame,
+                          sizeof(frame),
+                          &frame_length,
+                          timer::ticks()
+                      ) == ipv4::FrameStatus::Success &&
+                      g_device->send(g_device->context, frame, frame_length) == virtio_net::Status::Success;
+    synchronization::unlock(&g_tcp_transmit_lock, previous_state);
+    return sent;
 }
 
 bool dispatch_tcp_packet(const ipv4::PacketView& ipv4_packet, uint64_t now, void* raw_context) {
@@ -377,6 +417,7 @@ bool dispatch_tcp_packet(const ipv4::PacketView& ipv4_packet, uint64_t now, void
     }
 
     bool matched = false;
+    const interrupts::State registry_state = synchronization::lock(&g_tcp_registry_lock);
     for(auto& entry : g_tcp_connections) {
         if(!entry.active || !arp::addresses_equal(ipv4_packet.source, entry.connection->remote_address) ||
            !arp::addresses_equal(ipv4_packet.destination, entry.connection->local_address) ||
@@ -385,7 +426,6 @@ bool dispatch_tcp_packet(const ipv4::PacketView& ipv4_packet, uint64_t now, void
             continue;
         }
         matched = true;
-        const interrupts::State previous_state = interrupts::save_and_disable();
         const tcp_connection::Result connection_result =
             tcp_connection::process(entry.connection, send_tcp_segment, nullptr, segment, now);
         (void)scheduler::wake_all(&entry.receive_waiters);
@@ -397,8 +437,8 @@ bool dispatch_tcp_packet(const ipv4::PacketView& ipv4_packet, uint64_t now, void
                 *context->result = TcpStatus::IoError;
             }
         }
-        interrupts::restore(previous_state);
     }
+    synchronization::unlock(&g_tcp_registry_lock, registry_state);
     return matched;
 }
 
@@ -417,29 +457,30 @@ bool process_tcp_input(tcp_connection::Connection* connection, uint64_t now, Tcp
 }
 
 void poll_registered_connections(uint64_t now) {
+    const interrupts::State registry_state = synchronization::lock(&g_tcp_registry_lock);
     for(auto& entry : g_tcp_connections) {
         if(!entry.active) {
             continue;
         }
-        const interrupts::State previous_state = interrupts::save_and_disable();
         const tcp_connection::Result result = tcp_connection::poll(entry.connection, send_tcp_segment, nullptr, now);
-        if(result == tcp_connection::Result::Timeout || entry.connection->state == tcp_connection::State::Reset ||
-           entry.connection->state == tcp_connection::State::Closed) {
+        const tcp_connection::State state = connection_state(entry.connection);
+        if(result == tcp_connection::Result::Timeout || state == tcp_connection::State::Reset ||
+           state == tcp_connection::State::Closed) {
             (void)scheduler::wake_all(&entry.receive_waiters);
         }
-        interrupts::restore(previous_state);
     }
+    synchronization::unlock(&g_tcp_registry_lock, registry_state);
 }
 
 void wake_registered_receivers() {
-    const interrupts::State previous_state = interrupts::save_and_disable();
+    const interrupts::State previous_state = synchronization::lock(&g_tcp_registry_lock);
     for(auto& entry : g_tcp_connections) {
         if(entry.active) {
             // Wake periodically so receive timeouts are re-evaluated even when no packet arrives.
             (void)scheduler::wake_all(&entry.receive_waiters);
         }
     }
-    interrupts::restore(previous_state);
+    synchronization::unlock(&g_tcp_registry_lock, previous_state);
 }
 
 void network_service_entry(void*) {
@@ -581,6 +622,8 @@ bool initialize() {
         return false;
     }
     synchronization::initialize(&g_receive_lock);
+    synchronization::initialize(&g_tcp_registry_lock);
+    synchronization::initialize(&g_tcp_transmit_lock);
     ethernet::MacAddress mac;
     copy_mac(&mac, g_device->mac);
     dhcp::Configuration configuration;
@@ -822,10 +865,10 @@ TcpStatus tcp_connect(
             unregister_tcp_connection(connection);
             return input_result;
         }
-        if(connection->state == tcp_connection::State::Established) {
+        if(connection_state(connection) == tcp_connection::State::Established) {
             return TcpStatus::Success;
         }
-        if(connection->state == tcp_connection::State::Reset) {
+        if(connection_state(connection) == tcp_connection::State::Reset) {
             unregister_tcp_connection(connection);
             return TcpStatus::Reset;
         }
@@ -841,7 +884,7 @@ TcpStatus tcp_send(tcp_connection::Connection* connection, const void* data, uin
     if(connection == nullptr || data == nullptr || length == 0) {
         return TcpStatus::InvalidArgument;
     }
-    if(connection->state != tcp_connection::State::Established) {
+    if(connection_state(connection) != tcp_connection::State::Established) {
         return TcpStatus::NotConnected;
     }
     interrupts::enable();
@@ -858,7 +901,7 @@ TcpStatus tcp_send(tcp_connection::Connection* connection, const void* data, uin
         if(send_result != tcp_connection::Result::Success) {
             return send_result == tcp_connection::Result::WouldBlock ? TcpStatus::IoError : TcpStatus::IoError;
         }
-        while(connection->send_unacknowledged != connection->send_next) {
+        while(connection_send_pending(connection)) {
             if(!time_remaining(start, timeout_ticks)) {
                 return TcpStatus::Timeout;
             }
@@ -871,7 +914,7 @@ TcpStatus tcp_send(tcp_connection::Connection* connection, const void* data, uin
             if(input_result != TcpStatus::Success) {
                 return input_result;
             }
-            if(connection->state == tcp_connection::State::Reset) {
+            if(connection_state(connection) == tcp_connection::State::Reset) {
                 return TcpStatus::Reset;
             }
         }
@@ -897,8 +940,9 @@ TcpStatus tcp_receive(
     if(registered == nullptr) {
         return TcpStatus::NotConnected;
     }
-    if(connection->state != tcp_connection::State::Established && connection->state != tcp_connection::State::FinWait &&
-       connection->state != tcp_connection::State::TimeWait) {
+    const tcp_connection::State state = connection_state(connection);
+    if(state != tcp_connection::State::Established && state != tcp_connection::State::FinWait &&
+       state != tcp_connection::State::TimeWait) {
         return TcpStatus::NotConnected;
     }
     interrupts::enable();
@@ -940,19 +984,20 @@ TcpStatus tcp_close(tcp_connection::Connection* connection, uint64_t timeout_tic
     if(connection == nullptr) {
         return TcpStatus::InvalidArgument;
     }
-    if(connection->state == tcp_connection::State::Closed) {
+    if(connection_state(connection) == tcp_connection::State::Closed) {
         unregister_tcp_connection(connection);
         return TcpStatus::Success;
     }
     interrupts::enable();
     const uint64_t start = timer::ticks();
-    if(connection->state == tcp_connection::State::Established &&
+    if(connection_state(connection) == tcp_connection::State::Established &&
        tcp_connection::close(connection, send_tcp_segment, nullptr, start) != tcp_connection::Result::Success) {
         unregister_tcp_connection(connection);
         return TcpStatus::IoError;
     }
     while(time_remaining(start, timeout_ticks)) {
-        if(connection->state == tcp_connection::State::Closed || connection->state == tcp_connection::State::TimeWait) {
+        const tcp_connection::State state = connection_state(connection);
+        if(state == tcp_connection::State::Closed || state == tcp_connection::State::TimeWait) {
             unregister_tcp_connection(connection);
             return TcpStatus::Success;
         }

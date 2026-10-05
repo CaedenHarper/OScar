@@ -1,6 +1,7 @@
 #pragma once
 
 #include "arp.hpp"
+#include "spinlock.hpp"
 #include "tcp.hpp"
 
 #include <stdint.h>
@@ -66,6 +67,7 @@ struct Connection {
     uint16_t receive_length;
     uint64_t time_wait_deadline;
     bool peer_closed;
+    synchronization::Spinlock state_lock;
 };
 
 /** Initialize an inactive connection with a caller-selected initial sequence. */

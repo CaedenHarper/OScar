@@ -11,6 +11,24 @@ namespace tcp_connection {
 
 namespace {
 
+class StateGuard {
+public:
+    explicit StateGuard(Connection* connection)
+        : connection_(connection), previous_state_(synchronization::lock(&connection->state_lock)) {
+    }
+
+    ~StateGuard() {
+        synchronization::unlock(&connection_->state_lock, previous_state_);
+    }
+
+    StateGuard(const StateGuard&) = delete;
+    StateGuard& operator=(const StateGuard&) = delete;
+
+private:
+    Connection* connection_;
+    interrupts::State previous_state_;
+};
+
 bool sequence_before(uint32_t first, uint32_t second) {
     return static_cast<int32_t>(first - second) < 0;
 }
@@ -89,6 +107,7 @@ void initialize(
     for(uint64_t index = 0; index < sizeof(*connection); ++index) {
         bytes[index] = 0;
     }
+    synchronization::initialize(&connection->state_lock);
     connection->local_address = local_address;
     connection->remote_address = remote_address;
     connection->local_port = local_port;
@@ -99,7 +118,11 @@ void initialize(
 }
 
 Result open(Connection* connection, SendCallback callback, void* context, uint64_t now) {
-    if(connection == nullptr || callback == nullptr || connection->state != State::Closed) {
+    if(connection == nullptr || callback == nullptr) {
+        return Result::InvalidArgument;
+    }
+    StateGuard guard(connection);
+    if(connection->state != State::Closed) {
         return Result::InvalidArgument;
     }
     if(!send_segment(connection, callback, context, connection->send_next, tcp::kSyn, nullptr, 0, now, true)) {
@@ -121,6 +144,7 @@ Result send(
     if(connection == nullptr || callback == nullptr || (length != 0 && data == nullptr)) {
         return Result::InvalidArgument;
     }
+    StateGuard guard(connection);
     if(connection->state != State::Established) {
         return connection->state == State::Reset ? Result::Reset : Result::Closed;
     }
@@ -146,6 +170,7 @@ Result process(
     if(connection == nullptr || callback == nullptr) {
         return Result::InvalidArgument;
     }
+    StateGuard guard(connection);
     if((segment.flags & tcp::kRst) != 0) {
         connection->state = State::Reset;
         clear_outstanding(connection);
@@ -233,6 +258,7 @@ Result receive(Connection* connection, void* output, uint16_t capacity, uint16_t
     if(connection == nullptr || output == nullptr || length == nullptr) {
         return Result::InvalidArgument;
     }
+    StateGuard guard(connection);
     const uint16_t copied = connection->receive_length < capacity ? connection->receive_length : capacity;
     auto* destination = static_cast<uint8_t*>(output);
     for(uint16_t index = 0; index < copied; ++index) {
@@ -255,6 +281,7 @@ Result close(Connection* connection, SendCallback callback, void* context, uint6
     if(connection == nullptr || callback == nullptr) {
         return Result::InvalidArgument;
     }
+    StateGuard guard(connection);
     if(connection->state != State::Established || outstanding(*connection)) {
         return connection->state == State::Reset ? Result::Reset : Result::WouldBlock;
     }
@@ -272,6 +299,7 @@ Result poll(Connection* connection, SendCallback callback, void* context, uint64
     if(connection == nullptr || callback == nullptr) {
         return Result::InvalidArgument;
     }
+    StateGuard guard(connection);
     if(connection->state == State::TimeWait) {
         if(now >= connection->time_wait_deadline) {
             connection->state = State::Closed;
