@@ -1,5 +1,6 @@
 #include "syscalls.hpp"
 
+#include "descriptor_table.hpp"
 #include "interrupts.hpp"
 #include "loader.hpp"
 #include "process.hpp"
@@ -22,7 +23,7 @@ process::Process* current_process() {
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 int64_t read_pipe(const syscalls::Frame* frame, process::Process* owner) {
-    auto* pipe = process::pipe_descriptor(owner, frame->rdi, nullptr);
+    auto* pipe = owner == nullptr ? nullptr : descriptor::pipe(&owner->descriptors, frame->rdi, nullptr);
     if(pipe == nullptr || frame->rdx == 0) {
         return pipe == nullptr ? kErrorBadDescriptor : 0;
     }
@@ -227,7 +228,7 @@ int64_t write_file_descriptor(const syscalls::Frame* frame, process::Process* ow
     if(frame->rdx != 0 && !user_memory::validate(frame->rsi, frame->rdx, false)) {
         return kErrorInvalidArgument;
     }
-    auto* file = process::file_descriptor(owner, frame->rdi);
+    auto* file = owner == nullptr ? nullptr : descriptor::file(&owner->descriptors, frame->rdi);
     constexpr uint64_t kBufferSize = 128;
     char buffer[kBufferSize];
     uint64_t copied = 0;
@@ -272,7 +273,8 @@ int64_t write(const syscalls::Frame* frame) {
     if(owner == nullptr || frame->rdx > kMaximumWriteLength) {
         return kErrorInvalidArgument;
     }
-    const process::DescriptorKind kind = process::descriptor_kind(owner, frame->rdi);
+    const descriptor::Kind kind =
+        owner == nullptr ? descriptor::Kind::Invalid : descriptor::kind(&owner->descriptors, frame->rdi);
     if(kind == process::DescriptorKind::File) {
         return write_file_descriptor(frame, owner);
     }

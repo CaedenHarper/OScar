@@ -1,13 +1,12 @@
 #include "process.hpp"
 
+#include "descriptor_table.hpp"
 #include "interrupts.hpp"
 #include "kernel_heap.hpp"
-#include "network.hpp"
 #include "process_internal.hpp"
 #include "scheduler.hpp"
 #include "thread.hpp"
 #include "thread_internal.hpp"
-#include "vfs.hpp"
 #include "virtual_memory.hpp"
 #include "wait_queue.hpp"
 
@@ -63,22 +62,10 @@ Process* create(Process* parent) {
     }
     // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index, cppcoreguidelines-pro-bounds-pointer-arithmetic)
     process->all_next = nullptr;
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
-    for(auto& descriptor : process->descriptors) {
-        descriptor = {};
-    }
+    descriptor::initialize(&process->descriptors);
     process->working_directory[0] = '/';
     process->working_directory[1] = '\0';
-    process->descriptors[kStandardInput] = {
-        .kind = DescriptorKind::StandardInput, .file = {}, .pipe = nullptr, .socket = nullptr, .open = true
-    };
-    process->descriptors[kStandardOutput] = {
-        .kind = DescriptorKind::StandardOutput, .file = {}, .pipe = nullptr, .socket = nullptr, .open = true
-    };
-    process->descriptors[kStandardError] = {
-        .kind = DescriptorKind::StandardError, .file = {}, .pipe = nullptr, .socket = nullptr, .open = true
-    };
-    if(parent != nullptr && !set_parent(process, parent)) {
+    if(parent != nullptr && !initialize_child(process, parent)) {
         (void)destroy(process);
         return nullptr;
     }
@@ -276,26 +263,24 @@ void set_image_path(Process* process, const char* path) {
 }
 
 bool inherit_descriptors(Process* child, const Process* parent) {
-    if(child == nullptr || parent == nullptr) {
+    return child != nullptr && parent != nullptr && descriptor::inherit(&child->descriptors, &parent->descriptors);
+}
+
+bool initialize_child(Process* child, Process* parent) {
+    if(child == nullptr || parent == nullptr || !inherit_descriptors(child, parent)) {
         return false;
     }
 
-    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index)
-    for(uint32_t descriptor = 0; descriptor < kMaximumFileDescriptors; ++descriptor) {
-        child->descriptors[descriptor] = parent->descriptors[descriptor];
-        if(parent->descriptors[descriptor].pipe != nullptr) {
-            if(parent->descriptors[descriptor].kind == DescriptorKind::PipeRead) {
-                ++child->descriptors[descriptor].pipe->readers;
-            } else if(parent->descriptors[descriptor].kind == DescriptorKind::PipeWrite) {
-                ++child->descriptors[descriptor].pipe->writers;
-            }
-        }
-        if(parent->descriptors[descriptor].socket != nullptr) {
-            ++child->descriptors[descriptor].socket->references;
-        }
+    // The working-directory buffer is fixed-size and process creation guarantees a terminator.
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index, cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    uint32_t index = 0;
+    while(index < kMaximumWorkingDirectoryLength && parent->working_directory[index] != '\0') {
+        child->working_directory[index] = parent->working_directory[index];
+        ++index;
     }
-    // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index)
-    return true;
+    child->working_directory[index] = '\0';
+    // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index, cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    return set_parent(child, parent);
 }
 
 bool set_parent(Process* child, Process* parent) {
@@ -385,230 +370,6 @@ bool reap_child_locked(Process* parent, Process* child, int64_t* status) {
 
 bool has_parent(const Process* process) {
     return process != nullptr && process->parent != nullptr;
-}
-
-int32_t allocate_file_descriptor(Process* process, const vfs::File* file) {
-    if(process == nullptr || file == nullptr || !file->open) {
-        return -1;
-    }
-    const interrupts::State previous_state = interrupts::save_and_disable();
-    for(uint32_t descriptor = kFirstFileDescriptor; descriptor < kMaximumFileDescriptors; ++descriptor) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
-        if(!process->descriptors[descriptor].open) {
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
-            process->descriptors[descriptor] = {
-                .kind = DescriptorKind::File, .file = *file, .pipe = nullptr, .socket = nullptr, .open = true
-            };
-            interrupts::restore(previous_state);
-            return static_cast<int32_t>(descriptor);
-        }
-    }
-    interrupts::restore(previous_state);
-    return -1;
-}
-
-bool create_pipe(Process* process, int64_t descriptors[2]) {
-    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index, cppcoreguidelines-pro-bounds-pointer-arithmetic,
-    //              cppcoreguidelines-pro-bounds-array-to-pointer-decay)
-    if(process == nullptr || descriptors == nullptr) {
-        return false;
-    }
-    const interrupts::State previous_state = interrupts::save_and_disable();
-    auto* pipe = static_cast<Pipe*>(kernel_heap::allocate(sizeof(Pipe)));
-    if(pipe == nullptr) {
-        interrupts::restore(previous_state);
-        return false;
-    }
-    pipe->read_position = 0;
-    pipe->write_position = 0;
-    pipe->bytes = 0;
-    pipe->readers = 1;
-    pipe->writers = 1;
-    synchronization::initialize(&pipe->read_waiters);
-    synchronization::initialize(&pipe->write_waiters);
-    int32_t read_descriptor = -1;
-    int32_t write_descriptor = -1;
-    for(uint32_t descriptor = kFirstFileDescriptor; descriptor < kMaximumFileDescriptors; ++descriptor) {
-        if(!process->descriptors[descriptor].open) {
-            if(read_descriptor < 0) {
-                read_descriptor = static_cast<int32_t>(descriptor);
-            } else {
-                write_descriptor = static_cast<int32_t>(descriptor);
-                break;
-            }
-        }
-    }
-    if(read_descriptor < 0 || write_descriptor < 0) {
-        (void)kernel_heap::free(pipe);
-        interrupts::restore(previous_state);
-        return false;
-    }
-    process->descriptors[read_descriptor] = {
-        .kind = DescriptorKind::PipeRead, .file = {}, .pipe = pipe, .socket = nullptr, .open = true
-    };
-    process->descriptors[write_descriptor] = {
-        .kind = DescriptorKind::PipeWrite, .file = {}, .pipe = pipe, .socket = nullptr, .open = true
-    };
-    descriptors[0] = read_descriptor;
-    descriptors[1] = write_descriptor;
-    // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index, cppcoreguidelines-pro-bounds-pointer-arithmetic,
-    //            cppcoreguidelines-pro-bounds-array-to-pointer-decay)
-    interrupts::restore(previous_state);
-    return true;
-}
-
-int32_t allocate_socket(Process* process, Socket* socket) {
-    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index)
-    if(process == nullptr || socket == nullptr) {
-        return -1;
-    }
-    const interrupts::State previous_state = interrupts::save_and_disable();
-    for(uint32_t descriptor = kFirstFileDescriptor; descriptor < kMaximumFileDescriptors; ++descriptor) {
-        if(!process->descriptors[descriptor].open) {
-            process->descriptors[descriptor] = {
-                .kind = DescriptorKind::Socket, .file = {}, .pipe = nullptr, .socket = socket, .open = true
-            };
-            interrupts::restore(previous_state);
-            return static_cast<int32_t>(descriptor);
-        }
-    }
-    interrupts::restore(previous_state);
-    return -1;
-}
-// NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index)
-
-int32_t duplicate_descriptor(Process* process, uint64_t descriptor, uint64_t target) {
-    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index)
-    if(process == nullptr || descriptor >= kMaximumFileDescriptors || target >= kMaximumFileDescriptors ||
-       !process->descriptors[descriptor].open) {
-        return -1;
-    }
-    if(descriptor == target) {
-        return static_cast<int32_t>(target);
-    }
-    const interrupts::State previous_state = interrupts::save_and_disable();
-    if(process->descriptors[target].open && !close_file_descriptor(process, target)) {
-        interrupts::restore(previous_state);
-        return -1;
-    }
-    process->descriptors[target] = process->descriptors[descriptor];
-    if(process->descriptors[target].pipe != nullptr) {
-        if(process->descriptors[target].kind == DescriptorKind::PipeRead) {
-            ++process->descriptors[target].pipe->readers;
-        } else if(process->descriptors[target].kind == DescriptorKind::PipeWrite) {
-            ++process->descriptors[target].pipe->writers;
-        }
-    }
-    if(process->descriptors[target].socket != nullptr) {
-        ++process->descriptors[target].socket->references;
-    }
-    // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index)
-    interrupts::restore(previous_state);
-    return static_cast<int32_t>(target);
-}
-
-Socket* socket_descriptor(Process* process, uint64_t descriptor) {
-    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index)
-    if(process == nullptr || descriptor >= kMaximumFileDescriptors || !process->descriptors[descriptor].open ||
-       process->descriptors[descriptor].kind != DescriptorKind::Socket) {
-        return nullptr;
-    }
-    return process->descriptors[descriptor].socket;
-}
-// NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index)
-
-Pipe* pipe_descriptor(Process* process, uint64_t descriptor, DescriptorKind* kind) {
-    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index)
-    if(process == nullptr || descriptor >= kMaximumFileDescriptors || !process->descriptors[descriptor].open ||
-       process->descriptors[descriptor].pipe == nullptr) {
-        return nullptr;
-    }
-    if(kind != nullptr) {
-        *kind = process->descriptors[descriptor].kind;
-    }
-    auto* pipe = process->descriptors[descriptor].pipe;
-    // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index)
-    return pipe;
-}
-
-vfs::File* file_descriptor(Process* process, uint64_t descriptor) {
-    if(process == nullptr || descriptor >= kMaximumFileDescriptors ||
-       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
-       !process->descriptors[descriptor].open ||
-       // Standard streams are not filesystem files; terminal handling will consume these kinds later.
-       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
-       process->descriptors[descriptor].kind != DescriptorKind::File) {
-        return nullptr;
-    }
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
-    return &process->descriptors[descriptor].file;
-}
-
-DescriptorKind descriptor_kind(const Process* process, uint64_t descriptor) {
-    if(process == nullptr || descriptor >= kMaximumFileDescriptors ||
-       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
-       !process->descriptors[descriptor].open) {
-        return DescriptorKind::Invalid;
-    }
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
-    return process->descriptors[descriptor].kind;
-}
-
-bool close_file_descriptor(Process* process, uint64_t descriptor) {
-    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index)
-    if(process == nullptr || descriptor >= kMaximumFileDescriptors ||
-       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
-       !process->descriptors[descriptor].open) {
-        return false;
-    }
-    const interrupts::State previous_state = interrupts::save_and_disable();
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
-    if(process->descriptors[descriptor].kind == DescriptorKind::File &&
-       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
-       vfs::close(&process->descriptors[descriptor].file) != vfs::Status::Success) {
-        interrupts::restore(previous_state);
-        return false;
-    }
-    auto* pipe = process->descriptors[descriptor].pipe;
-    if(pipe != nullptr) {
-        if(process->descriptors[descriptor].kind == DescriptorKind::PipeRead) {
-            --pipe->readers;
-        } else if(process->descriptors[descriptor].kind == DescriptorKind::PipeWrite) {
-            --pipe->writers;
-        }
-        // Endpoint closure changes EOF and full-buffer behavior, so wake both
-        // sides even if no data was added.
-        (void)scheduler::wake_all(&pipe->read_waiters);
-        (void)scheduler::wake_all(&pipe->write_waiters);
-        if(pipe->readers == 0 && pipe->writers == 0) {
-            (void)kernel_heap::free(pipe);
-        }
-    }
-    auto* socket = process->descriptors[descriptor].socket;
-    if(socket != nullptr) {
-        --socket->references;
-        if(socket->references == 0) {
-            network::tcp_unregister(&socket->connection);
-            (void)kernel_heap::free(socket);
-        }
-    }
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor was validated by helper
-    process->descriptors[descriptor] = {};
-    // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index)
-    interrupts::restore(previous_state);
-    return true;
-}
-
-void close_file_descriptors(Process* process) {
-    if(process == nullptr) {
-        return;
-    }
-    for(uint32_t descriptor = 0; descriptor < kMaximumFileDescriptors; ++descriptor) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index) descriptor is range-checked above
-        if(process->descriptors[descriptor].open) {
-            (void)close_file_descriptor(process, descriptor);
-        }
-    }
 }
 
 } // namespace process

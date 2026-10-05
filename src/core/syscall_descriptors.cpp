@@ -1,5 +1,5 @@
+#include "descriptor_table.hpp"
 #include "interrupts.hpp"
-#include "network.hpp"
 #include "process_internal.hpp"
 #include "scheduler.hpp"
 #include "syscall_internal.hpp"
@@ -29,7 +29,7 @@ int64_t read_terminal(const syscalls::Frame* frame) {
 }
 
 int64_t read_file(const syscalls::Frame* frame, process::Process* owner) {
-    auto* file = process::file_descriptor(owner, frame->rdi);
+    auto* file = owner == nullptr ? nullptr : descriptor::file(&owner->descriptors, frame->rdi);
     uint8_t buffer[kReadBufferSize];
     uint32_t total = 0;
     while(total < frame->rdx) {
@@ -64,25 +64,25 @@ int64_t read(const syscalls::Frame* frame) {
     if(frame->rdx > kMaximumReadLength || (frame->rdx != 0 && !user_memory::validate(frame->rsi, frame->rdx, true))) {
         return kErrorInvalidArgument;
     }
-    switch(process::descriptor_kind(owner, frame->rdi)) {
-        case process::DescriptorKind::StandardInput:
+    switch(owner == nullptr ? descriptor::Kind::Invalid : descriptor::kind(&owner->descriptors, frame->rdi)) {
+        case descriptor::Kind::StandardInput:
             return read_terminal(frame);
-        case process::DescriptorKind::File:
+        case descriptor::Kind::File:
             return read_file(frame, owner);
-        case process::DescriptorKind::PipeRead:
+        case descriptor::Kind::PipeRead:
             return read_pipe(frame, owner);
-        case process::DescriptorKind::Invalid:
-        case process::DescriptorKind::StandardOutput:
-        case process::DescriptorKind::StandardError:
-        case process::DescriptorKind::PipeWrite:
-        case process::DescriptorKind::Socket:
+        case descriptor::Kind::Invalid:
+        case descriptor::Kind::StandardOutput:
+        case descriptor::Kind::StandardError:
+        case descriptor::Kind::PipeWrite:
+        case descriptor::Kind::Socket:
             return kErrorBadDescriptor;
     }
     return kErrorBadDescriptor;
 }
 
 int64_t write_pipe(const syscalls::Frame* frame, process::Process* owner) {
-    auto* pipe = process::pipe_descriptor(owner, frame->rdi, nullptr);
+    auto* pipe = owner == nullptr ? nullptr : descriptor::pipe(&owner->descriptors, frame->rdi, nullptr);
     if(pipe == nullptr) {
         return kErrorBadDescriptor;
     }
@@ -126,10 +126,10 @@ int64_t duplicate(const syscalls::Frame* frame, bool explicit_target) {
     uint64_t target = frame->rsi;
     if(!explicit_target) {
         target = process::kMaximumFileDescriptors;
-        for(uint64_t descriptor = process::kFirstFileDescriptor; descriptor < process::kMaximumFileDescriptors;
-            ++descriptor) {
-            if(process::descriptor_kind(owner, descriptor) == process::DescriptorKind::Invalid) {
-                target = descriptor;
+        for(uint64_t candidate = process::kFirstFileDescriptor; candidate < process::kMaximumFileDescriptors;
+            ++candidate) {
+            if(descriptor::kind(&owner->descriptors, candidate) == descriptor::Kind::Invalid) {
+                target = candidate;
                 break;
             }
         }
@@ -137,7 +137,7 @@ int64_t duplicate(const syscalls::Frame* frame, bool explicit_target) {
     if(target >= process::kMaximumFileDescriptors) {
         return kErrorIo;
     }
-    const int32_t result = process::duplicate_descriptor(owner, frame->rdi, target);
+    const int32_t result = descriptor::duplicate(&owner->descriptors, frame->rdi, target);
     return result < 0 ? kErrorBadDescriptor : result;
 }
 
@@ -147,13 +147,13 @@ int64_t create_pipe(const syscalls::Frame* frame) {
         return kErrorInvalidArgument;
     }
     int64_t descriptors[2] = {-1, -1};
-    if(!process::create_pipe(owner, &descriptors[0]) ||
+    if(!descriptor::create_pipe(&owner->descriptors, &descriptors[0]) ||
        !user_memory::copy_to_user(frame->rdi, &descriptors[0], sizeof(descriptors))) {
         if(descriptors[0] >= 0) {
-            (void)process::close_file_descriptor(owner, static_cast<uint64_t>(descriptors[0]));
+            (void)descriptor::close(&owner->descriptors, static_cast<uint64_t>(descriptors[0]));
         }
         if(descriptors[1] >= 0) {
-            (void)process::close_file_descriptor(owner, static_cast<uint64_t>(descriptors[1]));
+            (void)descriptor::close(&owner->descriptors, static_cast<uint64_t>(descriptors[1]));
         }
         return kErrorIo;
     }
@@ -162,11 +162,7 @@ int64_t create_pipe(const syscalls::Frame* frame) {
 
 int64_t close(const syscalls::Frame* frame) {
     auto* owner = current_process();
-    auto* socket = owner == nullptr ? nullptr : process::socket_descriptor(owner, frame->rdi);
-    if(socket != nullptr && socket->references == 1) {
-        (void)network::tcp_close(&socket->connection, kSocketTimeoutTicks);
-    }
-    if(owner == nullptr || !process::close_file_descriptor(owner, frame->rdi)) {
+    if(owner == nullptr || !descriptor::close(&owner->descriptors, frame->rdi, kSocketTimeoutTicks)) {
         return kErrorBadDescriptor;
     }
     return 0;
@@ -174,7 +170,7 @@ int64_t close(const syscalls::Frame* frame) {
 
 int64_t seek(const syscalls::Frame* frame) {
     auto* owner = current_process();
-    auto* file = owner == nullptr ? nullptr : process::file_descriptor(owner, frame->rdi);
+    auto* file = owner == nullptr ? nullptr : descriptor::file(&owner->descriptors, frame->rdi);
     if(file == nullptr) {
         return kErrorBadDescriptor;
     }

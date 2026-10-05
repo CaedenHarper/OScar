@@ -101,6 +101,16 @@ void test_process_structures() {
         panic::halt("process smoke test could not create independent processes");
     }
 
+    int64_t pipe_descriptors[2] = {-1, -1};
+    if(!descriptor::create_pipe(&first_process->descriptors, pipe_descriptors) || pipe_descriptors[0] != 3 ||
+       pipe_descriptors[1] != 4 || descriptor::duplicate(&first_process->descriptors, pipe_descriptors[0], 5) != 5 ||
+       !descriptor::inherit(&second_process->descriptors, &first_process->descriptors) ||
+       descriptor::kind(&second_process->descriptors, 3) != descriptor::Kind::PipeRead ||
+       descriptor::kind(&second_process->descriptors, 4) != descriptor::Kind::PipeWrite ||
+       descriptor::close(&first_process->descriptors, 5) == false) {
+        panic::halt("descriptor table smoke test could not allocate, duplicate, or inherit descriptors");
+    }
+
     auto* first_thread = kernel_thread::create(first_process, thread_test_entry, nullptr, kThreadStackSize);
     auto* second_thread = kernel_thread::create(first_process, thread_test_entry, nullptr, kThreadStackSize);
     if(first_thread == nullptr || second_thread == nullptr ||

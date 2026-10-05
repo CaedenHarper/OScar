@@ -1,3 +1,4 @@
+#include "descriptor_table.hpp"
 #include "process.hpp"
 #include "process_internal.hpp"
 #include "syscall_internal.hpp"
@@ -29,7 +30,7 @@ int64_t open(const syscalls::Frame* frame) {
     if(result != vfs::Status::Success) {
         return translate_vfs_status(result);
     }
-    const int32_t descriptor = process::allocate_file_descriptor(owner, &file);
+    const int32_t descriptor = owner == nullptr ? -1 : descriptor::allocate_file(&owner->descriptors, &file);
     if(descriptor < 0) {
         (void)vfs::close(&file);
         return kErrorIo;

@@ -70,8 +70,6 @@ Priority work:
   - Define complete process-exit, zombie, orphan, and blocked-I/O cleanup semantics.
 - Strengthen filesystem mutation:
   - Improve rollback and crash-consistency behavior for metadata updates.
-- Simplify the syscall and build layers:
-  - Consolidate duplicated user-program build rules.
 - Expand test coverage:
   - Add repeated-operation, invalid-user-memory, resource-exhaustion, and failure-path tests.
 

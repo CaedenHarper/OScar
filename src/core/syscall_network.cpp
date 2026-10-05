@@ -1,4 +1,5 @@
 #include "arp.hpp"
+#include "descriptor_table.hpp"
 #include "kernel_heap.hpp"
 #include "network.hpp"
 #include "process_internal.hpp"
@@ -103,7 +104,7 @@ int64_t socket_create(const syscalls::Frame* frame) {
     }
     tcp_connection::initialize(&socket->connection, {}, {}, 0, 0, 0);
     socket->references = 1;
-    const int32_t descriptor = process::allocate_socket(owner, socket);
+    const int32_t descriptor = owner == nullptr ? -1 : descriptor::allocate_socket(&owner->descriptors, socket);
     if(descriptor < 0) {
         (void)kernel_heap::free(socket);
         return kErrorIo;
@@ -113,7 +114,7 @@ int64_t socket_create(const syscalls::Frame* frame) {
 
 int64_t socket_connect(const syscalls::Frame* frame) {
     auto* owner = current_process();
-    auto* socket = owner == nullptr ? nullptr : process::socket_descriptor(owner, frame->rdi);
+    auto* socket = owner == nullptr ? nullptr : descriptor::socket(&owner->descriptors, frame->rdi);
     if(socket == nullptr || frame->rsi == 0 || frame->rdx == 0 || frame->rdx > UINT16_MAX ||
        !user_memory::validate(frame->rsi, sizeof(arp::Ipv4Address), false)) {
         return kErrorInvalidArgument;
@@ -144,7 +145,7 @@ int64_t socket_connect(const syscalls::Frame* frame) {
 
 int64_t socket_send(const syscalls::Frame* frame) {
     auto* owner = current_process();
-    auto* socket = owner == nullptr ? nullptr : process::socket_descriptor(owner, frame->rdi);
+    auto* socket = owner == nullptr ? nullptr : descriptor::socket(&owner->descriptors, frame->rdi);
     if(socket == nullptr || frame->rdx == 0 || frame->rdx > kMaximumSocketTransfer ||
        !user_memory::validate(frame->rsi, frame->rdx, false)) {
         return kErrorInvalidArgument;
@@ -174,7 +175,7 @@ int64_t socket_send(const syscalls::Frame* frame) {
 
 int64_t socket_receive(const syscalls::Frame* frame) {
     auto* owner = current_process();
-    auto* socket = owner == nullptr ? nullptr : process::socket_descriptor(owner, frame->rdi);
+    auto* socket = owner == nullptr ? nullptr : descriptor::socket(&owner->descriptors, frame->rdi);
     if(socket == nullptr || frame->rdx == 0 || frame->rdx > kMaximumSocketTransfer ||
        !user_memory::validate(frame->rsi, frame->rdx, true)) {
         return kErrorInvalidArgument;

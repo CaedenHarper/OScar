@@ -1,59 +1,25 @@
 #pragma once
 
+#include "descriptor_table.hpp"
 #include "process.hpp"
-#include "tcp_connection.hpp"
 #include "thread.hpp"
-#include "vfs.hpp"
 #include "virtual_memory.hpp"
-#include "wait_queue.hpp"
 
 #include <stdint.h>
 
 namespace process {
 
-constexpr uint32_t kMaximumFileDescriptors = 16;
-constexpr uint32_t kFirstFileDescriptor = 3;
-constexpr uint32_t kStandardInput = 0;
-constexpr uint32_t kStandardOutput = 1;
-constexpr uint32_t kStandardError = 2;
+constexpr uint32_t kMaximumFileDescriptors = descriptor::kMaximumCount;
+constexpr uint32_t kFirstFileDescriptor = descriptor::kFirstAllocatable;
+constexpr uint32_t kStandardInput = descriptor::kStandardInput;
+constexpr uint32_t kStandardOutput = descriptor::kStandardOutput;
+constexpr uint32_t kStandardError = descriptor::kStandardError;
 constexpr uint32_t kMaximumWorkingDirectoryLength = 511;
 
-enum class DescriptorKind : uint8_t {
-    Invalid,
-    StandardInput,
-    StandardOutput,
-    StandardError,
-    File,
-    PipeRead,
-    PipeWrite,
-    Socket,
-};
-
-constexpr uint32_t kPipeCapacity = 4096;
-
-struct Pipe {
-    uint8_t buffer[kPipeCapacity];
-    uint32_t read_position;
-    uint32_t write_position;
-    uint32_t bytes;
-    uint32_t readers;
-    uint32_t writers;
-    synchronization::WaitQueue read_waiters;
-    synchronization::WaitQueue write_waiters;
-};
-
-struct Socket {
-    tcp_connection::Connection connection;
-    uint32_t references;
-};
-
-struct FileDescriptor {
-    DescriptorKind kind;
-    vfs::File file;
-    Pipe* pipe;
-    Socket* socket;
-    bool open;
-};
+using DescriptorKind = descriptor::Kind;
+using Pipe = descriptor::Pipe;
+using Socket = descriptor::Socket;
+constexpr uint32_t kPipeCapacity = descriptor::kPipeCapacity;
 
 struct Process {
     ProcessId id;
@@ -63,7 +29,7 @@ struct Process {
     kernel_thread::Thread* thread_head;
     kernel_thread::Thread* thread_tail;
     uint32_t thread_count;
-    FileDescriptor descriptors[kMaximumFileDescriptors];
+    descriptor::Table descriptors;
     char working_directory[kMaximumWorkingDirectoryLength + 1];
     Process* parent;
     Process* child_head;
@@ -78,6 +44,8 @@ struct Process {
 bool attach_thread(Process* process, kernel_thread::Thread* thread);
 bool detach_thread(kernel_thread::Thread* thread);
 bool set_parent(Process* child, Process* parent);
+/** Initialize child-owned inheritance and parent linkage before loading its first thread. */
+bool initialize_child(Process* child, Process* parent);
 void record_exit(Process* process, int64_t status);
 Process* find_child_locked(Process* parent, ProcessId child_id);
 bool reap_child_locked(Process* parent, Process* child, int64_t* status);
