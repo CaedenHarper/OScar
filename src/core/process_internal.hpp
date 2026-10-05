@@ -3,6 +3,7 @@
 #include "descriptor_table.hpp"
 #include "process.hpp"
 #include "thread.hpp"
+#include "vfs.hpp"
 #include "virtual_memory.hpp"
 
 #include <stdint.h>

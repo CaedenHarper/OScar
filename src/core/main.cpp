@@ -85,7 +85,8 @@ extern "C" [[noreturn]] void kmain() {
 
     const limine_framebuffer* framebuffer_information = nullptr;
     if(g_framebuffer_request.response != nullptr && g_framebuffer_request.response->framebuffer_count != 0) {
-        framebuffer_information = g_framebuffer_request.response->framebuffers[0];
+        framebuffer_information =
+            g_framebuffer_request.response->framebuffers[0]; // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
     }
     if(framebuffer::initialize(framebuffer_information)) {
         serial::write("Framebuffer initialized: ");
