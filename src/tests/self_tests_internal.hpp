@@ -95,6 +95,7 @@ void test_malformed_elf_validation();
 void test_process_address_spaces();
 void test_block_device();
 void test_virtio_network();
+void test_network_requests();
 void test_pci();
 void test_ethernet();
 void test_arp();

@@ -6,7 +6,7 @@ USER_BUILD_DIR := $(BUILD_DIR)/user
 USER_PROGRAM_DIR := user/programs
 TEST_USER_PROGRAM_DIR := tests/user
 RUNTIME_USER_PROGRAM_NAMES := init cash ls top df du mount mkdir touch cp mv rm cat ps kill ping nslookup httpget
-TEST_USER_PROGRAM_NAMES := basic prime second filesystem divzero kernel_access invalid_opcode test_init http_parser_test shell_commands argv_test kill_target libc_test
+TEST_USER_PROGRAM_NAMES := basic prime second filesystem divzero kernel_access invalid_opcode test_init http_parser_test shell_commands argv_test kill_target libc_test network_parallel_test
 RUNTIME_USER_ELFS := $(addprefix $(USER_BUILD_DIR)/,$(addsuffix .elf,$(RUNTIME_USER_PROGRAM_NAMES)))
 TEST_USER_ELFS := $(addprefix $(USER_BUILD_DIR)/,$(addsuffix .elf,$(TEST_USER_PROGRAM_NAMES)))
 ifeq ($(OSCAR_TEST_SUITE),1)
@@ -132,7 +132,7 @@ $(BUILD_DIR):
 	mkdir -p $@
 
 ifeq ($(OSCAR_TEST_SUITE),1)
-IMAGE_PROGRAMS := $(RUNTIME_USER_ELFS) $(USER_BUILD_DIR)/second.elf $(USER_BUILD_DIR)/test_init.elf $(USER_BUILD_DIR)/http_parser_test.elf $(USER_BUILD_DIR)/shell_commands.elf $(USER_BUILD_DIR)/argv_test.elf $(USER_BUILD_DIR)/kill_target.elf $(USER_BUILD_DIR)/libc_test.elf
+IMAGE_PROGRAMS := $(RUNTIME_USER_ELFS) $(USER_BUILD_DIR)/second.elf $(USER_BUILD_DIR)/test_init.elf $(USER_BUILD_DIR)/http_parser_test.elf $(USER_BUILD_DIR)/shell_commands.elf $(USER_BUILD_DIR)/argv_test.elf $(USER_BUILD_DIR)/kill_target.elf $(USER_BUILD_DIR)/libc_test.elf $(USER_BUILD_DIR)/network_parallel_test.elf
 else
 IMAGE_PROGRAMS := $(RUNTIME_USER_ELFS)
 endif
@@ -173,6 +173,7 @@ $(VIRTIO_DISK): Makefile $(FILESYSTEM_TEST_FILES) $(IMAGE_PROGRAMS) $(if $(filte
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/test_init.elf /sbin/init' $@)
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/http_parser_test.elf /bin/http_parser_test' $@)
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/libc_test.elf /bin/libc_test' $@)
+	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(USER_BUILD_DIR)/network_parallel_test.elf /bin/network_parallel_test' $@)
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),debugfs -w -R 'write $(LARGE_FILESYSTEM_TEST_FILE) /large.bin' $@)
 	$(if $(filter 1,$(OSCAR_TEST_SUITE)),index=0; while [ $$index -lt 300 ]; do \
 		debugfs -w -R "write tests/filesystem/hello.txt /many/file$$index" $@ >/dev/null || exit 1; \

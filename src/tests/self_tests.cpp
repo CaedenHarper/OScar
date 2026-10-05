@@ -45,6 +45,7 @@ void run(uintptr_t hhdm_offset) {
     if(!scheduler::initialize()) {
         panic::halt("scheduler smoke test could not initialize the scheduler");
     }
+    self_tests_detail::test_network_requests();
 }
 
 void run_timer() {

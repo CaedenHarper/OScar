@@ -143,6 +143,20 @@ void complete(Request* request, State state, int32_t result, uint16_t transferre
     synchronization::unlock(&g_lock, previous_state);
 }
 
+void cancel(Request* request, int32_t result) {
+    if(request == nullptr) {
+        return;
+    }
+    const interrupts::State previous_state = synchronization::lock(&g_lock);
+    if(request->state == State::Queued) {
+        request->state = State::Cancelled;
+        request->result = result;
+        request->transferred = 0;
+        (void)scheduler::wake_all(&request->completion_waiters);
+    }
+    synchronization::unlock(&g_lock, previous_state);
+}
+
 void wait(Request* request) {
     if(request == nullptr) {
         return;

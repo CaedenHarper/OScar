@@ -66,6 +66,9 @@ bool has_pending();
 /** Complete a request and wake all threads waiting for its result. */
 void complete(Request* request, State state, int32_t result, uint16_t transferred);
 
+/** Cancel a queued request and wake all threads waiting for its result. */
+void cancel(Request* request, int32_t result);
+
 /** Block the caller until the service completes or cancels the request. */
 void wait(Request* request);
 

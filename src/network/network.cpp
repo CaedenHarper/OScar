@@ -450,6 +450,11 @@ void complete_request(network_requests::Request* request, TcpStatus status, uint
     network_requests::release(request);
 }
 
+void cancel_request(network_requests::Request* request, TcpStatus status) {
+    network_requests::cancel(request, static_cast<int32_t>(status));
+    network_requests::release(request);
+}
+
 void unregister_request_connection(network_requests::Request* request) {
     if(request->registered) {
         unregister_tcp_connection(request->connection);
@@ -470,7 +475,7 @@ void process_request(network_requests::Request* request, uint64_t now) {
            request->registered) {
             unregister_request_connection(request);
         }
-        complete_request(request, TcpStatus::Timeout);
+        cancel_request(request, TcpStatus::Timeout);
         return;
     }
 

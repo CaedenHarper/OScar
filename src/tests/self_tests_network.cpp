@@ -1,3 +1,4 @@
+#include "network_requests.hpp"
 #include "panic.hpp"
 #include "self_tests_internal.hpp"
 #include "serial.hpp"
@@ -31,6 +32,23 @@ void test_virtio_network() {
         panic::halt("VirtIO network driver did not report an empty receive queue");
     }
     serial::write("VirtIO polling network-driver initialization smoke test passed.\n");
+}
+
+void test_network_requests() {
+    network_requests::initialize();
+    auto* request = network_requests::allocate(network_requests::Type::Receive);
+    if(request == nullptr || !network_requests::enqueue(request)) {
+        panic::halt("network request cancellation smoke test could not enqueue a request");
+    }
+    network_requests::cancel(request, -1);
+    auto* queued = network_requests::dequeue();
+    if(queued != request || request->state != network_requests::State::Cancelled || request->result != -1 ||
+       network_requests::has_pending()) {
+        panic::halt("network request cancellation smoke test did not preserve cancelled state");
+    }
+    network_requests::release(request);
+    network_requests::release(request);
+    serial::write("Network request cancellation smoke test passed.\n");
 }
 
 } // namespace self_tests_detail

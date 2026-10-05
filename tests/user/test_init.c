@@ -21,6 +21,31 @@ static int run_child(const char* path, int* status) {
     return child_id >= 0 && waitpid((pid_t)child_id, status, 0) >= 0 && *status == 0;
 }
 
+static int run_parallel_network_test(const char* path, int* status) {
+    int64_t children[4] = {-1, -1, -1, -1};
+    int success = 1;
+    for(uint64_t index = 0; index < sizeof(children) / sizeof(children[0]); ++index) {
+        children[index] = oscar_spawn(path);
+        if(children[index] < 0) {
+            success = 0;
+            break;
+        }
+    }
+    for(uint64_t index = 0; index < sizeof(children) / sizeof(children[0]); ++index) {
+        if(children[index] >= 0 && (waitpid((pid_t)children[index], status, 0) < 0 || *status != 0)) {
+            success = 0;
+        }
+    }
+    return success;
+}
+
+static void require_parallel_network_test(const char* path, int* status) {
+    if(!run_parallel_network_test(path, status)) {
+        oscar_write_string("test init: parallel network test failed.\n");
+        exit_process();
+    }
+}
+
 int main(void) {
     static const char kStartedMessage[] = "test init: user-space test suite started.\n";
     static const char kShellCommandTestPath[] = "/bin/shell_commands";
@@ -40,6 +65,8 @@ int main(void) {
     static const char kNetworkPassed[] = "test init: network ping test passed.\n";
     static const char kSocketFailure[] = "test init: socket syscall test failed.\n";
     static const char kSocketPassed[] = "test init: socket syscall test passed.\n";
+    static const char kParallelNetworkPath[] = "/bin/network_parallel_test";
+    static const char kParallelNetworkPassed[] = "test init: parallel network test passed.\n";
     static const char kHttpParserPath[] = "/bin/http_parser_test";
     static const char kHttpParserFailure[] = "test init: HTTP parser test failed.\n";
     static const char kHttpParserPassed[] = "test init: HTTP parser test passed.\n";
@@ -139,6 +166,8 @@ int main(void) {
         exit_process();
     }
     oscar_write_string(kSocketPassed);
+    require_parallel_network_test(kParallelNetworkPath, &status);
+    oscar_write_string(kParallelNetworkPassed);
     if(!run_child(kHttpParserPath, &status)) {
         oscar_write_string(kHttpParserFailure);
         exit_process();
