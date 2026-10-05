@@ -14,6 +14,7 @@ enum class Type : uint8_t {
     Connect,
     Send,
     Receive,
+    Close,
 };
 
 enum class State : uint8_t {
