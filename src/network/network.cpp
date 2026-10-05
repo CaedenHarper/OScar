@@ -1064,6 +1064,16 @@ TcpStatus tcp_close(tcp_connection::Connection* connection, uint64_t timeout_tic
     if(connection == nullptr) {
         return TcpStatus::InvalidArgument;
     }
+    // Syscall entry clears IF. Every blocking-capable socket operation restores
+    // an interruptible execution path before returning to user mode, including
+    // this immediate cleanup path.
+    interrupts::enable();
+    // Closing an unregistered connection is already complete. This is the normal
+    // cleanup path after a failed connect and must not create a request that waits
+    // for a connection the service thread will never poll.
+    if(!is_registered_tcp_connection(connection)) {
+        return TcpStatus::Success;
+    }
     auto* request = network_requests::allocate(network_requests::Type::Close);
     if(request == nullptr) {
         return TcpStatus::IoError;
@@ -1071,7 +1081,6 @@ TcpStatus tcp_close(tcp_connection::Connection* connection, uint64_t timeout_tic
     request->connection = connection;
     request->registered = is_registered_tcp_connection(connection);
     request->deadline = timer::ticks() + timeout_ticks;
-    interrupts::enable();
     if(!network_requests::enqueue(request)) {
         network_requests::release(request);
         network_requests::release(request);
