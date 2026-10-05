@@ -71,7 +71,6 @@ Priority work:
 - Strengthen filesystem mutation:
   - Improve rollback and crash-consistency behavior for metadata updates.
 - Simplify the syscall and build layers:
-  - Split syscall handling by subsystem.
   - Consolidate duplicated user-program build rules.
 - Expand test coverage:
   - Add repeated-operation, invalid-user-memory, resource-exhaustion, and failure-path tests.

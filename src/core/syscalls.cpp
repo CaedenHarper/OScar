@@ -1,139 +1,24 @@
 #include "syscalls.hpp"
 
-#include "arp.hpp"
 #include "interrupts.hpp"
-#include "kernel_heap.hpp"
-#ifdef OSCAR_TEST_SUITE
-#include "io.hpp"
-#endif
 #include "loader.hpp"
-#include "network.hpp"
 #include "process.hpp"
 #include "process_internal.hpp"
 #include "scheduler.hpp"
-#include "tcp_connection.hpp"
+#include "syscall_internal.hpp"
 #include "terminal.hpp"
 #include "thread.hpp"
-#include "timer.hpp"
 #include "user_memory.hpp"
 #include "vfs.hpp"
 
 #include <stdint.h>
 
-namespace {
-
-constexpr uint64_t kWrite = 0;
-constexpr uint64_t kExit = 1;
-constexpr uint64_t kYield = 2;
-constexpr uint64_t kSleep = 3;
-constexpr uint64_t kGetPid = 4;
-constexpr uint64_t kGetId = 5;
-constexpr uint64_t kOpen = 6;
-constexpr uint64_t kRead = 7;
-constexpr uint64_t kClose = 8;
-constexpr uint64_t kSeek = 9;
-constexpr uint64_t kSpawn = 10;
-constexpr uint64_t kWaitPid = 11;
-constexpr uint64_t kCreate = 12;
-constexpr uint64_t kMkdir = 13;
-constexpr uint64_t kUnlink = 14;
-constexpr uint64_t kRmdir = 15;
-constexpr uint64_t kChdir = 16;
-constexpr uint64_t kGetcwd = 17;
-constexpr uint64_t kStat = 18;
-constexpr uint64_t kReaddir = 19;
-constexpr uint64_t kGetProcessInfo = 20;
-constexpr uint64_t kKill = 21;
-constexpr uint64_t kDup = 23;
-constexpr uint64_t kDup2 = 24;
-constexpr uint64_t kPipe = 25;
-constexpr uint64_t kStatfs = 26;
-constexpr uint64_t kPing = 27;
-constexpr uint64_t kResolve = 28;
-constexpr uint64_t kSocket = 29;
-constexpr uint64_t kConnect = 30;
-constexpr uint64_t kSend = 31;
-constexpr uint64_t kRecv = 32;
-#ifdef OSCAR_TEST_SUITE
-constexpr uint64_t kTestComplete = 22;
-constexpr uint16_t kTestExitPort = 0xf4;
-constexpr uint8_t kTestExitCode = 0x10;
-#endif
-constexpr uint64_t kMaximumWriteLength = 4096;
-constexpr uint64_t kMaximumReadLength = 4096;
-constexpr uint64_t kMaximumPathLength = 511;
-constexpr uint64_t kMaximumNameLength = 255;
-constexpr uint64_t kMaximumHostnameLength = 253;
-constexpr uint64_t kMaximumPathComponents = 256;
-constexpr uint64_t kReadBufferSize = 128;
-constexpr uint64_t kMillisecondsPerSecond = 1000;
-constexpr uint64_t kSocketTimeoutTicks = 100;
-constexpr uint64_t kMaximumSocketTransfer = 4096;
-constexpr uint64_t kAddressFamilyIpv4 = 2;
-constexpr uint64_t kSocketTypeStream = 1;
-constexpr uint64_t kProtocolTcp = 6;
-constexpr int64_t kErrorInvalidArgument = -1;
-constexpr int64_t kErrorUnknownCall = -2;
-constexpr int64_t kErrorNotFound = -3;
-constexpr int64_t kErrorBadDescriptor = -4;
-constexpr int64_t kErrorIsDirectory = -5;
-constexpr int64_t kErrorIo = -6;
-constexpr int64_t kErrorReadOnly = -7;
-constexpr int64_t kErrorExists = -8;
-constexpr int64_t kErrorNotEmpty = -9;
-constexpr int64_t kErrorNoSpace = -10;
-constexpr int64_t kErrorBufferTooSmall = -11;
-constexpr int64_t kErrorPermissionDenied = -12;
-constexpr int64_t kErrorNetworkUnavailable = -13;
-constexpr int64_t kErrorNetworkTimeout = -14;
-constexpr int64_t kErrorAddressUnreachable = -15;
-constexpr int64_t kErrorNameNotFound = -16;
-constexpr int64_t kErrorConnectionReset = -17;
-constexpr int64_t kErrorNotConnected = -18;
-constexpr int64_t kKillExitStatus = 137;
-
-struct UserStat {
-    uint64_t size;
-    uint32_t type;
-    uint16_t mode;
-    uint16_t uid;
-    uint16_t gid;
-    uint16_t reserved;
-};
-
-struct UserFileSystemStatus {
-    uint32_t block_size;
-    uint64_t total_blocks;
-    uint64_t free_blocks;
-    uint64_t total_inodes;
-    uint64_t free_inodes;
-    char filesystem[vfs::kFilesystemNameCapacity];
-    char device[vfs::kDeviceNameCapacity];
-    char mount_point[vfs::kMountPointCapacity];
-};
-
-struct UserDirectoryEntry {
-    uint64_t identifier;
-    uint64_t size;
-    uint32_t type;
-    uint32_t name_length;
-    char name[kMaximumNameLength + 1];
-};
-
-struct UserProcessInfo {
-    uint64_t id;
-    uint32_t state;
-    uint32_t thread_count;
-    uint64_t user_page_count;
-    char image_path[process::kMaximumImagePathLength + 1];
-};
+namespace syscall_detail {
 
 process::Process* current_process() {
     auto* thread = scheduler::current();
     return kernel_thread::owner_process(thread);
 }
-
-int64_t write_pipe(const syscalls::Frame* frame, process::Process* owner);
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 int64_t read_pipe(const syscalls::Frame* frame, process::Process* owner) {
@@ -400,711 +285,73 @@ int64_t write(const syscalls::Frame* frame) {
     return write_terminal(frame);
 }
 
-int64_t get_pid() {
-    auto* thread = scheduler::current();
-    auto* owner = kernel_thread::owner_process(thread);
-    return owner == nullptr ? kErrorInvalidArgument : static_cast<int64_t>(process::id(owner));
-}
-
-int64_t get_id() {
-    auto* thread = scheduler::current();
-    return thread == nullptr ? kErrorInvalidArgument : static_cast<int64_t>(kernel_thread::id(thread));
-}
-
-int64_t ping(const syscalls::Frame* frame) {
-    if(frame->rdi == 0 || !user_memory::validate(frame->rdi, 4, false)) {
-        return kErrorInvalidArgument;
-    }
-    uint8_t bytes[4];
-    if(!user_memory::copy_from_user(&bytes[0], frame->rdi, sizeof(bytes))) {
-        return kErrorInvalidArgument;
-    }
-    const arp::Ipv4Address destination = {{bytes[0], bytes[1], bytes[2], bytes[3]}};
-    uint64_t elapsed_ticks = 0;
-    const network::PingStatus result =
-        network::ping(destination, frame->rsi, static_cast<uint16_t>(get_pid()), &elapsed_ticks);
-    switch(result) {
-        case network::PingStatus::Success: {
-            const uint32_t frequency = timer::frequency_hz();
-            return frequency == 0 ? kErrorIo
-                                  : static_cast<int64_t>((elapsed_ticks * kMillisecondsPerSecond) / frequency);
-        }
-        case network::PingStatus::NotInitialized:
-            return kErrorNetworkUnavailable;
-        case network::PingStatus::InvalidArgument:
-            return kErrorInvalidArgument;
-        case network::PingStatus::AddressUnreachable:
-            return kErrorAddressUnreachable;
-        case network::PingStatus::Timeout:
-            return kErrorNetworkTimeout;
-        case network::PingStatus::IoError:
-            return kErrorIo;
-    }
-    return kErrorIo;
-}
-
-// NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-array-to-pointer-decay,
-//             hicpp-no-array-decay, cppcoreguidelines-pro-type-member-init)
-bool copy_hostname(uintptr_t user_hostname, char* hostname) {
-    if(user_hostname == 0 || hostname == nullptr) {
-        return false;
-    }
-    for(uint64_t index = 0; index <= kMaximumHostnameLength; ++index) {
-        if(user_hostname > UINTPTR_MAX - index ||
-           !user_memory::copy_from_user(hostname + index, user_hostname + index, 1)) {
-            return false;
-        }
-        if(hostname[index] == '\0') {
-            return index != 0;
-        }
-    }
-    return false;
-}
-
-int64_t resolve_hostname(const syscalls::Frame* frame) {
-    char hostname[kMaximumHostnameLength + 1];
-    if(frame->rdi == 0 || frame->rsi == 0 || !copy_hostname(frame->rdi, hostname) ||
-       !user_memory::validate(frame->rsi, 4, true)) {
-        return kErrorInvalidArgument;
-    }
-    arp::Ipv4Address address;
-    const network::ResolveStatus result = network::resolve_hostname(hostname, frame->rdx, &address);
-    switch(result) {
-        case network::ResolveStatus::Success: {
-            uint8_t bytes[4] = {address.bytes[0], address.bytes[1], address.bytes[2], address.bytes[3]};
-            return user_memory::copy_to_user(frame->rsi, bytes, sizeof(bytes)) ? 0 : kErrorInvalidArgument;
-        }
-        case network::ResolveStatus::NotInitialized:
-            return kErrorNetworkUnavailable;
-        case network::ResolveStatus::InvalidArgument:
-            return kErrorInvalidArgument;
-        case network::ResolveStatus::NameNotFound:
-            return kErrorNameNotFound;
-        case network::ResolveStatus::Timeout:
-            return kErrorNetworkTimeout;
-        case network::ResolveStatus::IoError:
-            return kErrorIo;
-    }
-    return kErrorIo;
-}
-// NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-array-to-pointer-decay,
-//           hicpp-no-array-decay, cppcoreguidelines-pro-type-member-init)
-
-int64_t get_process_info(const syscalls::Frame* frame) {
-    if(frame->rsi == 0 || !user_memory::validate(frame->rsi, sizeof(UserProcessInfo), true)) {
-        return kErrorInvalidArgument;
-    }
-
-    process::Info info = {};
-    if(!process::info(frame->rdi, &info)) {
-        return kErrorNotFound;
-    }
-    UserProcessInfo user_info = {
-        .id = info.id,
-        .state = static_cast<uint32_t>(info.state),
-        .thread_count = info.thread_count,
-        .user_page_count = info.user_page_count,
-        .image_path = {},
-    };
-    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index, cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    for(uint32_t index = 0; index <= process::kMaximumImagePathLength; ++index) {
-        user_info.image_path[index] = info.image_path[index];
-    }
-    // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index, cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    return user_memory::copy_to_user(frame->rsi, &user_info, sizeof(user_info)) ? 0 : kErrorInvalidArgument;
-}
-
-int64_t kill_process(const syscalls::Frame* frame) {
-    auto* thread = scheduler::current();
-    auto* owner = kernel_thread::owner_process(thread);
-    if(owner == nullptr || frame->rdi == 0) {
-        return kErrorInvalidArgument;
-    }
-    auto* target = process::find(frame->rdi);
-    if(target == nullptr) {
-        return kErrorNotFound;
-    }
-    if(target == owner) {
-        scheduler::thread_exit(thread, kKillExitStatus);
-    }
-    // The scheduler removes ready and wait-queue threads before detaching their address
-    // space. This ordering prevents a killed process from being selected after CR3
-    // teardown has begun.
-    return scheduler::terminate_process(target, kKillExitStatus) ? 0 : kErrorIo;
-}
-
-#ifdef OSCAR_TEST_SUITE
-[[noreturn]] void complete_test_suite() {
-    // QEMU's isa-debug-exit device turns this privileged port write into a
-    // clean emulator exit, so the test runner does not need to wait for the
-    // kernel's idle loop after the user-space pass marker is printed.
-    io::out8(kTestExitPort, kTestExitCode);
-    for(;;) {
-        asm volatile("pause");
-    }
-}
-#endif
-
-int64_t open(const syscalls::Frame* frame) {
-    auto* owner = current_process();
-    if(owner == nullptr) {
-        return kErrorInvalidArgument;
-    }
-    char path[kMaximumPathLength + 1];
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
-    if(!copy_process_path(frame, owner, path)) {
-        return kErrorInvalidArgument;
-    }
-    vfs::File file = {};
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
-    const auto credentials = process::credentials(owner);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
-    const vfs::Status result =
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
-        vfs::open_as(path, static_cast<uint32_t>(frame->rsi), &file, {.uid = credentials.uid, .gid = credentials.gid});
-    if(result != vfs::Status::Success) {
-        return translate_vfs_status(result);
-    }
-    const int32_t descriptor = process::allocate_file_descriptor(owner, &file);
-    if(descriptor < 0) {
-        (void)vfs::close(&file);
-        return kErrorIo;
-    }
-    return descriptor;
-}
-
-int64_t create_file(const syscalls::Frame* frame) {
-    auto* owner = current_process();
-    char path[kMaximumPathLength + 1];
-    if(owner == nullptr || !copy_process_path(frame, owner, &path[0])) {
-        return kErrorInvalidArgument;
-    }
-    vfs::Node node = {};
-    const auto credentials = process::credentials(owner);
-    return translate_vfs_status(vfs::create_as(&path[0], &node, {.uid = credentials.uid, .gid = credentials.gid}));
-}
-
-using PathOperation = vfs::Status (*)(const char* path, vfs::Credentials credentials);
-
-int64_t path_operation(const syscalls::Frame* frame, PathOperation operation) {
-    auto* owner = current_process();
-    char path[kMaximumPathLength + 1];
-    if(owner == nullptr || operation == nullptr || !copy_process_path(frame, owner, &path[0])) {
-        return kErrorInvalidArgument;
-    }
-    const auto credentials = process::credentials(owner);
-    return translate_vfs_status(operation(&path[0], {.uid = credentials.uid, .gid = credentials.gid}));
-}
-
-// NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-constant-array-index,
-//             cppcoreguidelines-pro-bounds-array-to-pointer-decay, cppcoreguidelines-pro-type-member-init)
-int64_t change_directory(const syscalls::Frame* frame) {
-    auto* owner = current_process();
-    char path[kMaximumPathLength + 1];
-    if(owner == nullptr || !copy_process_path(frame, owner, &path[0])) {
-        return kErrorInvalidArgument;
-    }
-    vfs::Node node = {};
-    const auto credentials = process::credentials(owner);
-    const vfs::Status result = vfs::resolve_as(&path[0], &node, {.uid = credentials.uid, .gid = credentials.gid});
-    if(result != vfs::Status::Success) {
-        return translate_vfs_status(result);
-    }
-    if(node.type != vfs::NodeType::Directory) {
-        return kErrorIsDirectory;
-    }
-    if(credentials.uid != 0 && (credentials.uid == node.uid   ? (node.mode & 0100U) == 0
-                                : credentials.gid == node.gid ? (node.mode & 0010U) == 0
-                                                              : (node.mode & 0001U) == 0)) {
-        return kErrorInvalidArgument;
-    }
-    for(uint32_t index = 0; path[index] != '\0'; ++index) {
-        owner->working_directory[index] = path[index];
-    }
-    uint32_t length = 0;
-    while(path[length] != '\0') {
-        ++length;
-    }
-    owner->working_directory[length] = '\0';
-    return 0;
-}
-
-int64_t get_working_directory(const syscalls::Frame* frame) {
-    auto* owner = current_process();
-    if(owner == nullptr || frame->rdi == 0 || frame->rsi == 0) {
-        return kErrorInvalidArgument;
-    }
-    uint32_t length = 0;
-    while(owner->working_directory[length] != '\0') {
-        ++length;
-    }
-    if(frame->rsi <= length || !user_memory::validate(frame->rdi, length + 1, true) ||
-       !user_memory::copy_to_user(frame->rdi, owner->working_directory, length + 1)) {
-        return kErrorBufferTooSmall;
-    }
-    return length;
-}
-
-int64_t stat_path(const syscalls::Frame* frame) {
-    auto* owner = current_process();
-    char path[kMaximumPathLength + 1];
-    if(owner == nullptr || frame->rsi == 0 || !copy_process_path(frame, owner, &path[0]) ||
-       !user_memory::validate(frame->rsi, sizeof(UserStat), true)) {
-        return kErrorInvalidArgument;
-    }
-    vfs::Node node = {};
-    const auto credentials = process::credentials(owner);
-    const vfs::Status result = vfs::resolve_as(&path[0], &node, {.uid = credentials.uid, .gid = credentials.gid});
-    if(result != vfs::Status::Success) {
-        return translate_vfs_status(result);
-    }
-    UserStat stat = {
-        .size = node.size,
-        .type = node.type == vfs::NodeType::Directory ? 1U : 0U,
-        .mode = node.mode,
-        .uid = node.uid,
-        .gid = node.gid,
-        .reserved = 0,
-    };
-    return user_memory::copy_to_user(frame->rsi, &stat, sizeof(stat)) ? 0 : kErrorInvalidArgument;
-}
-
-int64_t stat_filesystem(const syscalls::Frame* frame) {
-    if(frame->rdi == 0 || !user_memory::validate(frame->rdi, sizeof(UserFileSystemStatus), true)) {
-        return kErrorInvalidArgument;
-    }
-    vfs::FileSystemStatus status = {};
-    if(vfs::statfs(&status) != vfs::Status::Success) {
-        return kErrorIo;
-    }
-    UserFileSystemStatus user_status = {
-        .block_size = status.block_size,
-        .total_blocks = status.total_blocks,
-        .free_blocks = status.free_blocks,
-        .total_inodes = status.total_inodes,
-        .free_inodes = status.free_inodes,
-        .filesystem = {},
-        .device = {},
-        .mount_point = {},
-    };
-    for(uint32_t index = 0; index < sizeof(user_status.filesystem); ++index) {
-        user_status.filesystem[index] = status.filesystem[index];
-    }
-    for(uint32_t index = 0; index < sizeof(user_status.device); ++index) {
-        user_status.device[index] = status.device[index];
-    }
-    for(uint32_t index = 0; index < sizeof(user_status.mount_point); ++index) {
-        user_status.mount_point[index] = status.mount_point[index];
-    }
-    return user_memory::copy_to_user(frame->rdi, &user_status, sizeof(user_status)) ? 0 : kErrorInvalidArgument;
-}
-
-int64_t read_directory(const syscalls::Frame* frame) {
-    auto* owner = current_process();
-    char path[kMaximumPathLength + 1];
-    if(owner == nullptr || frame->rdx == 0 || !copy_process_path(frame, owner, &path[0]) ||
-       !user_memory::validate(frame->rdx, sizeof(UserDirectoryEntry), true)) {
-        return kErrorInvalidArgument;
-    }
-    vfs::DirectoryEntry entry;
-    const auto credentials = process::credentials(owner);
-    const vfs::Status result = vfs::read_directory_as(
-        &path[0], static_cast<uint32_t>(frame->rsi), &entry, {.uid = credentials.uid, .gid = credentials.gid}
-    );
-    if(result != vfs::Status::Success) {
-        return translate_vfs_status(result);
-    }
-    UserDirectoryEntry user_entry;
-    user_entry.identifier = entry.node.identifier;
-    user_entry.size = entry.node.size;
-    user_entry.type = entry.node.type == vfs::NodeType::Directory ? 1U : 0U;
-    user_entry.name_length = 0;
-    for(char& character : user_entry.name) {
-        character = '\0';
-    }
-    while(user_entry.name_length < sizeof(entry.name) && entry.name[user_entry.name_length] != '\0') {
-        user_entry.name[user_entry.name_length] = entry.name[user_entry.name_length];
-        ++user_entry.name_length;
-    }
-    user_entry.name[user_entry.name_length] = '\0';
-    return user_memory::copy_to_user(frame->rdx, &user_entry, sizeof(user_entry)) ? 0 : kErrorInvalidArgument;
-}
-// NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic, cppcoreguidelines-pro-bounds-constant-array-index,
-//           cppcoreguidelines-pro-bounds-array-to-pointer-decay, cppcoreguidelines-pro-type-member-init)
-
-int64_t read_terminal(const syscalls::Frame* frame) {
-    constexpr uint64_t kTerminalBufferSize = 128;
-    char buffer[kTerminalBufferSize];
-    const uint64_t requested = frame->rdx < kTerminalBufferSize ? frame->rdx : kTerminalBufferSize;
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
-    const int64_t received = terminal::read(buffer, requested);
-    if(received <= 0) {
-        return received;
-    }
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
-    if(!user_memory::copy_to_user(frame->rsi, buffer, static_cast<uint64_t>(received))) {
-        return kErrorInvalidArgument;
-    }
-    return received;
-}
-
-int64_t read_file(const syscalls::Frame* frame, process::Process* owner) {
-    auto* file = process::file_descriptor(owner, frame->rdi);
-    uint8_t buffer[kReadBufferSize];
-    uint32_t total = 0;
-    while(total < frame->rdx) {
-        const auto remaining = static_cast<uint32_t>(frame->rdx - total);
-        const uint32_t chunk = remaining < sizeof(buffer) ? remaining : sizeof(buffer);
-        uint32_t received = 0;
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
-        const vfs::Status result = vfs::read(file, buffer, chunk, &received);
-        if(result != vfs::Status::Success) {
-            return total == 0 ? translate_vfs_status(result) : total;
-        }
-        if(received == 0) {
-            return total;
-        }
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
-        if(!user_memory::copy_to_user(frame->rsi + total, buffer, received)) {
-            return total == 0 ? kErrorInvalidArgument : total;
-        }
-        total += received;
-        if(received < chunk) {
-            break;
-        }
-    }
-    return total;
-}
-
-int64_t read(const syscalls::Frame* frame) {
-    auto* owner = current_process();
-    if(owner == nullptr) {
-        return kErrorBadDescriptor;
-    }
-    if(frame->rdx > kMaximumReadLength || (frame->rdx != 0 && !user_memory::validate(frame->rsi, frame->rdx, true))) {
-        return kErrorInvalidArgument;
-    }
-    switch(process::descriptor_kind(owner, frame->rdi)) {
-        case process::DescriptorKind::StandardInput:
-            return read_terminal(frame);
-        case process::DescriptorKind::File:
-            return read_file(frame, owner);
-        case process::DescriptorKind::PipeRead:
-            return read_pipe(frame, owner);
-        case process::DescriptorKind::Invalid:
-        case process::DescriptorKind::StandardOutput:
-        case process::DescriptorKind::StandardError:
-        case process::DescriptorKind::PipeWrite:
-        case process::DescriptorKind::Socket:
-            return kErrorBadDescriptor;
-    }
-    return kErrorBadDescriptor;
-}
-
-int64_t write_pipe(const syscalls::Frame* frame, process::Process* owner) {
-    auto* pipe = process::pipe_descriptor(owner, frame->rdi, nullptr);
-    if(pipe == nullptr) {
-        return kErrorBadDescriptor;
-    }
-    if(frame->rdx == 0) {
-        return 0;
-    }
-    uint64_t total = 0;
-    while(total < frame->rdx) {
-        uint8_t byte = 0;
-        if(!user_memory::copy_from_user(&byte, frame->rsi + total, sizeof(byte))) {
-            return total == 0 ? kErrorInvalidArgument : static_cast<int64_t>(total);
-        }
-        const interrupts::State previous_state = interrupts::save_and_disable();
-        if(pipe->readers == 0) {
-            interrupts::restore(previous_state);
-            return total == 0 ? kErrorIo : static_cast<int64_t>(total);
-        }
-        if(pipe->bytes == process::kPipeCapacity) {
-            const bool blocked = scheduler::block_current(&pipe->write_waiters);
-            interrupts::restore(previous_state);
-            if(!blocked) {
-                return total == 0 ? kErrorIo : static_cast<int64_t>(total);
-            }
-            continue;
-        }
-        pipe->buffer[pipe->write_position] = byte; // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
-        pipe->write_position = (pipe->write_position + 1) % process::kPipeCapacity;
-        ++pipe->bytes;
-        (void)scheduler::wake_all(&pipe->read_waiters);
-        interrupts::restore(previous_state);
-        ++total;
-    }
-    return static_cast<int64_t>(total);
-}
-
-int64_t duplicate(const syscalls::Frame* frame, bool explicit_target) {
-    auto* owner = current_process();
-    if(owner == nullptr || frame->rdi >= process::kMaximumFileDescriptors) {
-        return kErrorBadDescriptor;
-    }
-    uint64_t target = frame->rsi;
-    if(!explicit_target) {
-        target = process::kMaximumFileDescriptors;
-        for(uint64_t descriptor = process::kFirstFileDescriptor; descriptor < process::kMaximumFileDescriptors;
-            ++descriptor) {
-            if(process::descriptor_kind(owner, descriptor) == process::DescriptorKind::Invalid) {
-                target = descriptor;
-                break;
-            }
-        }
-    }
-    if(target >= process::kMaximumFileDescriptors) {
-        return kErrorIo;
-    }
-    const int32_t result = process::duplicate_descriptor(owner, frame->rdi, target);
-    return result < 0 ? kErrorBadDescriptor : result;
-}
-
-int64_t create_pipe(const syscalls::Frame* frame) {
-    auto* owner = current_process();
-    if(owner == nullptr || !user_memory::validate(frame->rdi, sizeof(int64_t) * 2, true)) {
-        return kErrorInvalidArgument;
-    }
-    int64_t descriptors[2] = {-1, -1};
-    if(!process::create_pipe(owner, &descriptors[0]) ||
-       !user_memory::copy_to_user(frame->rdi, &descriptors[0], sizeof(descriptors))) {
-        if(descriptors[0] >= 0) {
-            (void)process::close_file_descriptor(owner, static_cast<uint64_t>(descriptors[0]));
-        }
-        if(descriptors[1] >= 0) {
-            (void)process::close_file_descriptor(owner, static_cast<uint64_t>(descriptors[1]));
-        }
-        return kErrorIo;
-    }
-    return 0;
-}
-
-int64_t socket_create(const syscalls::Frame* frame) {
-    auto* owner = current_process();
-    if(owner == nullptr || frame->rdi != kAddressFamilyIpv4 || frame->rsi != kSocketTypeStream ||
-       (frame->rdx != 0 && frame->rdx != kProtocolTcp)) {
-        return kErrorInvalidArgument;
-    }
-    auto* socket = static_cast<process::Socket*>(kernel_heap::allocate(sizeof(process::Socket)));
-    if(socket == nullptr) {
-        return kErrorIo;
-    }
-    tcp_connection::initialize(&socket->connection, {}, {}, 0, 0, 0);
-    socket->references = 1;
-    const int32_t descriptor = process::allocate_socket(owner, socket);
-    if(descriptor < 0) {
-        (void)kernel_heap::free(socket);
-        return kErrorIo;
-    }
-    return descriptor;
-}
-
-int64_t socket_connect(const syscalls::Frame* frame) {
-    auto* owner = current_process();
-    auto* socket = owner == nullptr ? nullptr : process::socket_descriptor(owner, frame->rdi);
-    if(socket == nullptr || frame->rsi == 0 || frame->rdx == 0 || frame->rdx > UINT16_MAX ||
-       !user_memory::validate(frame->rsi, sizeof(arp::Ipv4Address), false)) {
-        return kErrorInvalidArgument;
-    }
-    arp::Ipv4Address address = {};
-    if(!user_memory::copy_from_user(&address, frame->rsi, sizeof(address))) {
-        return kErrorInvalidArgument;
-    }
-    switch(network::tcp_connect(&socket->connection, address, static_cast<uint16_t>(frame->rdx), kSocketTimeoutTicks)) {
-        case network::TcpStatus::Success:
-            return 0;
-        case network::TcpStatus::AddressUnreachable:
-            return kErrorAddressUnreachable;
-        case network::TcpStatus::Timeout:
-            return kErrorNetworkTimeout;
-        case network::TcpStatus::Reset:
-            return kErrorConnectionReset;
-        case network::TcpStatus::NotConnected:
-            return kErrorNotConnected;
-        case network::TcpStatus::NotInitialized:
-            return kErrorNetworkUnavailable;
-        case network::TcpStatus::InvalidArgument:
-        case network::TcpStatus::IoError:
-            return kErrorIo;
-    }
-    return kErrorIo;
-}
-
-int64_t socket_send(const syscalls::Frame* frame) {
-    auto* owner = current_process();
-    auto* socket = owner == nullptr ? nullptr : process::socket_descriptor(owner, frame->rdi);
-    if(socket == nullptr || frame->rdx == 0 || frame->rdx > kMaximumSocketTransfer ||
-       !user_memory::validate(frame->rsi, frame->rdx, false)) {
-        return kErrorInvalidArgument;
-    }
-    uint8_t buffer[kMaximumSocketTransfer];
-    if(!user_memory::copy_from_user(&buffer[0], frame->rsi, frame->rdx)) {
-        return kErrorInvalidArgument;
-    }
-    switch(network::tcp_send(&socket->connection, &buffer[0], static_cast<uint16_t>(frame->rdx), kSocketTimeoutTicks)) {
-        case network::TcpStatus::Success:
-            return static_cast<int64_t>(frame->rdx);
-        case network::TcpStatus::Reset:
-            return kErrorConnectionReset;
-        case network::TcpStatus::NotConnected:
-            return kErrorNotConnected;
-        case network::TcpStatus::Timeout:
-            return kErrorNetworkTimeout;
-        case network::TcpStatus::NotInitialized:
-            return kErrorNetworkUnavailable;
-        case network::TcpStatus::InvalidArgument:
-        case network::TcpStatus::AddressUnreachable:
-        case network::TcpStatus::IoError:
-            return kErrorIo;
-    }
-    return kErrorIo;
-}
-
-int64_t socket_receive(const syscalls::Frame* frame) {
-    auto* owner = current_process();
-    auto* socket = owner == nullptr ? nullptr : process::socket_descriptor(owner, frame->rdi);
-    if(socket == nullptr || frame->rdx == 0 || frame->rdx > kMaximumSocketTransfer ||
-       !user_memory::validate(frame->rsi, frame->rdx, true)) {
-        return kErrorInvalidArgument;
-    }
-    uint8_t buffer[kMaximumSocketTransfer];
-    uint16_t received = 0;
-    switch(network::tcp_receive(
-        &socket->connection, &buffer[0], static_cast<uint16_t>(frame->rdx), &received, kSocketTimeoutTicks
-    )) {
-        case network::TcpStatus::Success:
-            if(!user_memory::copy_to_user(frame->rsi, &buffer[0], received)) {
-                return kErrorInvalidArgument;
-            }
-            return received;
-        case network::TcpStatus::Reset:
-            return kErrorConnectionReset;
-        case network::TcpStatus::NotConnected:
-            return kErrorNotConnected;
-        case network::TcpStatus::Timeout:
-            return kErrorNetworkTimeout;
-        case network::TcpStatus::NotInitialized:
-            return kErrorNetworkUnavailable;
-        case network::TcpStatus::InvalidArgument:
-        case network::TcpStatus::AddressUnreachable:
-        case network::TcpStatus::IoError:
-            return kErrorIo;
-    }
-    return kErrorIo;
-}
-
-int64_t close(const syscalls::Frame* frame) {
-    auto* owner = current_process();
-    auto* socket = owner == nullptr ? nullptr : process::socket_descriptor(owner, frame->rdi);
-    if(socket != nullptr && socket->references == 1) {
-        (void)network::tcp_close(&socket->connection, kSocketTimeoutTicks);
-    }
-    if(owner == nullptr || !process::close_file_descriptor(owner, frame->rdi)) {
-        return kErrorBadDescriptor;
-    }
-    return 0;
-}
-
-int64_t seek(const syscalls::Frame* frame) {
-    auto* owner = current_process();
-    auto* file = owner == nullptr ? nullptr : process::file_descriptor(owner, frame->rdi);
-    if(file == nullptr) {
-        return kErrorBadDescriptor;
-    }
-    return translate_vfs_status(vfs::seek(file, frame->rsi));
-}
-
-int64_t spawn(const syscalls::Frame* frame) {
-    auto* parent = current_process();
-    if(parent == nullptr) {
-        return kErrorInvalidArgument;
-    }
-
-    char path[kMaximumPathLength + 1];
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
-    if(!copy_process_path(frame, parent, path)) {
-        return kErrorInvalidArgument;
-    }
-
-    char argument_storage[loader::kMaximumArgumentBytes];
-    const char* arguments[loader::kMaximumArguments];
-    uint32_t argument_count = 0;
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
-    if(!copy_spawn_arguments(frame->rsi, &argument_storage[0], &arguments[0], &argument_count)) {
-        return kErrorInvalidArgument;
-    }
-
-    process::Process* child = nullptr;
-    kernel_thread::Thread* thread = nullptr;
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay)
-    if(!loader::load_path(path, parent, arguments, argument_count, &child, &thread) || child == nullptr ||
-       thread == nullptr) {
-        return kErrorNotFound;
-    }
-
-    const interrupts::State previous_state = interrupts::save_and_disable();
-    const bool queued = scheduler::enqueue(thread);
-    interrupts::restore(previous_state);
-    if(!queued) {
-        (void)kernel_thread::destroy(thread);
-        (void)process::destroy(child);
-        return kErrorIo;
-    }
-    return static_cast<int64_t>(process::id(child));
-}
-
-int64_t wait_pid(const syscalls::Frame* frame) {
-    auto* parent = current_process();
-    if(parent == nullptr || frame->rdi == 0 ||
-       (frame->rsi != 0 && !user_memory::validate(frame->rsi, sizeof(int64_t), true))) {
-        return kErrorInvalidArgument;
-    }
-
-    for(;;) {
-        const interrupts::State previous_state = interrupts::save_and_disable();
-        auto* child = process::find_child_locked(parent, frame->rdi);
-        if(child == nullptr) {
-            interrupts::restore(previous_state);
-            return kErrorNotFound;
-        }
-
-        if(process::state(child) != process::State::Terminated) {
-            // The child lookup and enqueue are one interrupt-disabled transaction, so
-            // an exit cannot signal the parent between the check and the block.
-            const bool blocked = scheduler::block_current(&parent->child_waiters);
-            interrupts::restore(previous_state);
-            if(!blocked) {
-                return kErrorIo;
-            }
-            continue;
-        }
-
-        int64_t status = 0;
-        if(frame->rsi != 0) {
-            // The pointer was validated before entering the loop and interrupts are
-            // disabled, so status delivery cannot be separated from child reaping.
-            if(!user_memory::copy_to_user(frame->rsi, &child->exit_status, sizeof(status))) {
-                interrupts::restore(previous_state);
-                return kErrorInvalidArgument;
-            }
-        }
-        if(!process::reap_child_locked(parent, child, &status)) {
-            interrupts::restore(previous_state);
-            return kErrorIo;
-        }
-        const auto child_id = process::id(child);
-        interrupts::restore(previous_state);
-        // The scheduler still owns the terminated thread record. It will destroy the
-        // process and its address space after observing the parent detachment; freeing
-        // the process here would leave that record with a dangling Process pointer.
-        return static_cast<int64_t>(child_id);
-    }
-}
-
-} // namespace
+} // namespace syscall_detail
 
 namespace syscalls {
+
+using syscall_detail::change_directory;
+using syscall_detail::close;
+using syscall_detail::create_file;
+using syscall_detail::create_pipe;
+using syscall_detail::duplicate;
+using syscall_detail::get_id;
+using syscall_detail::get_pid;
+using syscall_detail::get_process_info;
+using syscall_detail::get_working_directory;
+using syscall_detail::kChdir;
+using syscall_detail::kClose;
+using syscall_detail::kConnect;
+using syscall_detail::kCreate;
+using syscall_detail::kDup;
+using syscall_detail::kDup2;
+using syscall_detail::kErrorUnknownCall;
+using syscall_detail::kExit;
+using syscall_detail::kGetcwd;
+using syscall_detail::kGetId;
+using syscall_detail::kGetPid;
+using syscall_detail::kGetProcessInfo;
+using syscall_detail::kill_process;
+using syscall_detail::kKill;
+using syscall_detail::kMkdir;
+using syscall_detail::kOpen;
+using syscall_detail::kPing;
+using syscall_detail::kPipe;
+using syscall_detail::kRead;
+using syscall_detail::kReaddir;
+using syscall_detail::kRecv;
+using syscall_detail::kResolve;
+using syscall_detail::kRmdir;
+using syscall_detail::kSeek;
+using syscall_detail::kSend;
+using syscall_detail::kSleep;
+using syscall_detail::kSocket;
+using syscall_detail::kSpawn;
+using syscall_detail::kStat;
+using syscall_detail::kStatfs;
+using syscall_detail::kUnlink;
+using syscall_detail::kWaitPid;
+using syscall_detail::kWrite;
+using syscall_detail::kYield;
+using syscall_detail::open;
+using syscall_detail::path_operation;
+using syscall_detail::ping;
+using syscall_detail::read;
+using syscall_detail::read_directory;
+using syscall_detail::resolve_hostname;
+using syscall_detail::seek;
+using syscall_detail::socket_connect;
+using syscall_detail::socket_create;
+using syscall_detail::socket_receive;
+using syscall_detail::socket_send;
+using syscall_detail::spawn;
+using syscall_detail::stat_filesystem;
+using syscall_detail::stat_path;
+using syscall_detail::wait_pid;
+using syscall_detail::write;
+#ifdef OSCAR_TEST_SUITE
+using syscall_detail::complete_test_suite;
+using syscall_detail::kTestComplete;
+#endif
 
 extern "C" void handle(Frame* frame) {
     if(frame == nullptr || (frame->cs & 3U) != 3U) {
