@@ -48,7 +48,7 @@ uint32_t scale_channel(uint8_t channel, uint8_t bit_count) {
         return channel;
     }
     const uint32_t maximum = (1U << bit_count) - 1U;
-    return (static_cast<uint32_t>(channel) * maximum + kChannelRounding) / kChannelMaximum;
+    return ((static_cast<uint32_t>(channel) * maximum) + kChannelRounding) / kChannelMaximum;
 }
 
 uint32_t pixel_value(Color color) {
@@ -102,7 +102,7 @@ void draw_test_pattern() {
         for(uint64_t column = 0; column < g_framebuffer.width; ++column) {
             if(column < border || row < border || column >= g_framebuffer.width - border ||
                row >= g_framebuffer.height - border) {
-                const Color color = ((column / kCheckerSize + row / kCheckerSize) % 2 == 0)
+                const Color color = (((column / kCheckerSize) + (row / kCheckerSize)) % 2 == 0)
                                         ? Color{.red = UINT8_MAX, .green = UINT8_MAX, .blue = UINT8_MAX}
                                         : Color{.red = 0, .green = 0, .blue = 0};
                 put_pixel(column, row, color);
