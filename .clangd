@@ -5,8 +5,31 @@ Diagnostics:
 
 CompileFlags:
   Add:
-    - -x
-    - c
     - -Iuser/include
     - -target
     - x86_64-unknown-none-elf
+
+# The Makefile invokes clang++ for both user C and kernel C++, so clangd must
+# select the source language by extension instead of inheriting one globally.
+---
+If:
+  PathMatch: '.*\\.(cpp|hpp)$'
+
+CompileFlags:
+  Add:
+    - -x
+    - c++
+  Remove:
+    - -x
+    - c
+---
+If:
+  PathMatch: '.*\\.(c|h)$'
+
+CompileFlags:
+  Add:
+    - -x
+    - c
+  Remove:
+    - -x
+    - c++
