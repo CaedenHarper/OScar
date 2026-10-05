@@ -75,7 +75,7 @@ LDFLAGS := \
 QEMUFLAGS ?= -M q35 -m 256M -serial stdio -display none -no-reboot -no-shutdown
 QEMU_NETWORK_FLAGS := -netdev user,id=net0 -device virtio-net-pci,disable-modern=on,netdev=net0
 
-.PHONY: all iso run debug test test-run test-exception lint clean distclean help
+.PHONY: all iso run gui debug test test-run test-exception lint clean distclean help
 
 all: $(KERNEL)
 
@@ -83,6 +83,9 @@ iso: $(ISO)
 
 run: $(ISO) $(VIRTIO_DISK)
 	$(QEMU) $(QEMUFLAGS) $(QEMU_NETWORK_FLAGS) -drive file=$(VIRTIO_DISK),format=raw,if=none,id=virtio-disk -device virtio-blk-pci,disable-modern=on,drive=virtio-disk -cdrom $(ISO) -boot d
+
+gui: QEMUFLAGS := $(subst -display none,-display gtk,$(QEMUFLAGS))
+gui: run
 
 debug: $(ISO) $(VIRTIO_DISK)
 	@echo "QEMU is paused. In another terminal, run:"
@@ -122,6 +125,7 @@ help:
 	@echo "make          Build the kernel ELF"
 	@echo "make iso      Build a BIOS/UEFI bootable ISO"
 	@echo "make run      Boot it in QEMU; serial output appears here"
+	@echo "make gui      Boot it in QEMU with a graphical display"
 	@echo "make test     Build a separate test kernel/image and run all smoke tests"
 	@echo "make debug    Boot paused and open QEMU's GDB stub"
 	@echo "make lint     Build a compile database and run format/lint checks"

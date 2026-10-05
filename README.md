@@ -18,6 +18,8 @@ The kernel currently provides:
 - Synchronization primitives including spinlocks, wait queues, and mutexes.
 - PCI enumeration, polling VirtIO block and network drivers, DHCP network
   configuration, and an IRQ-driven PS/2 keyboard backend.
+- Limine framebuffer discovery with a format-aware boot-time color-bar test
+  pattern in graphical QEMU sessions.
 - An ext2 filesystem with VFS path lookup, regular-file I/O, directories,
   permissions, ownership, metadata, corruption checks, and mutation support.
 - Ethernet, ARP, IPv4, ICMP, UDP, TCP, DNS, and an HTTP client with incremental
@@ -93,7 +95,7 @@ Future features:
 └── src/
     ├── arch/x86_64/  CPU contexts, GDT/TSS, IDT, and entry stubs
     ├── core/         Entry point, processes, threads, scheduler, and syscalls
-    ├── drivers/      Port I/O, PCI discovery, serial, timer, keyboard input, terminal, PS/2, and VirtIO block/network support
+    ├── drivers/      Port I/O, PCI discovery, serial, framebuffer, timer, keyboard input, terminal, PS/2, and VirtIO block/network support
     ├── network/      Ethernet framing, ARP/IPv4, ICMP, UDP, TCP connections, and DNS support
     ├── exec/         ELF64 validation and executable loading
     ├── filesystem/   VFS, ext2 mounting, path lookup, regular-file I/O, and mutation
@@ -146,8 +148,12 @@ sudo apt install build-essential clang lld make git curl xorriso e2fsprogs qemu-
 ```sh
 make iso
 make run
+make gui
 make test
 ```
+
+`make gui` boots the same runtime image as `make run` but opens QEMU's graphical
+display so the framebuffer test pattern is visible.
 
 `make test-exception` builds a separate test kernel, executes `ud2`, and
 prints the invalid-opcode exception and saved register state.

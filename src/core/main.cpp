@@ -1,3 +1,4 @@
+#include "framebuffer.hpp"
 #include "gdt.hpp"
 #include "idt.hpp"
 #include "interrupt_controller.hpp"
@@ -32,6 +33,12 @@ __attribute__((used, section(".limine_requests"))) volatile limine_memmap_reques
 
 __attribute__((used, section(".limine_requests"))) volatile limine_hhdm_request g_hhdm_request = {
     .id = LIMINE_HHDM_REQUEST_ID,
+    .revision = 0,
+    .response = nullptr,
+};
+
+__attribute__((used, section(".limine_requests"))) volatile limine_framebuffer_request g_framebuffer_request = {
+    .id = LIMINE_FRAMEBUFFER_REQUEST_ID,
     .revision = 0,
     .response = nullptr,
 };
@@ -75,6 +82,20 @@ extern "C" [[noreturn]] void kmain() {
     serial::write(" total, ");
     serial::write_u64(physical_memory::free_pages());
     serial::write(" free\n");
+
+    const limine_framebuffer* framebuffer_information = nullptr;
+    if(g_framebuffer_request.response != nullptr && g_framebuffer_request.response->framebuffer_count != 0) {
+        framebuffer_information = g_framebuffer_request.response->framebuffers[0];
+    }
+    if(framebuffer::initialize(framebuffer_information)) {
+        serial::write("Framebuffer initialized: ");
+        serial::write_u64(framebuffer::width());
+        serial::write("x");
+        serial::write_u64(framebuffer::height());
+        serial::write("\n");
+    } else {
+        serial::write("No compatible framebuffer available; continuing without graphics.\n");
+    }
 
 #ifdef OSCAR_TEST_SUITE
     // The test profile initializes and exercises subsystems in dependency order, then
