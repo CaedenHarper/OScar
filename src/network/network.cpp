@@ -5,6 +5,7 @@
 #include "ethernet.hpp"
 #include "icmp.hpp"
 #include "interrupts.hpp"
+#include "network_requests.hpp"
 #include "scheduler.hpp"
 #include "spinlock.hpp"
 #include "thread.hpp"
@@ -483,10 +484,147 @@ void wake_registered_receivers() {
     synchronization::unlock(&g_tcp_registry_lock, previous_state);
 }
 
+PingStatus resolve(arp::Ipv4Address destination, uint64_t timeout_ticks);
+
+TcpStatus tcp_status_from_ping(PingStatus status) {
+    switch(status) {
+        case PingStatus::Success:
+            return TcpStatus::Success;
+        case PingStatus::Timeout:
+            return TcpStatus::Timeout;
+        case PingStatus::AddressUnreachable:
+            return TcpStatus::AddressUnreachable;
+        case PingStatus::NotInitialized:
+            return TcpStatus::NotInitialized;
+        case PingStatus::InvalidArgument:
+        case PingStatus::IoError:
+            return TcpStatus::IoError;
+    }
+    return TcpStatus::IoError;
+}
+
+void complete_request(network_requests::Request* request, TcpStatus status, uint16_t transferred = 0) {
+    network_requests::complete(request, network_requests::State::Completed, static_cast<int32_t>(status), transferred);
+    network_requests::release(request);
+}
+
+void process_request(network_requests::Request* request, uint64_t now) {
+    if(request == nullptr) {
+        return;
+    }
+    if(request->state != network_requests::State::Queued) {
+        network_requests::release(request);
+        return;
+    }
+    if(now >= request->deadline) {
+        if(request->type == network_requests::Type::Connect && request->registered) {
+            unregister_tcp_connection(request->connection);
+            request->registered = false;
+        }
+        complete_request(request, TcpStatus::Timeout);
+        return;
+    }
+
+    if(request->type == network_requests::Type::Connect) {
+        if(!request->started) {
+            const uint64_t remaining = request->deadline - now;
+            const TcpStatus resolution = tcp_status_from_ping(resolve(request->destination, remaining));
+            if(resolution != TcpStatus::Success) {
+                complete_request(request, resolution);
+                return;
+            }
+            const uint16_t local_port = g_next_tcp_port++;
+            if(g_next_tcp_port == 0) {
+                g_next_tcp_port = kFirstTcpEphemeralPort;
+            }
+            tcp_connection::initialize(
+                request->connection,
+                g_ipv4_interface.address,
+                request->destination,
+                local_port,
+                request->destination_port,
+                g_tcp_sequence
+            );
+            g_tcp_sequence += 0x10001U;
+            if(!register_tcp_connection(request->connection) ||
+               tcp_connection::open(request->connection, send_tcp_segment, nullptr, now) !=
+                   tcp_connection::Result::Success) {
+                unregister_tcp_connection(request->connection);
+                complete_request(request, TcpStatus::IoError);
+                return;
+            }
+            request->started = true;
+            request->registered = true;
+        }
+        const tcp_connection::State state = connection_state(request->connection);
+        if(state == tcp_connection::State::Established) {
+            complete_request(request, TcpStatus::Success);
+        } else if(state == tcp_connection::State::Reset || state == tcp_connection::State::Closed) {
+            unregister_tcp_connection(request->connection);
+            request->registered = false;
+            complete_request(request, state == tcp_connection::State::Reset ? TcpStatus::Reset : TcpStatus::IoError);
+        } else {
+            (void)network_requests::enqueue(request);
+        }
+        return;
+    }
+
+    const tcp_connection::State state = connection_state(request->connection);
+    if(state == tcp_connection::State::Reset) {
+        complete_request(request, TcpStatus::Reset);
+        return;
+    }
+    if(request->type == network_requests::Type::Send) {
+        if(state != tcp_connection::State::Established) {
+            complete_request(request, TcpStatus::NotConnected);
+            return;
+        }
+        if(request->offset == request->requested && !connection_send_pending(request->connection)) {
+            complete_request(request, TcpStatus::Success, request->requested);
+            return;
+        }
+        if(!connection_send_pending(request->connection)) {
+            const uint16_t remaining = request->requested - request->offset;
+            const uint16_t chunk = remaining > kMaximumTcpPayload ? kMaximumTcpPayload : remaining;
+            const tcp_connection::Result result = tcp_connection::send(
+                request->connection, send_tcp_segment, nullptr, request->buffer + request->offset, chunk, now
+            );
+            if(result == tcp_connection::Result::Success) {
+                request->offset = static_cast<uint16_t>(request->offset + chunk);
+            } else if(result == tcp_connection::Result::Reset) {
+                complete_request(request, TcpStatus::Reset);
+                return;
+            } else if(result != tcp_connection::Result::WouldBlock) {
+                complete_request(request, TcpStatus::IoError);
+                return;
+            }
+        }
+        (void)network_requests::enqueue(request);
+        return;
+    }
+
+    if(state != tcp_connection::State::Established && state != tcp_connection::State::FinWait &&
+       state != tcp_connection::State::TimeWait) {
+        complete_request(request, TcpStatus::NotConnected);
+        return;
+    }
+    uint16_t received = 0;
+    const tcp_connection::Result result =
+        tcp_connection::receive(request->connection, request->buffer, request->requested, &received);
+    if(result == tcp_connection::Result::Success || result == tcp_connection::Result::Closed) {
+        complete_request(request, TcpStatus::Success, received);
+    } else if(result == tcp_connection::Result::Reset) {
+        complete_request(request, TcpStatus::Reset);
+    } else {
+        (void)network_requests::enqueue(request);
+    }
+}
+
 void network_service_entry(void*) {
     for(;;) {
         interrupts::enable();
-        if(has_registered_tcp_connections()) {
+        const bool has_connections = has_registered_tcp_connections();
+        if(has_connections) {
             constexpr uint8_t kMaximumFramesPerPass = 32;
             for(uint8_t index = 0; index < kMaximumFramesPerPass; ++index) {
                 const DispatchStatus status = dispatch_one(nullptr, nullptr, nullptr, timer::ticks());
@@ -497,7 +635,19 @@ void network_service_entry(void*) {
             poll_registered_connections(timer::ticks());
             wake_registered_receivers();
         }
-        scheduler::sleep(1);
+        constexpr uint8_t kMaximumRequestsPerPass = 16;
+        for(uint8_t index = 0; index < kMaximumRequestsPerPass; ++index) {
+            auto* request = network_requests::dequeue();
+            if(request == nullptr) {
+                break;
+            }
+            process_request(request, timer::ticks());
+        }
+        if(!has_registered_tcp_connections() && !network_requests::has_pending()) {
+            network_requests::wait_for_work();
+        } else {
+            scheduler::sleep(1);
+        }
     }
 }
 
@@ -624,6 +774,7 @@ bool initialize() {
     synchronization::initialize(&g_receive_lock);
     synchronization::initialize(&g_tcp_registry_lock);
     synchronization::initialize(&g_tcp_transmit_lock);
+    network_requests::initialize();
     ethernet::MacAddress mac;
     copy_mac(&mac, g_device->mac);
     dhcp::Configuration configuration;
@@ -828,53 +979,24 @@ TcpStatus tcp_connect(
     if(connection == nullptr || destination_port == 0 || is_registered_tcp_connection(connection)) {
         return TcpStatus::InvalidArgument;
     }
+    auto* request = network_requests::allocate(network_requests::Type::Connect);
+    if(request == nullptr) {
+        return TcpStatus::IoError;
+    }
+    request->connection = connection;
+    request->destination = destination;
+    request->destination_port = destination_port;
+    request->deadline = timer::ticks() + timeout_ticks;
     interrupts::enable();
-    const PingStatus resolution = resolve(destination, timeout_ticks);
-    if(resolution != PingStatus::Success) {
-        return resolution == PingStatus::Timeout              ? TcpStatus::Timeout
-               : resolution == PingStatus::AddressUnreachable ? TcpStatus::AddressUnreachable
-               : resolution == PingStatus::NotInitialized     ? TcpStatus::NotInitialized
-                                                              : TcpStatus::IoError;
-    }
-    const uint16_t local_port = g_next_tcp_port++;
-    if(g_next_tcp_port == 0) {
-        g_next_tcp_port = kFirstTcpEphemeralPort;
-    }
-    tcp_connection::initialize(
-        connection, g_ipv4_interface.address, destination, local_port, destination_port, g_tcp_sequence
-    );
-    if(!register_tcp_connection(connection)) {
+    if(!network_requests::enqueue(request)) {
+        network_requests::release(request);
+        network_requests::release(request);
         return TcpStatus::IoError;
     }
-    g_tcp_sequence += 0x10001U;
-    const uint64_t start = timer::ticks();
-    if(tcp_connection::open(connection, send_tcp_segment, nullptr, start) != tcp_connection::Result::Success) {
-        unregister_tcp_connection(connection);
-        return TcpStatus::IoError;
-    }
-    while(time_remaining(start, timeout_ticks)) {
-        const uint64_t now = timer::ticks();
-        const tcp_connection::Result retry = tcp_connection::poll(connection, send_tcp_segment, nullptr, now);
-        if(retry == tcp_connection::Result::Timeout) {
-            unregister_tcp_connection(connection);
-            return TcpStatus::Timeout;
-        }
-        TcpStatus input_result = TcpStatus::Success;
-        (void)process_tcp_input(connection, now, &input_result);
-        if(input_result != TcpStatus::Success) {
-            unregister_tcp_connection(connection);
-            return input_result;
-        }
-        if(connection_state(connection) == tcp_connection::State::Established) {
-            return TcpStatus::Success;
-        }
-        if(connection_state(connection) == tcp_connection::State::Reset) {
-            unregister_tcp_connection(connection);
-            return TcpStatus::Reset;
-        }
-    }
-    unregister_tcp_connection(connection);
-    return TcpStatus::Timeout;
+    network_requests::wait(request);
+    const auto result = static_cast<TcpStatus>(request->result);
+    network_requests::release(request);
+    return result;
 }
 
 TcpStatus tcp_send(tcp_connection::Connection* connection, const void* data, uint16_t length, uint64_t timeout_ticks) {
@@ -884,43 +1006,31 @@ TcpStatus tcp_send(tcp_connection::Connection* connection, const void* data, uin
     if(connection == nullptr || data == nullptr || length == 0) {
         return TcpStatus::InvalidArgument;
     }
-    if(connection_state(connection) != tcp_connection::State::Established) {
-        return TcpStatus::NotConnected;
+    auto* request = network_requests::allocate(network_requests::Type::Send);
+    if(request == nullptr || length > sizeof(request->buffer)) {
+        if(request != nullptr) {
+            network_requests::release(request);
+            network_requests::release(request);
+        }
+        return request == nullptr ? TcpStatus::IoError : TcpStatus::InvalidArgument;
+    }
+    request->connection = connection;
+    request->requested = length;
+    request->deadline = timer::ticks() + timeout_ticks;
+    const auto* bytes = static_cast<const uint8_t*>(data);
+    for(uint16_t index = 0; index < length; ++index) {
+        request->buffer[index] = bytes[index];
     }
     interrupts::enable();
-    const auto* bytes = static_cast<const uint8_t*>(data);
-    uint16_t sent = 0;
-    const uint64_t start = timer::ticks();
-    while(sent < length) {
-        const uint16_t chunk = length - sent > kMaximumTcpPayload ? kMaximumTcpPayload : length - sent;
-        const tcp_connection::Result send_result =
-            tcp_connection::send(connection, send_tcp_segment, nullptr, bytes + sent, chunk, timer::ticks());
-        if(send_result == tcp_connection::Result::Reset) {
-            return TcpStatus::Reset;
-        }
-        if(send_result != tcp_connection::Result::Success) {
-            return send_result == tcp_connection::Result::WouldBlock ? TcpStatus::IoError : TcpStatus::IoError;
-        }
-        while(connection_send_pending(connection)) {
-            if(!time_remaining(start, timeout_ticks)) {
-                return TcpStatus::Timeout;
-            }
-            const uint64_t now = timer::ticks();
-            if(tcp_connection::poll(connection, send_tcp_segment, nullptr, now) == tcp_connection::Result::Timeout) {
-                return TcpStatus::Timeout;
-            }
-            TcpStatus input_result = TcpStatus::Success;
-            (void)process_tcp_input(connection, now, &input_result);
-            if(input_result != TcpStatus::Success) {
-                return input_result;
-            }
-            if(connection_state(connection) == tcp_connection::State::Reset) {
-                return TcpStatus::Reset;
-            }
-        }
-        sent = static_cast<uint16_t>(sent + chunk);
+    if(!network_requests::enqueue(request)) {
+        network_requests::release(request);
+        network_requests::release(request);
+        return TcpStatus::IoError;
     }
-    return TcpStatus::Success;
+    network_requests::wait(request);
+    const auto result = static_cast<TcpStatus>(request->result);
+    network_requests::release(request);
+    return result;
 }
 
 TcpStatus tcp_receive(
@@ -936,45 +1046,33 @@ TcpStatus tcp_receive(
     if(connection == nullptr || output == nullptr || length == nullptr || capacity == 0) {
         return TcpStatus::InvalidArgument;
     }
-    auto* registered = find_registered_tcp_connection(connection);
-    if(registered == nullptr) {
+    if(find_registered_tcp_connection(connection) == nullptr) {
         return TcpStatus::NotConnected;
     }
-    const tcp_connection::State state = connection_state(connection);
-    if(state != tcp_connection::State::Established && state != tcp_connection::State::FinWait &&
-       state != tcp_connection::State::TimeWait) {
-        return TcpStatus::NotConnected;
+    auto* request = network_requests::allocate(network_requests::Type::Receive);
+    if(request == nullptr) {
+        return TcpStatus::IoError;
     }
+    request->connection = connection;
+    request->requested = capacity;
+    request->deadline = timer::ticks() + timeout_ticks;
     interrupts::enable();
-    *length = 0;
-    const uint64_t start = timer::ticks();
-    while(time_remaining(start, timeout_ticks)) {
-        const interrupts::State previous_state = interrupts::save_and_disable();
-        const tcp_connection::Result receive_result = tcp_connection::receive(connection, output, capacity, length);
-        if(receive_result == tcp_connection::Result::Success) {
-            interrupts::restore(previous_state);
-            return TcpStatus::Success;
-        }
-        if(receive_result == tcp_connection::Result::Closed) {
-            interrupts::restore(previous_state);
-            return TcpStatus::Success;
-        }
-        if(receive_result == tcp_connection::Result::Reset) {
-            interrupts::restore(previous_state);
-            return TcpStatus::Reset;
-        }
-        if(!time_remaining(start, timeout_ticks) || !scheduler::block_current(&registered->receive_waiters)) {
-            interrupts::restore(previous_state);
-            return time_remaining(start, timeout_ticks) ? TcpStatus::IoError : TcpStatus::Timeout;
-        }
-        // block_current returns with interrupts disabled after this thread is woken.
-        interrupts::restore(previous_state);
-        registered = find_registered_tcp_connection(connection);
-        if(registered == nullptr) {
-            return TcpStatus::NotConnected;
+    if(!network_requests::enqueue(request)) {
+        network_requests::release(request);
+        network_requests::release(request);
+        return TcpStatus::IoError;
+    }
+    network_requests::wait(request);
+    const auto result = static_cast<TcpStatus>(request->result);
+    *length = request->transferred;
+    if(result == TcpStatus::Success && request->transferred != 0) {
+        auto* bytes = static_cast<uint8_t*>(output);
+        for(uint16_t index = 0; index < request->transferred; ++index) {
+            bytes[index] = request->buffer[index];
         }
     }
-    return TcpStatus::Timeout;
+    network_requests::release(request);
+    return result;
 }
 
 TcpStatus tcp_close(tcp_connection::Connection* connection, uint64_t timeout_ticks) {
